@@ -1,0 +1,155 @@
+{
+  "title": "analysis_stub_result_contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "video_id",
+    "status"
+  ],
+  "properties": {
+    "video_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed"
+      ]
+    },
+    "issue_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "weight_shift_issue",
+        "head_movement",
+        "early_extension",
+        "steep_backswing_plane",
+        "steep_downswing",
+        "hand_path_issue",
+        null
+      ]
+    },
+    "main_issue_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fix_cue_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "drill_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "overlay_asset_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "score": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "severity": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        null
+      ]
+    },
+    "phase_snapshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "phase_name",
+          "snapshot_asset_url",
+          "frame_index"
+        ],
+        "properties": {
+          "phase_name": {
+            "type": "string",
+            "enum": [
+              "address",
+              "top",
+              "downswing",
+              "impact",
+              "finish"
+            ]
+          },
+          "snapshot_asset_url": {
+            "type": "string"
+          },
+          "frame_index": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "error_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "issue_type",
+          "main_issue_text",
+          "fix_cue_text",
+          "drill_text",
+          "phase_snapshots"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error_code",
+          "error_message"
+        ]
+      }
+    }
+  ]
+}
