@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { SwingOverlay } from '@/lib/overlays/SwingOverlay';
-import type { SwingAnalysisRow, SwingVideoRow, SwingIssueType } from '@/lib/types/swing';
+import { SwingPlayer } from '@/components/SwingPlayer';
+import type { SwingIssueType } from '@/lib/types/swing';
+import type { OverlayTimeline } from '@/lib/timeline/generateOverlayTimeline';
 
 const ISSUE_LABELS: Record<SwingIssueType, string> = {
   early_extension: 'Early Extension',
@@ -15,28 +16,21 @@ const ISSUE_LABELS: Record<SwingIssueType, string> = {
   steep_backswing_plane: 'Steep Backswing Plane',
 };
 
-const ISSUE_WHAT: Record<SwingIssueType, string> = {
-  early_extension: 'Your hips are thrusting toward the ball before impact, breaking your posture.',
-  steep_downswing: 'Your club is coming over the top — the path is too steep and outside-in.',
-  head_movement: 'Your head is drifting sideways during the swing, making consistent contact hard.',
-  weight_shift_issue: 'Your weight is staying on the back foot through impact — a reverse pivot.',
-  hand_path_issue: 'Your hands are looping away from your body on the downswing.',
-  steep_backswing_plane: 'The club is going too vertical on the way back, making a shallow downswing harder.',
-};
-
 const SEV = {
-  low: { label: 'Low', color: '#60d040', bg: 'rgba(96,208,64,0.1)', border: 'rgba(96,208,64,0.2)' },
+  low:    { label: 'Low', color: '#60d040', bg: 'rgba(96,208,64,0.1)', border: 'rgba(96,208,64,0.2)' },
   medium: { label: 'Medium', color: '#f0c040', bg: 'rgba(240,192,64,0.1)', border: 'rgba(240,192,64,0.2)' },
-  high: { label: 'High', color: '#f06040', bg: 'rgba(240,96,64,0.1)', border: 'rgba(240,96,64,0.2)' },
+  high:   { label: 'High', color: '#f06040', bg: 'rgba(240,96,64,0.1)', border: 'rgba(240,96,64,0.2)' },
 };
 
 export default function ResultPage() {
   const router = useRouter();
   const params = useParams();
   const videoId = params.id as string;
+
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [video, setVideo] = useState<SwingVideoRow | null>(null);
-  const [analysis, setAnalysis] = useState<SwingAnalysisRow | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<Record<string, unknown> | null>(null);
+  const [videoMeta, setVideoMeta] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -44,36 +38,49 @@ export default function ResultPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace('/sign-in'); return; }
 
+      // Load video record
       const { data: vid } = await supabase
         .from('swing_videos').select('*').eq('id', videoId).eq('user_id', user.id).single();
       if (!vid || vid.status !== 'completed') { setState('error'); return; }
-      setVideo(vid as SwingVideoRow);
+      setVideoMeta(vid);
 
+      // Get signed URL for video playback (1 hour expiry)
+      const { data: signed } = await supabase.storage
+        .from('swing-videos')
+        .createSignedUrl(vid.storage_path, 3600);
+      if (signed?.signedUrl) setVideoUrl(signed.signedUrl);
+
+      // Load analysis
       const { data: ana } = await supabase
         .from('swing_analysis').select('*').eq('video_id', videoId).single();
       if (!ana) { setState('error'); return; }
-      setAnalysis(ana as SwingAnalysisRow);
+      setAnalysis(ana);
       setState('ready');
     }
     load();
   }, [videoId, router]);
 
   if (state === 'loading') return (
-    <div className="page center"><div className="spinner" /><style>{css}</style></div>
-  );
-  if (state === 'error') return (
     <div className="page center">
-      <p className="err-msg">Result not found or still processing.</p>
+      <div className="spinner" />
+      <p className="load-text">Loading your analysis…</p>
+      <style>{css}</style>
+    </div>
+  );
+
+  if (state === 'error' || !analysis) return (
+    <div className="page center">
+      <p className="err-text">Result not found.</p>
       <button className="btn-cta" onClick={() => router.push('/upload')}>Back to Upload</button>
       <style>{css}</style>
     </div>
   );
-  if (!analysis || !video) return null;
 
-  const issueLabel = ISSUE_LABELS[analysis.issue_type] ?? analysis.issue_type;
-  const issueWhat = ISSUE_WHAT[analysis.issue_type] ?? '';
-  const sev = SEV[(analysis.severity ?? 'medium') as keyof typeof SEV];
-  const viewLabel = video.view_type === 'face_on' ? 'Face-On' : 'Down the Line';
+  const issueType = analysis.issue_type as SwingIssueType;
+  const issueLabel = ISSUE_LABELS[issueType] ?? String(issueType);
+  const sev = SEV[(analysis.severity as keyof typeof SEV) ?? 'medium'];
+  const timeline = analysis.overlay_timeline_json as OverlayTimeline | null;
+  const viewLabel = (videoMeta?.view_type === 'face_on') ? 'Face-On' : 'Down the Line';
 
   return (
     <div className="page">
@@ -84,27 +91,33 @@ export default function ResultPage() {
         </div>
       </header>
 
-      <main className="main">
-
-        {/* ── VISUAL OVERLAY — the product's core ── */}
-        <section className="overlay-section">
-          <div className="overlay-label-row">
-            <span className="overlay-label red-label">🔴 Current</span>
-            <span className="overlay-issue-name">{issueLabel}</span>
-            <span className="overlay-label green-label">🟢 Target</span>
-          </div>
-          <div className="overlay-frame">
-            <SwingOverlay issueType={analysis.issue_type} width={390} height={380} />
-          </div>
-          <p className="overlay-caption">
-            Visual correction — red shows your current motion, green shows the target
+      {/* ══════════════════════════════════════
+          INTERACTIVE SWING PLAYER — core product
+          ══════════════════════════════════════ */}
+      {videoUrl && timeline ? (
+        <SwingPlayer
+          videoUrl={videoUrl}
+          timeline={timeline}
+          issueLabel={issueLabel}
+        />
+      ) : (
+        /* Fallback if no video URL or timeline */
+        <div className="no-video">
+          <p className="no-video-text">
+            {!videoUrl ? '⚠ Video not accessible — signed URL may have expired' : '⚠ No overlay data'}
           </p>
-        </section>
+        </div>
+      )}
 
-        {/* ── SCORE ── */}
-        <section className="score-section">
+      {/* ══════════════════════════════════════
+          ANALYSIS PANEL
+          ══════════════════════════════════════ */}
+      <main className="analysis-panel">
+
+        {/* Score */}
+        <div className="score-row">
           <div className="score-left">
-            <span className="score-num">{analysis.score}</span>
+            <span className="score-num">{analysis.score as number}</span>
             <span className="score-max">/100</span>
           </div>
           <div className="score-right">
@@ -113,40 +126,39 @@ export default function ResultPage() {
             </span>
             <span className="view-badge">{viewLabel}</span>
           </div>
-        </section>
-
-        {/* ── MAIN ISSUE ── */}
-        <section className="card issue-card">
-          <p className="card-eyebrow">🎯 &nbsp;MAIN ISSUE</p>
-          <h2 className="issue-name">{issueLabel}</h2>
-          <p className="issue-what">{issueWhat}</p>
-          <p className="issue-body">{analysis.summary_text}</p>
-        </section>
-
-        <div className="divider" />
-
-        {/* ── CUE ── */}
-        <section className="card">
-          <p className="card-eyebrow">💬 &nbsp;YOUR CUE</p>
-          <p className="cue-quote">&ldquo;{analysis.cue_text}&rdquo;</p>
-          <p className="cue-hint">Say this to yourself before each swing on the range.</p>
-        </section>
-
-        <div className="divider" />
-
-        {/* ── DRILL ── */}
-        <section className="card">
-          <p className="card-eyebrow">🏌️ &nbsp;TODAY&apos;S DRILL</p>
-          <p className="drill-text">{analysis.drill_text}</p>
-        </section>
-
-        {/* ── META ── */}
-        <div className="meta-row">
-          <span>📹 {video.original_filename}</span>
-          <span>{new Date(video.created_at).toLocaleDateString()}</span>
         </div>
 
-        {/* ── ACTIONS ── */}
+        {/* Main Issue */}
+        <section className="card">
+          <p className="card-eyebrow">🎯 &nbsp;MAIN ISSUE</p>
+          <h2 className="issue-name">{issueLabel}</h2>
+          <p className="issue-body">{analysis.summary_text as string}</p>
+        </section>
+
+        <div className="divider" />
+
+        {/* Cue */}
+        <section className="card">
+          <p className="card-eyebrow">💬 &nbsp;YOUR CUE</p>
+          <p className="cue-quote">&ldquo;{analysis.cue_text as string}&rdquo;</p>
+          <p className="cue-hint">Say this before each swing at the range.</p>
+        </section>
+
+        <div className="divider" />
+
+        {/* Drill */}
+        <section className="card">
+          <p className="card-eyebrow">🏌️ &nbsp;TODAY&apos;S DRILL</p>
+          <p className="drill-text">{analysis.drill_text as string}</p>
+        </section>
+
+        {/* Meta */}
+        <div className="meta-row">
+          <span>📹 {videoMeta?.original_filename as string}</span>
+          <span>{new Date(videoMeta?.created_at as string).toLocaleDateString()}</span>
+        </div>
+
+        {/* Actions */}
         <div className="actions">
           <button className="btn-cta" onClick={() => router.push('/upload')}>
             Analyze Another Swing →
@@ -165,28 +177,18 @@ const css = `
   body { background: #080c08; }
   .page { min-height: 100vh; background: #080c08; font-family: 'DM Sans', system-ui, sans-serif; max-width: 430px; margin: 0 auto; color: #f0f0ee; }
   .page.center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 40px; }
-  .err-msg { font-size: 15px; color: #4a5a44; }
 
   .header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); position: sticky; top: 0; background: rgba(8,12,8,0.95); backdrop-filter: blur(16px); z-index: 50; }
   .logo { font-size: 18px; font-weight: 800; color: #a8f040; letter-spacing: -0.3px; text-decoration: none; }
-  .header-right { display: flex; align-items: center; gap: 14px; }
+  .header-right { display: flex; gap: 14px; }
   .hist-link { font-size: 13px; font-weight: 600; color: #4a5a44; text-decoration: none; }
 
-  .main { padding: 0 0 52px; display: flex; flex-direction: column; }
+  .no-video { background: #0a100a; padding: 24px; }
+  .no-video-text { font-size: 13px; color: #3a4a35; text-align: center; }
 
-  /* Overlay */
-  .overlay-section { background: #0a120a; }
-  .overlay-label-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px 6px; }
-  .overlay-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
-  .red-label { color: #ff6060; }
-  .green-label { color: #60e060; }
-  .overlay-issue-name { font-size: 13px; font-weight: 800; color: #f0f0ee; }
-  .overlay-frame { width: 100%; }
-  .overlay-frame svg { width: 100%; height: auto; }
-  .overlay-caption { font-size: 11px; color: #2a3a25; text-align: center; padding: 8px 16px 14px; }
+  .analysis-panel { padding: 0 0 52px; }
 
-  /* Score */
-  .score-section { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .score-row { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
   .score-left { display: flex; align-items: baseline; gap: 3px; }
   .score-num { font-size: 52px; font-weight: 800; color: #a8f040; letter-spacing: -2px; line-height: 1; }
   .score-max { font-size: 20px; font-weight: 600; color: #3a4a35; }
@@ -194,19 +196,16 @@ const css = `
   .sev-badge { font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 100px; }
   .view-badge { font-size: 11px; color: #3a4a35; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); padding: 4px 11px; border-radius: 100px; }
 
-  /* Cards */
   .card { padding: 20px; display: flex; flex-direction: column; gap: 8px; }
   .card-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #2a3a25; }
   .issue-name { font-size: 28px; font-weight: 800; color: #a8f040; letter-spacing: -0.7px; line-height: 1.1; }
-  .issue-what { font-size: 14px; color: #7a8a72; line-height: 1.55; }
-  .issue-body { font-size: 13px; color: #4a5a44; line-height: 1.65; }
-  .cue-quote { font-size: 19px; font-weight: 700; font-style: italic; color: #d8e8d0; line-height: 1.35; letter-spacing: -0.2px; }
+  .issue-body { font-size: 14px; color: #5a6a54; line-height: 1.7; }
+  .cue-quote { font-size: 19px; font-weight: 700; font-style: italic; color: #d8e8d0; line-height: 1.35; }
   .cue-hint { font-size: 12px; color: #2a3a25; font-style: italic; }
   .drill-text { font-size: 14px; color: #5a6a54; line-height: 1.7; }
   .divider { height: 1px; background: rgba(255,255,255,0.05); margin: 0 20px; }
 
   .meta-row { display: flex; justify-content: space-between; font-size: 11px; color: #1a2818; padding: 14px 20px; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 6px; }
-
   .actions { padding: 0 20px; display: flex; flex-direction: column; gap: 12px; }
   .btn-cta { background: #a8f040; color: #080c08; font-family: inherit; font-size: 16px; font-weight: 800; height: 56px; border-radius: 100px; border: none; cursor: pointer; width: 100%; -webkit-appearance: none; transition: transform 0.12s; }
   .btn-cta:active { transform: scale(0.97); }
@@ -214,4 +213,5 @@ const css = `
 
   .spinner { width: 36px; height: 36px; border: 3px solid rgba(168,240,64,0.15); border-top-color: #a8f040; border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .load-text, .err-text { font-size: 15px; color: #4a5a44; }
 `;
