@@ -1,5 +1,5 @@
 /**
- * middleware.ts
+ * proxy.ts
  * Refreshes the Supabase session on every request so Server Components
  * receive a valid, non-expired session cookie.
  *
@@ -7,13 +7,13 @@
  * Route protection (redirect to sign-in) is handled in (protected)/layout.tsx (PR-1B).
  *
  * Note: If Supabase env vars are not configured (e.g. pre-launch / landing page
- * only deployments), middleware passes through without crashing.
+ * only deployments), proxy passes through without crashing.
  */
 
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
