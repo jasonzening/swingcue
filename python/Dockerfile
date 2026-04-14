@@ -1,7 +1,5 @@
-# SwingCue Analysis Service — Python 3.11 + MediaPipe
 FROM python:3.11-slim
 
-# Install system deps for OpenCV + MediaPipe
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libsm6 \
@@ -13,15 +11,13 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install Python deps (cache layer)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source
 COPY *.py .
 
-# Expose port
-EXPOSE 8000
+# Railway sets PORT env var automatically
+ENV PORT=8080
+EXPOSE 8080
 
-# Start server
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
