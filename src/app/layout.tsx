@@ -4,8 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "SwingCue — AI Golf Swing Coach",
   description:
-    "Upload your golf swing. See what's wrong. Get one clear fix — no jargon, no guesswork. SwingCue is the AI coach in your pocket.",
-  keywords: ["golf", "swing analysis", "AI golf coach", "golf improvement", "swing fix"],
+    "Upload your golf swing video. See the #1 thing holding you back. Get one clear fix — no jargon, in under a minute. SwingCue is the AI coach in your pocket.",
+  keywords: ["golf", "swing analysis", "AI golf coach", "golf improvement", "swing fix", "golf lesson"],
   authors: [{ name: "SwingCue" }],
   openGraph: {
     title: "SwingCue — AI Golf Swing Coach",
@@ -18,6 +18,13 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "SwingCue — AI Golf Swing Coach",
     description: "Upload your swing. See what's wrong. Know what to fix next.",
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    apple: "/favicon.svg",
   },
 };
 
@@ -37,8 +44,9 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Only load weights actually used: 400 (body), 600 (nav), 700 (labels), 800 (headings) */}
         <link
-          href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap"
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap"
           rel="stylesheet"
         />
       </head>
