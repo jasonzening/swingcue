@@ -9,7 +9,10 @@ export default function Home() {
           {/* ── NAV ── */}
           <nav className="nav">
             <span className="logo">SwingCue</span>
-            <a href={MAILTO} className="btn-nav">Get Early Access</a>
+            <div className="nav-right">
+              <a href="/sign-in" className="signin-link">Sign in</a>
+              <a href={MAILTO} className="btn-nav">Early Access</a>
+            </div>
           </nav>
 
           {/* ══════════════════════════════════════
@@ -222,6 +225,11 @@ export default function Home() {
           border-bottom: 1px solid rgba(255,255,255,0.05);
         }
         .logo { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; color: #a8f040; }
+        .nav-right { display: flex; align-items: center; gap: 10px; }
+        .signin-link {
+          font-size: 13px; font-weight: 600; color: #5a6a54;
+          text-decoration: none;
+        }
         .btn-nav {
           font-size: 13px; font-weight: 700;
           color: #080c08; background: #a8f040;
