@@ -98,7 +98,7 @@ export default function ResultPage() {
         <SwingPlayer
           videoUrl={videoUrl}
           timeline={timeline}
-          issueLabel={issueLabel}
+          
         />
       ) : (
         /* Fallback if no video URL or timeline */

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Standard Next.js config - no TF.js bundling issues
 };
 
 export default nextConfig;
