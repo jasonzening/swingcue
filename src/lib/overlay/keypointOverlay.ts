@@ -55,31 +55,40 @@ const mkCurve = (points: {x:number;y:number}[], color: Color, w = 3.5, opacity =
 const mkLabel = (x: number, y: number, text: string, color: Color = 'white', size = 10): OverlayElement =>
   ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.80 });
 
-/* ── 从 KeypointFrame 解析规范点位 ── */
+/* ── 从 KeypointFrame 解析规范点位（直接按名字映射，不走 MediaPipe 索引）── */
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
-  const mp = new Array(33).fill(null).map(() => ({ x: 0.5, y: 0.5, visibility: 0 }));
+  const result: Partial<Record<BodyPointName, Pt>> = {};
 
-  const setMp = (idx: number, pt?: { x: number; y: number; confidence?: number } | null) => {
-    if (!pt) return;
-    mp[idx] = { x: pt.x, y: pt.y, visibility: pt.confidence ?? 0.8 };
-  };
+  const toP = (pt?: { x: number; y: number; confidence?: number } | null): Pt | null =>
+    pt ? { x: pt.x, y: pt.y, confidence: pt.confidence ?? 0.8 } : null;
 
-  setMp(0,  lm.head);
-  setMp(11, lm.leftShoulder);
-  setMp(12, lm.rightShoulder);
-  setMp(13, lm.leftElbow);
-  setMp(14, lm.rightElbow);
-  setMp(15, lm.leftWrist);
-  setMp(16, lm.rightWrist);
-  setMp(23, lm.leftHip);
-  setMp(24, lm.rightHip);
-  setMp(25, lm.leftKnee);
-  setMp(26, lm.rightKnee);
-  setMp(27, lm.leftAnkle);
-  setMp(28, lm.rightAnkle);
+  // 直接按字段名赋值，置信度直接来自 Python 输出
+  if (lm.head)          result.headCenter     = toP(lm.head)!;
+  if (lm.leftShoulder)  result.leftShoulder   = toP(lm.leftShoulder)!;
+  if (lm.rightShoulder) result.rightShoulder  = toP(lm.rightShoulder)!;
+  if (lm.leftElbow)     result.leftElbow      = toP(lm.leftElbow)!;
+  if (lm.rightElbow)    result.rightElbow     = toP(lm.rightElbow)!;
+  if (lm.leftWrist)     result.leftWrist      = toP(lm.leftWrist)!;
+  if (lm.rightWrist)    result.rightWrist     = toP(lm.rightWrist)!;
+  if (lm.leftHip)       result.leftHip        = toP(lm.leftHip)!;
+  if (lm.rightHip)      result.rightHip       = toP(lm.rightHip)!;
+  if (lm.leftKnee)      result.leftKnee       = toP(lm.leftKnee)!;
+  if (lm.rightKnee)     result.rightKnee      = toP(lm.rightKnee)!;
+  if (lm.leftAnkle)     result.leftAnkle      = toP(lm.leftAnkle)!;
+  if (lm.rightAnkle)    result.rightAnkle     = toP(lm.rightAnkle)!;
 
-  return resolveAllPoints(mp);
+  // 派生点：直接算
+  const ls = result.leftShoulder, rs = result.rightShoulder;
+  if (ls && rs) result.shoulderCenter = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2, confidence: 1 };
+
+  const lh = result.leftHip, rh = result.rightHip;
+  if (lh && rh) result.hipCenter = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2, confidence: 1 };
+
+  const lw = result.leftWrist, rw = result.rightWrist;
+  if (lw && rw) result.gripCenter = { x: (lw.x + rw.x) / 2, y: (lw.y + rw.y) / 2, confidence: 1 };
+
+  return result;
 }
 
 /* ── 结构线（两点都存在才画）── */
