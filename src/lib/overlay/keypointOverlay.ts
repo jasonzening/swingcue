@@ -154,6 +154,53 @@ function buildBasicSkeleton(pts: Partial<Record<BodyPointName, Pt>>): OverlayEle
   return els;
 }
 
+/* ── 始终绘制的基础身体骨架（红点 + 红线）── */
+function buildFullBodySkeleton(pts: Partial<Record<BodyPointName, Pt>>): OverlayElement[] {
+  const els: OverlayElement[] = [];
+
+  // 所有关键身体点 → 红色小圆点
+  const bodyPoints: BodyPointName[] = [
+    'headCenter',
+    'leftShoulder', 'rightShoulder',
+    'leftElbow', 'rightElbow',
+    'leftWrist', 'rightWrist',
+    'leftHip', 'rightHip',
+    'gripCenter', 'hipCenter', 'shoulderCenter',
+  ];
+  for (const pn of bodyPoints) {
+    const p = pts[pn];
+    if (p) els.push(mkDot(p.x, p.y, 'red', 0.022, 0.90));
+  }
+
+  // 肩线
+  const ls = pts.leftShoulder, rs = pts.rightShoulder;
+  if (ls && rs) els.push(mkLine(ls.x, ls.y, rs.x, rs.y, 'red', 2.5, 0.85));
+
+  // 髋线
+  const lh = pts.leftHip, rh = pts.rightHip;
+  if (lh && rh) els.push(mkLine(lh.x, lh.y, rh.x, rh.y, 'red', 2.5, 0.80));
+
+  // 脊柱线（白色半透明）
+  const sc = pts.shoulderCenter, hc = pts.hipCenter;
+  if (sc && hc) els.push(mkLine(sc.x, sc.y, hc.x, hc.y, 'white', 1.8, 0.45, true));
+
+  // 左臂链：左肩 → 左肘 → 左腕
+  const le = pts.leftElbow, lw = pts.leftWrist;
+  if (ls && le) els.push(mkLine(ls.x, ls.y, le.x, le.y, 'red', 2.2, 0.82));
+  if (le && lw) els.push(mkLine(le.x, le.y, lw.x, lw.y, 'red', 2.2, 0.82));
+
+  // 右臂链：右肩 → 右肘 → 右腕
+  const re = pts.rightElbow, rw = pts.rightWrist;
+  if (rs && re) els.push(mkLine(rs.x, rs.y, re.x, re.y, 'red', 2.2, 0.82));
+  if (re && rw) els.push(mkLine(re.x, re.y, rw.x, rw.y, 'red', 2.2, 0.82));
+
+  // 双手中点（较大红点）
+  const grip = pts.gripCenter;
+  if (grip) els.push(mkDot(grip.x, grip.y, 'red', 0.030, 0.95));
+
+  return els;
+}
+
 /* ══════════════════════════════════════
    主函数：规范驱动的 overlay frame 生成
 ══════════════════════════════════════ */
@@ -168,11 +215,15 @@ export function generateSpecDrivenOverlayFrame(
   const elements: OverlayElement[] = [];
   const pts = getKeypoints(kpFrame);
 
+  // ── STEP 1: 始终渲染完整身体骨架（红点 + 红线）──
+  elements.push(...buildFullBodySkeleton(pts));
+
   const displaySpec = getIssueDisplaySpec(issue, viewType);
-  if (!displaySpec) return buildBasicSkeleton(pts);
+  if (!displaySpec) return elements; // 没有 spec 就只返回骨架
 
   const phasePoints = filterPointsByPhase(displaySpec, phase);
 
+  // ── STEP 2: Issue 专项 overlay（绿色目标 + 箭头）──
   // 辅助线（白色淡）
   for (const ln of displaySpec.auxiliaryLines) {
     elements.push(...buildStructureLine(ln, pts, 'white', 0.42, false));
