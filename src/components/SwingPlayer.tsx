@@ -60,7 +60,9 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur }: P
     const c = canvasRef.current;
     if (!v || !c) return;
     const rect = v.getBoundingClientRect();
-    if (rect.width > 0) { c.width = rect.width; c.height = rect.height; }
+    const w = rect.width || v.offsetWidth || 640;
+    const h = rect.height || v.offsetHeight || 360;
+    if (w > 0) { c.width = w; c.height = h; }
   }, []);
 
   /* ── Render loop ── */
@@ -93,10 +95,20 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur }: P
     const v = videoRef.current;
     if (!v) return;
     const onMeta = () => { setDur(v.duration); syncCanvas(); };
+    const onData = () => { syncCanvas(); };
     v.addEventListener('loadedmetadata', onMeta);
+    v.addEventListener('loadeddata', onData);
+    v.addEventListener('canplay', syncCanvas);
     window.addEventListener('resize', syncCanvas);
-    return () => { v.removeEventListener('loadedmetadata', onMeta); window.removeEventListener('resize', syncCanvas); };
-  }, [syncCanvas]);
+    // Initial sync attempt
+    setTimeout(syncCanvas, 100);
+    return () => {
+      v.removeEventListener('loadedmetadata', onMeta);
+      v.removeEventListener('loadeddata', onData);
+      v.removeEventListener('canplay', syncCanvas);
+      window.removeEventListener('resize', syncCanvas);
+    };
+  }, [syncCanvas, videoUrl]);
 
   /* ── Controls ── */
   const togglePlay = () => {
@@ -146,10 +158,11 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur }: P
           src={videoUrl}
           playsInline
           className="sp-vid"
-          crossOrigin="anonymous"
           onEnded={() => setPlaying(false)}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
+          onLoadedMetadata={syncCanvas}
+          onLoadedData={syncCanvas}
         />
         <canvas ref={canvasRef} className="sp-cvs" />
 
