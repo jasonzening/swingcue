@@ -1,8 +1,8 @@
 /**
  * OverlayRenderer.ts
  *
- * 高尔夫分部位可视化渲染器
- * 新增：drawEllipse — 旋转盘椭圆（肩部/髋部）
+ * é«å°å¤«åé¨ä½å¯è§åæ¸²æå¨
+ * æ°å¢ï¼drawEllipse â æè½¬çæ¤­åï¼è©é¨/é«é¨ï¼
  */
 
 import type {
@@ -29,7 +29,7 @@ function resolveColor(c?: string): string {
   return COLORS.white;
 }
 
-/** 关节圆点 */
+/** å³èåç¹ */
 export function drawJointDot(
   ctx: Ctx, x: number, y: number, W: number, H: number,
   color: string, radius = 0.008, opacity = 0.92,
@@ -49,7 +49,7 @@ export function drawJointDot(
   ctx.restore();
 }
 
-/** 结构线 */
+/** ç»æçº¿ */
 export function drawStructureLine(
   ctx: Ctx, x1: number, y1: number, x2: number, y2: number,
   W: number, H: number, color: string, strokeWidth = 1.0, opacity = 0.85, dashed = false,
@@ -71,60 +71,55 @@ export function drawStructureLine(
 }
 
 /**
- * drawEllipse — 旋转盘椭圆（AlignSnow 风格核心元素）
+ * drawEllipse â æè½¬çæ¤­åï¼AlignSnow é£æ ¼æ ¸å¿åç´ ï¼
  *
- * cx, cy: 椭圆中心（归一化）
- * rx, ry: 长轴/短轴半径（归一化，相对于视频宽度）
- * angle:  旋转角度（弧度，0 = 水平）
- * 渲染为：描边椭圆 + 内部半透明填充
+ * cx, cy: æ¤­åä¸­å¿ï¼å½ä¸åï¼
+ * rx, ry: é¿è½´/ç­è½´åå¾ï¼å½ä¸åï¼ç¸å¯¹äºè§é¢å®½åº¦ï¼
+ * angle:  æè½¬è§åº¦ï¼å¼§åº¦ï¼0 = æ°´å¹³ï¼
+ * æ¸²æä¸ºï¼æè¾¹æ¤­å + åé¨åéæå¡«å
  */
 export function drawEllipse(
   ctx: Ctx, cx: number, cy: number, rx: number, ry: number, angle: number,
-  W: number, H: number, color: string, strokeWidth = 1.8, opacity = 0.85,
+  W: number, H: number, color: string, strokeWidth = 3.5, opacity = 0.92,
 ) {
   const pcx = cx * W, pcy = cy * H;
-  const prx = rx * W, pry = ry * W; // 都用 W，保持比例一致
+  const prx = rx * W, pry = ry * W;
 
   ctx.save();
-  ctx.globalAlpha = opacity;
-  ctx.shadowColor = 'rgba(0,0,0,0.50)';
-  ctx.shadowBlur = 4;
-
   ctx.translate(pcx, pcy);
   ctx.rotate(angle);
 
-  // 填充（半透明）
+  // 外层大发光 — 霓虹感（参考图风格）
+  ctx.globalAlpha = opacity * 0.30;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 22;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = strokeWidth * 2.8;
   ctx.beginPath();
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.globalAlpha = opacity * 0.15;
-  ctx.fill();
+  ctx.stroke();
 
-  // 描边（实线，发光效果）
+  // 内层清晰主线
   ctx.globalAlpha = opacity;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
   ctx.strokeStyle = color;
   ctx.lineWidth = strokeWidth;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 6;
   ctx.beginPath();
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // 中心十字线
+  // 内部半透明填充
   ctx.shadowBlur = 0;
-  ctx.globalAlpha = opacity * 0.40;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 0.8;
-  ctx.setLineDash([3, 4]);
+  ctx.globalAlpha = opacity * 0.10;
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(-prx, 0); ctx.lineTo(prx, 0);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 }
 
-/** 路径曲线 */
 export function drawCurvePath(
   ctx: Ctx, points: Pt[], W: number, H: number,
   color: string, strokeWidth = 1.5, opacity = 0.80,
@@ -159,7 +154,7 @@ export function drawCurvePath(
   ctx.restore();
 }
 
-/** 方向箭头 */
+/** æ¹åç®­å¤´ */
 export function drawArrow(
   ctx: Ctx, fromX: number, fromY: number, toX: number, toY: number,
   W: number, H: number, color: string, strokeWidth = 1.5, opacity = 0.90,
@@ -182,7 +177,7 @@ export function drawArrow(
   ctx.restore();
 }
 
-/** 文字标签 */
+/** æå­æ ç­¾ */
 export function drawLabel(
   ctx: Ctx, x: number, y: number, W: number, H: number,
   text: string, color: string, fontSize = 10, opacity = 0.88,
@@ -243,7 +238,7 @@ export function drawZone(
   ctx.restore();
 }
 
-/* ══ 主分发函数 ══ */
+/* ââ ä¸»ååå½æ° ââ */
 export function renderElement(
   ctx: Ctx, el: OverlayElement, W: number, H: number, layer = 'all',
 ) {
@@ -251,7 +246,7 @@ export function renderElement(
   const color = resolveColor(el.color);
   const opacity = el.opacity ?? 0.88;
 
-  // 椭圆（新类型，通过 type 判断）
+  // æ¤­åï¼æ°ç±»åï¼éè¿ type å¤æ­ï¼
   const elAny = el as unknown as Record<string, unknown>;
   if (elAny.type === 'ellipse') {
     drawEllipse(
