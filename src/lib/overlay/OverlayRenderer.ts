@@ -1,9 +1,8 @@
 /**
  * OverlayRenderer.ts
  *
- * 统一 canvas 绘图组件库。
- * 所有坐标输入为归一化 0-1，乘以 canvas 宽高得到像素坐标。
- * 视觉风格完全对齐参考图（大填充圆点 + 清晰结构线 + 曲线路径 + 方向箭头）。
+ * AlignSnow 风格：极细线条 + 极小关节点，干净简洁。
+ * 归一化坐标输入 (0-1)，乘以 canvas 宽高得到像素坐标。
  */
 
 import type {
@@ -15,9 +14,6 @@ import type {
 type Ctx = CanvasRenderingContext2D;
 type Pt = { x: number; y: number };
 
-/* ══════════════════════════════════════════════
-   COLOR PALETTE
-══════════════════════════════════════════════ */
 export const COLORS = {
   red:    '#ff3c3c',
   green:  '#3cee3c',
@@ -33,66 +29,60 @@ function resolveColor(c?: string): string {
   return COLORS.white;
 }
 
-/* ══════════════════════════════════════════════
-   PRIMITIVES
-══════════════════════════════════════════════ */
-
 /**
- * JointDot — 关节圆点，视觉核心（参考图 Image 1 大圆点）
- * 填充色 + 黑色外环 + 阴影，确保在任何视频背景上都清晰
+ * JointDot — 极小关节点（AlignSnow 风格）
+ * radius 默认 0.008（比原来 0.028 小了 3.5 倍）
  */
 export function drawJointDot(
   ctx: Ctx,
-  x: number, y: number,    // 归一化
+  x: number, y: number,
   W: number, H: number,
   color: string,
-  radius: number = 0.028,  // 归一化半径
-  opacity: number = 0.95
+  radius: number = 0.008,
+  opacity: number = 0.95,
 ) {
   const px = x * W, py = y * H;
   const r = radius * Math.min(W, H);
+  if (r < 0.5) return;
 
   ctx.save();
   ctx.globalAlpha = opacity;
-  ctx.shadowColor = 'rgba(0,0,0,0.75)';
-  ctx.shadowBlur = 8;
 
-  // Fill
   ctx.beginPath();
   ctx.arc(px, py, r, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
 
-  // Outer ring
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = 'rgba(0,0,0,0.60)';
-  ctx.lineWidth = Math.max(1.5, r * 0.22);
+  // 极细外环增加对比
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = Math.max(0.5, r * 0.15);
   ctx.stroke();
 
   ctx.restore();
 }
 
 /**
- * GuideLine / AxisLine — 结构线（肩线、髋线、脊柱线）
+ * StructureLine — 极细骨骼连线（AlignSnow 风格）
+ * strokeWidth 默认 1.0（比原来 3.0 小了 3 倍）
  */
 export function drawStructureLine(
   ctx: Ctx,
   x1: number, y1: number, x2: number, y2: number,
   W: number, H: number,
   color: string,
-  strokeWidth: number = 3,
+  strokeWidth: number = 1.0,
   opacity: number = 0.85,
-  dashed: boolean = false
+  dashed: boolean = false,
 ) {
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.strokeStyle = color;
   ctx.lineWidth = strokeWidth * (Math.min(W, H) / 320);
   ctx.lineCap = 'round';
-  ctx.shadowColor = 'rgba(0,0,0,0.65)';
-  ctx.shadowBlur = 5;
+  ctx.shadowColor = 'rgba(0,0,0,0.40)';
+  ctx.shadowBlur = 2;
 
-  if (dashed) ctx.setLineDash([strokeWidth * 2.5, strokeWidth * 1.5]);
+  if (dashed) ctx.setLineDash([strokeWidth * 2, strokeWidth * 2]);
   ctx.beginPath();
   ctx.moveTo(x1 * W, y1 * H);
   ctx.lineTo(x2 * W, y2 * H);
@@ -102,16 +92,15 @@ export function drawStructureLine(
 }
 
 /**
- * CurvePath — 平滑曲线路径（手路径、杆头轨迹、参考图 Image 2）
- * 贝塞尔曲线，末端有运动圆点
+ * CurvePath — 路径曲线（手/杆头轨迹）
  */
 export function drawCurvePath(
   ctx: Ctx,
   points: Pt[],
   W: number, H: number,
   color: string,
-  strokeWidth: number = 3.5,
-  opacity: number = 0.88
+  strokeWidth: number = 1.5,
+  opacity: number = 0.80,
 ) {
   if (points.length < 2) return;
 
@@ -124,8 +113,8 @@ export function drawCurvePath(
   ctx.lineWidth = lw;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.shadowColor = 'rgba(0,0,0,0.60)';
-  ctx.shadowBlur = 6;
+  ctx.shadowColor = 'rgba(0,0,0,0.40)';
+  ctx.shadowBlur = 2;
 
   ctx.beginPath();
   const [sx, sy] = px(points[0]);
@@ -140,10 +129,10 @@ export function drawCurvePath(
   ctx.lineTo(last[0], last[1]);
   ctx.stroke();
 
-  // Terminal dot — shows current position
+  // 末端极小点
   ctx.shadowBlur = 0;
   ctx.beginPath();
-  ctx.arc(last[0], last[1], lw * 2, 0, Math.PI * 2);
+  ctx.arc(last[0], last[1], lw * 1.5, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
 
@@ -151,7 +140,7 @@ export function drawCurvePath(
 }
 
 /**
- * ArrowMarker — 方向箭头（参考图 Image 3：该往哪移动）
+ * Arrow — 方向箭头
  */
 export function drawArrow(
   ctx: Ctx,
@@ -159,14 +148,14 @@ export function drawArrow(
   toX: number, toY: number,
   W: number, H: number,
   color: string,
-  strokeWidth: number = 3,
-  opacity: number = 0.92
+  strokeWidth: number = 1.5,
+  opacity: number = 0.90,
 ) {
   const fx = fromX * W, fy = fromY * H;
   const tx = toX * W, ty = toY * H;
   const angle = Math.atan2(ty - fy, tx - fx);
   const dist = Math.hypot(tx - fx, ty - fy);
-  const headLen = Math.min(22, dist * 0.42);
+  const headLen = Math.min(14, dist * 0.38);
   const lw = strokeWidth * (Math.min(W, H) / 320);
 
   ctx.save();
@@ -175,34 +164,26 @@ export function drawArrow(
   ctx.fillStyle = color;
   ctx.lineWidth = lw;
   ctx.lineCap = 'round';
-  ctx.shadowColor = 'rgba(0,0,0,0.70)';
-  ctx.shadowBlur = 6;
+  ctx.shadowColor = 'rgba(0,0,0,0.50)';
+  ctx.shadowBlur = 3;
 
-  // Shaft
   ctx.beginPath();
   ctx.moveTo(fx, fy);
   ctx.lineTo(tx, ty);
   ctx.stroke();
 
-  // Head
   ctx.shadowBlur = 0;
   ctx.beginPath();
   ctx.moveTo(tx, ty);
-  ctx.lineTo(
-    tx - headLen * Math.cos(angle - 0.40),
-    ty - headLen * Math.sin(angle - 0.40)
-  );
-  ctx.lineTo(
-    tx - headLen * Math.cos(angle + 0.40),
-    ty - headLen * Math.sin(angle + 0.40)
-  );
+  ctx.lineTo(tx - headLen * Math.cos(angle - 0.40), ty - headLen * Math.sin(angle - 0.40));
+  ctx.lineTo(tx - headLen * Math.cos(angle + 0.40), ty - headLen * Math.sin(angle + 0.40));
   ctx.closePath();
   ctx.fill();
   ctx.restore();
 }
 
 /**
- * LabelTag — 文字标签（尽量少用，最多每帧 2 个）
+ * Label — 文字标签
  */
 export function drawLabel(
   ctx: Ctx,
@@ -210,56 +191,52 @@ export function drawLabel(
   W: number, H: number,
   text: string,
   color: string,
-  fontSize: number = 12,
-  opacity: number = 0.92
+  fontSize: number = 10,
+  opacity: number = 0.88,
 ) {
   const size = fontSize * Math.min(W, H) / 320;
   ctx.save();
   ctx.globalAlpha = opacity;
-  ctx.font = `800 ${size}px "DM Sans", system-ui, sans-serif`;
+  ctx.font = `700 ${size}px "DM Sans", system-ui, sans-serif`;
   ctx.textAlign = 'center';
-  ctx.shadowColor = 'rgba(0,0,0,0.95)';
-  ctx.shadowBlur = 7;
+  ctx.shadowColor = 'rgba(0,0,0,0.90)';
+  ctx.shadowBlur = 5;
   ctx.fillStyle = color;
   ctx.fillText(text, x * W, y * H);
   ctx.restore();
 }
 
 /**
- * CorrectBadge / WrongBadge — 大对勾 / 大错号
+ * Badge — 对勾/错号
  */
 export function drawBadge(
   ctx: Ctx,
   x: number, y: number,
   W: number, H: number,
   variant: 'correct' | 'wrong',
-  opacity: number = 0.9
+  opacity: number = 0.88,
 ) {
   const px = x * W, py = y * H;
-  const r = Math.min(W, H) * 0.055;
+  const r = Math.min(W, H) * 0.032;
 
   ctx.save();
   ctx.globalAlpha = opacity;
 
-  // Circle background
   ctx.beginPath();
   ctx.arc(px, py, r, 0, Math.PI * 2);
   ctx.fillStyle = variant === 'correct' ? COLORS.green : COLORS.red;
   ctx.fill();
 
-  // Symbol
   ctx.strokeStyle = '#fff';
-  ctx.lineWidth = r * 0.24;
+  ctx.lineWidth = r * 0.22;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.beginPath();
   if (variant === 'correct') {
-    // ✓
     ctx.moveTo(px - r * 0.5, py);
     ctx.lineTo(px - r * 0.1, py + r * 0.4);
     ctx.lineTo(px + r * 0.55, py - r * 0.35);
   } else {
-    // ✗
     ctx.moveTo(px - r * 0.4, py - r * 0.4);
     ctx.lineTo(px + r * 0.4, py + r * 0.4);
     ctx.moveTo(px + r * 0.4, py - r * 0.4);
@@ -270,15 +247,15 @@ export function drawBadge(
 }
 
 /**
- * HighlightZone — 区域高亮
+ * Zone — 区域高亮
  */
 export function drawZone(
   ctx: Ctx,
   points: Pt[],
   W: number, H: number,
   color: string,
-  fillOpacity: number = 0.12,
-  strokeOpacity: number = 0.5
+  fillOpacity: number = 0.08,
+  strokeOpacity: number = 0.35,
 ) {
   if (points.length < 3) return;
   ctx.save();
@@ -293,52 +270,47 @@ export function drawZone(
   ctx.fill();
   ctx.globalAlpha = strokeOpacity;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
 }
 
-/* ══════════════════════════════════════════════
-   MAIN DISPATCHER
-   单个 OverlayElement → 对应绘图函数
-══════════════════════════════════════════════ */
-
+/* ══ 主分发函数 ══ */
 export function renderElement(
   ctx: Ctx,
   el: OverlayElement,
   W: number, H: number,
-  layer: string = 'all'
+  layer: string = 'all',
 ) {
-  // Layer filter
   if (el.layer && el.layer !== 'all' && layer !== 'all' && el.layer !== layer) return;
 
   const color = resolveColor(el.color);
-  const opacity = el.opacity ?? 0.9;
+  const opacity = el.opacity ?? 0.88;
 
   switch (el.type) {
     case 'line': {
       const e = el as LineElement;
-      drawStructureLine(ctx, e.x1, e.y1, e.x2, e.y2, W, H, color, e.strokeWidth ?? 3, opacity, e.dashed);
+      drawStructureLine(ctx, e.x1, e.y1, e.x2, e.y2, W, H, color, e.strokeWidth ?? 1.0, opacity, e.dashed);
       break;
     }
     case 'curve': {
       const e = el as CurveElement;
-      drawCurvePath(ctx, e.points, W, H, color, e.strokeWidth ?? 3.5, opacity);
+      drawCurvePath(ctx, e.points, W, H, color, e.strokeWidth ?? 1.5, opacity);
       break;
     }
     case 'arrow': {
       const e = el as ArrowElement;
-      drawArrow(ctx, e.from.x, e.from.y, e.to.x, e.to.y, W, H, color, e.strokeWidth ?? 3, opacity);
+      drawArrow(ctx, e.from.x, e.from.y, e.to.x, e.to.y, W, H, color, e.strokeWidth ?? 1.5, opacity);
       break;
     }
     case 'dot': {
       const e = el as DotElement;
-      drawJointDot(ctx, e.x, e.y, W, H, color, e.radius ?? 0.028, opacity);
+      drawJointDot(ctx, e.x, e.y, W, H, color, e.radius ?? 0.008, opacity);
       break;
     }
     case 'label': {
       const e = el as LabelElement;
-      drawLabel(ctx, e.x, e.y, W, H, e.text, color, e.size ?? 12, opacity);
+      drawLabel(ctx, e.x, e.y, W, H, e.text, color, e.size ?? 10, opacity);
       break;
     }
     case 'badge': {
@@ -348,20 +320,17 @@ export function renderElement(
     }
     case 'zone': {
       const e = el as ZoneElement;
-      drawZone(ctx, e.points, W, H, color, e.fillOpacity ?? 0.12);
+      drawZone(ctx, e.points, W, H, color, e.fillOpacity ?? 0.08);
       break;
     }
   }
 }
 
-/**
- * 渲染一帧的所有 elements
- */
 export function renderFrame(
   ctx: Ctx,
   elements: OverlayElement[],
   W: number, H: number,
-  layer: string = 'all'
+  layer: string = 'all',
 ) {
   ctx.clearRect(0, 0, W, H);
   for (const el of elements) {
