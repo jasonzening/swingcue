@@ -2,36 +2,29 @@
  * playerSync.ts
  *
  * 根据当前视频时间从 OverlayTimeline 中取 overlay 元素。
- * 核心升级：帧间线性插值 → 4fps keypoint 数据实现 60fps 平滑追踪。
+ * 支持帧间线性插值，实现 60fps 平滑追踪。
  */
-import type { OverlayTimeline, OverlayFrame, OverlayElement, PhaseMarkers } from '@/types/analysis';
+import type { OverlayTimeline, OverlayElement, PhaseMarkers } from '@/types/analysis';
+import type { DotElement, LineElement, ArrowElement } from '@/types/analysis';
 
 /* ── 线性插值 ── */
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 function interpolateElement(a: OverlayElement, b: OverlayElement, t: number): OverlayElement {
   if (a.type === 'dot' && b.type === 'dot') {
-    const ae = a as { x: number; y: number } & OverlayElement;
-    const be = b as { x: number; y: number } & OverlayElement;
-    return { ...ae, x: lerp(ae.x, be.x, t), y: lerp(ae.y, be.y, t) };
+    const ae = a as DotElement;
+    const be = b as DotElement;
+    return { ...ae, x: lerp(ae.x, be.x, t), y: lerp(ae.y, be.y, t) } as OverlayElement;
   }
   if (a.type === 'line' && b.type === 'line') {
-    const ae = a as { x1: number; y1: number; x2: number; y2: number } & OverlayElement;
-    const be = b as { x1: number; y1: number; x2: number; y2: number } & OverlayElement;
-    return {
-      ...ae,
-      x1: lerp(ae.x1, be.x1, t), y1: lerp(ae.y1, be.y1, t),
-      x2: lerp(ae.x2, be.x2, t), y2: lerp(ae.y2, be.y2, t),
-    };
+    const ae = a as LineElement;
+    const be = b as LineElement;
+    return { ...ae, x1: lerp(ae.x1, be.x1, t), y1: lerp(ae.y1, be.y1, t), x2: lerp(ae.x2, be.x2, t), y2: lerp(ae.y2, be.y2, t) } as OverlayElement;
   }
   if (a.type === 'arrow' && b.type === 'arrow') {
-    const ae = a as { from: {x:number;y:number}; to: {x:number;y:number} } & OverlayElement;
-    const be = b as { from: {x:number;y:number}; to: {x:number;y:number} } & OverlayElement;
-    return {
-      ...ae,
-      from: { x: lerp(ae.from.x, be.from.x, t), y: lerp(ae.from.y, be.from.y, t) },
-      to:   { x: lerp(ae.to.x,   be.to.x,   t), y: lerp(ae.to.y,   be.to.y,   t) },
-    };
+    const ae = a as ArrowElement;
+    const be = b as ArrowElement;
+    return { ...ae, from: { x: lerp(ae.from.x, be.from.x, t), y: lerp(ae.from.y, be.from.y, t) }, to: { x: lerp(ae.to.x, be.to.x, t), y: lerp(ae.to.y, be.to.y, t) } } as OverlayElement;
   }
   return t < 0.5 ? a : b;
 }
@@ -50,12 +43,12 @@ function interpolateFrames(aEls: OverlayElement[], bEls: OverlayElement[], t: nu
 }
 
 /**
- * getOverlayAtTime — 带插值的帧查找
- * 在两个 keypoint 帧之间做线性插值，实现平滑连续追踪
+ * getOverlayAtTime — 帧间线性插值
+ * 4fps keypoint 数据 + 60fps render loop = 平滑连续追踪
  */
 export function getOverlayAtTime(
   timeline: OverlayTimeline,
-  currentTime: number
+  currentTime: number,
 ): OverlayElement[] {
   const frames = timeline.frames;
   if (!frames.length) return [];
@@ -79,7 +72,7 @@ export function getOverlayAtTime(
 export function getCurrentPhase(
   phases: PhaseMarkers,
   currentTime: number,
-  duration: number
+  duration: number,
 ): 'setup' | 'top' | 'transition' | 'impact' | 'finish' {
   const normT = duration > 0 ? currentTime / duration : 0;
   const p = {
