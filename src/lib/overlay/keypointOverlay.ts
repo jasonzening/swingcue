@@ -1,11 +1,16 @@
 /**
  * keypointOverlay.ts
  *
- * 旋转盘核心设计原则：
- *   - 圆盘是肩膀/髋部连线旋转形成的平面
- *   - 连线（轴线）是核心，穿过圆盘中心延伸出去
- *   - 红绿两个圆盘大小完全相同，只有旋转角度不同
- *   - 红色 = 用户当前角度，绿色 = 正确水平角度
+ * 旋转盘核心原则：
+ *   - 圆盘大小固定不变（基于视频宽度的固定比例）
+ *   - 只有角度跟着肩膀/髋部连线实时变化
+ *   - 轴线穿过两端点并延伸到圆盘外侧
+ *   - 红色=当前，绿色=目标（更水平）
+ *
+ * 为什么用固定大小：
+ *   转身后从正面看肩宽像素变小（透视），
+ *   用动态宽度会导致圆盘忽大忽小。
+ *   正确做法：用视频宽度的固定比例作为圆盘大小。
  */
 
 import type { OverlayElement, KeypointFrame } from '@/types/analysis';
@@ -20,13 +25,10 @@ const uid = (p: string) => `${p}-${++_uid}`;
 
 const mkDot = (x: number, y: number, color: Color, r = 0.010, opacity = 0.95, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'dot', id: uid('d'), x, y, color, radius: r, opacity, layer });
-
 const mkLine = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 2.5, opacity = 0.92, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'line', id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
-
 const mkLabel = (x: number, y: number, text: string, color: Color = 'white', size = 10): OverlayElement =>
   ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.92 });
-
 const mkEllipse = (cx: number, cy: number, rx: number, ry: number, angle: number, color: Color, w = 3.5, opacity = 0.92, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'ellipse' as OverlayElement['type'], id: uid('e'), cx, cy, rx, ry, angle, color, strokeWidth: w, opacity, layer } as unknown as OverlayElement);
 
@@ -60,75 +62,65 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
 /**
  * buildRotationDisc
  *
- * 肩膀线是核心：
- *   - 以两端点为轴，椭圆表示旋转平面
- *   - 红色和绿色圆盘大小完全一样
- *   - 绿色只是更接近水平（正确旋转角度）
- *   - 轴线（穿越线）比圆盘长，是视觉核心
+ * @param leftPt   左端点（左肩/左髋）
+ * @param rightPt  右端点（右肩/右髋）
+ * @param fixedRx  固定长轴（归一化，不随转身变化）
+ * @param fixedRy  固定短轴
+ * @param label    标注文字
+ * @param layer    所属layer
  */
 function buildRotationDisc(
   leftPt: Pt,
   rightPt: Pt,
+  fixedRx: number,
+  fixedRy: number,
   label: string,
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
   const els: OverlayElement[] = [];
 
-  // 中心点与几何参数
+  // 圆盘中心 = 两端点中心
   const cx = (leftPt.x + rightPt.x) / 2;
   const cy = (leftPt.y + rightPt.y) / 2;
-  const dx = rightPt.x - leftPt.x;
-  const dy = rightPt.y - leftPt.y;
-  const angle = Math.atan2(dy, dx); // 实际旋转角度
-  const bodyWidth = Math.hypot(dx, dy);
 
-  // 圆盘尺寸（红绿完全相同）
-  const rx = bodyWidth * 1.08;  // 比肩宽大8%，延伸到两侧外
-  const ry = rx * 0.34;         // 厚度
+  // 旋转角度 = 两端点连线的角度（这是唯一会变化的参数）
+  const angle = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x);
 
-  // 轴线长度 = 比圆盘长30%（穿越并延伸出去）
-  const lineExt = rx * 1.32;
+  // 轴线长 = 比圆盘长30%（穿越圆盘延伸出去）
+  const lineExt = fixedRx * 1.32;
   const cosA = Math.cos(angle), sinA = Math.sin(angle);
 
-  // ── 🔴 红色：用户当前位置 ──
-  // 轴线（先画，视觉核心）
+  // ── 🔴 红色：当前位置 ──
   els.push(mkLine(
     cx - lineExt * cosA, cy - lineExt * sinA,
     cx + lineExt * cosA, cy + lineExt * sinA,
     'red', 2.5, 0.92, false, layer,
   ));
-  // 圆盘
-  els.push(mkEllipse(cx, cy, rx, ry, angle, 'red', 3.5, 0.90, layer));
-  // 两端关节点
+  els.push(mkEllipse(cx, cy, fixedRx, fixedRy, angle, 'red', 3.5, 0.90, layer));
   els.push(mkDot(leftPt.x,  leftPt.y,  'red', 0.011, 0.96, layer));
   els.push(mkDot(rightPt.x, rightPt.y, 'red', 0.011, 0.96, layer));
 
-  // ── 🟢 绿色：正确目标位置（同样大小，更水平）──
-  // 目标角度：从最近水平轴计算，减少65%倾斜
+  // ── 🟢 绿色：目标位置（更水平，同样大小）──
   const nearestH = Math.round(angle / Math.PI) * Math.PI;
   const tilt = angle - nearestH;
-  const targetAngle = nearestH + tilt * 0.35; // 比当前更平
+  const targetAngle = nearestH + tilt * 0.35;
 
-  // 绿色圆盘与红色大小完全相同
-  // 位置：沿垂直方向偏移一点点，让两个圆盘能被区分
-  const perpOffset = ry * 0.40; // 沿法线方向偏移
+  // 垂直偏移让两个圆盘分开（沿法线方向）
   const perpCos = -sinA, perpSin = cosA;
-  const tcx = cx + perpCos * perpOffset;
-  const tcy = cy + perpSin * perpOffset;
-
+  const tcx = cx + perpCos * fixedRy * 0.45;
+  const tcy = cy + perpSin * fixedRy * 0.45;
   const tCosA = Math.cos(targetAngle), tSinA = Math.sin(targetAngle);
-  // 绿色轴线
+
   els.push(mkLine(
     tcx - lineExt * tCosA, tcy - lineExt * tSinA,
     tcx + lineExt * tCosA, tcy + lineExt * tSinA,
     'green', 2.2, 0.85, false, layer,
   ));
-  // 绿色圆盘（大小与红色完全一致）
-  els.push(mkEllipse(tcx, tcy, rx, ry, targetAngle, 'green', 3.0, 0.82, layer));
+  els.push(mkEllipse(tcx, tcy, fixedRx, fixedRy, targetAngle, 'green', 3.0, 0.82, layer));
 
-  // 倾斜角度标注（从水平轴的倾斜度）
+  // 倾斜角度标注
   const tiltDeg = Math.round(Math.abs(tilt * 180 / Math.PI));
-  els.push(mkLabel(cx, cy - ry * 1.55, label + '  ' + tiltDeg + '°', 'white', 10));
+  els.push(mkLabel(cx, cy - fixedRy * 1.55, label + '  ' + tiltDeg + '°', 'white', 10));
 
   return els;
 }
@@ -144,11 +136,24 @@ export function generateSpecDrivenOverlayFrame(
   const pts = getKeypoints(kpFrame);
   const els: OverlayElement[] = [];
 
+  // ── 固定圆盘尺寸（归一化，相对于视频宽度）──
+  // 肩部：宽度 = 视频宽的 26%，厚度 = 宽度的 35%
+  const SHOULDER_RX = 0.26;
+  const SHOULDER_RY = SHOULDER_RX * 0.35;
+
+  // 髋部：比肩部稍窄
+  const HIP_RX = 0.20;
+  const HIP_RY = HIP_RX * 0.35;
+
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
-  if (ls && rs) els.push(...buildRotationDisc(ls, rs, 'SHOULDERS', 'body'));
+  if (ls && rs) {
+    els.push(...buildRotationDisc(ls, rs, SHOULDER_RX, SHOULDER_RY, 'SHOULDERS', 'body'));
+  }
 
   const lh = pts.leftHip, rh = pts.rightHip;
-  if (lh && rh) els.push(...buildRotationDisc(lh, rh, 'HIPS', 'club'));
+  if (lh && rh) {
+    els.push(...buildRotationDisc(lh, rh, HIP_RX, HIP_RY, 'HIPS', 'club'));
+  }
 
   return els;
 }
