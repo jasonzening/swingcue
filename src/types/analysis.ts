@@ -229,5 +229,6 @@ export interface TemplateInput {
   videoMetadata: VideoMetadata;
   phaseMarkers: PhaseMarkers;
   issue: MainIssueType;
+  viewType?: 'face_on' | 'down_the_line';
   keypointTimeline?: KeypointTimeline;
 }
