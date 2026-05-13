@@ -166,6 +166,7 @@ function buildBasicSkeleton(pts: Partial<Record<BodyPointName, Pt>>): OverlayEle
 /* ── 始终绘制的基础身体骨架（红点 + 红线）── */
 function buildFullBodySkeleton(pts: Partial<Record<BodyPointName, Pt>>): OverlayElement[] {
   const els: OverlayElement[] = [];
+  const DOT_R = 0.016;
 
   // 所有关键身体点 → 红色小圆点
   const bodyPoints: BodyPointName[] = [
@@ -174,11 +175,13 @@ function buildFullBodySkeleton(pts: Partial<Record<BodyPointName, Pt>>): Overlay
     'leftElbow', 'rightElbow',
     'leftWrist', 'rightWrist',
     'leftHip', 'rightHip',
+    'leftKnee', 'rightKnee',
+    'leftAnkle', 'rightAnkle',
     'gripCenter', 'hipCenter', 'shoulderCenter',
   ];
   for (const pn of bodyPoints) {
     const p = pts[pn];
-    if (p) els.push(mkDot(p.x, p.y, 'red', 0.022, 0.90));
+    if (p) els.push(mkDot(p.x, p.y, 'red', DOT_R, 0.90));
   }
 
   // 肩线
@@ -193,6 +196,11 @@ function buildFullBodySkeleton(pts: Partial<Record<BodyPointName, Pt>>): Overlay
   const sc = pts.shoulderCenter, hc = pts.hipCenter;
   if (sc && hc) els.push(mkLine(sc.x, sc.y, hc.x, hc.y, 'white', 1.8, 0.45, true));
 
+  // 头 → 双肩
+  const head = pts.headCenter;
+  if (head && ls) els.push(mkLine(head.x, head.y, ls.x, ls.y, 'red', 2.2, 0.80));
+  if (head && rs) els.push(mkLine(head.x, head.y, rs.x, rs.y, 'red', 2.2, 0.80));
+
   // 左臂链：左肩 → 左肘 → 左腕
   const le = pts.leftElbow, lw = pts.leftWrist;
   if (ls && le) els.push(mkLine(ls.x, ls.y, le.x, le.y, 'red', 2.2, 0.82));
@@ -202,6 +210,16 @@ function buildFullBodySkeleton(pts: Partial<Record<BodyPointName, Pt>>): Overlay
   const re = pts.rightElbow, rw = pts.rightWrist;
   if (rs && re) els.push(mkLine(rs.x, rs.y, re.x, re.y, 'red', 2.2, 0.82));
   if (re && rw) els.push(mkLine(re.x, re.y, rw.x, rw.y, 'red', 2.2, 0.82));
+
+  // 左腿链：左髋 → 左膝 → 左踝
+  const lk = pts.leftKnee, la = pts.leftAnkle;
+  if (lh && lk) els.push(mkLine(lh.x, lh.y, lk.x, lk.y, 'red', 2.2, 0.82));
+  if (lk && la) els.push(mkLine(lk.x, lk.y, la.x, la.y, 'red', 2.2, 0.82));
+
+  // 右腿链：右髋 → 右膝 → 右踝
+  const rk = pts.rightKnee, ra = pts.rightAnkle;
+  if (rh && rk) els.push(mkLine(rh.x, rh.y, rk.x, rk.y, 'red', 2.2, 0.82));
+  if (rk && ra) els.push(mkLine(rk.x, rk.y, ra.x, ra.y, 'red', 2.2, 0.82));
 
   // 双手中点（较大红点）
   const grip = pts.gripCenter;
