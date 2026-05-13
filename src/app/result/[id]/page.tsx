@@ -33,6 +33,7 @@ export default function ResultPage() {
   const [meta,     setMeta]     = useState<VideoMetadata>({ durationSec: 3, fps: 30, width: 640, height: 360 });
   const [filename, setFilename] = useState('');
   const [overlayTimeline, setOverlayTimeline] = useState<ReturnType<typeof generateOverlayTimeline> | null>(null);
+  const [dataSource, setDataSource] = useState<string>('unknown');
 
   useEffect(() => {
     async function load() {
@@ -68,7 +69,11 @@ export default function ResultPage() {
       setCue(ana.cue_text ?? '');
 
       // Build phase markers from stored data or estimate from duration
-      const dur = (ana.video_metadata_json as {durationSec?: number})?.durationSec ?? 3;
+      const vmJson = ana.video_metadata_json as {durationSec?: number; dataSource?: string} | null;
+      const dur = vmJson?.durationSec ?? 3;
+      const source = vmJson?.dataSource ?? 'stub';
+      setDataSource(source);
+
       const pm: PhaseMarkers = (ana.phase_markers_json as PhaseMarkers | null) ?? {
         setupTime: 0,
         topTime: dur * 0.50,
@@ -86,8 +91,18 @@ export default function ResultPage() {
       };
       setMeta(vm);
 
-      // Generate overlay timeline using the template system
-      const olt = generateOverlayTimeline({ phaseMarkers: pm, videoMetadata: vm, issue: issueType });
+      // Read stored keypoint timeline (real MediaPipe data if available)
+      const kpJson = ana.keypoint_timeline_json as { frames?: Array<Record<string, unknown>> } | null;
+      const viewType = (vid.view_type as 'face_on' | 'down_the_line') ?? 'face_on';
+
+      // Generate overlay timeline — will use PATH A if real keypoints exist
+      const olt = generateOverlayTimeline({
+        phaseMarkers: pm,
+        videoMetadata: vm,
+        issue: issueType,
+        viewType,
+        keypointTimeline: kpJson?.frames ? (kpJson as import('@/types/analysis').KeypointTimeline) : undefined,
+      });
       setOverlayTimeline(olt);
 
       setState('ready');
@@ -139,6 +154,7 @@ export default function ResultPage() {
           timeline={overlayTimeline}
           phases={phases}
           duration={meta.durationSec}
+          dataSource={dataSource}
         />
       ) : (
         <div className="no-vid">

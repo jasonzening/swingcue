@@ -52,7 +52,7 @@ function proportionalPhases(dur: number): PhaseMarkers {
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
 /* ── Call Python analysis service ── */
-async function callPythonAnalyzer(videoUrl: string): Promise<{
+async function callPythonAnalyzer(videoUrl: string, viewType: string = 'face_on'): Promise<{
   videoMetadata: VideoMetadata;
   phaseMarkers: PhaseMarkers;
   keypointTimeline: KeypointFrame[];
@@ -70,7 +70,7 @@ async function callPythonAnalyzer(videoUrl: string): Promise<{
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         video_url: videoUrl,
-        view_type: 'face_on',
+        view_type: viewType,
         sample_fps: 4.0,
       }),
       signal: AbortSignal.timeout(30_000), // 30 sec timeout
@@ -143,7 +143,7 @@ export async function POST(
   // Get video record
   const { data: video } = await supabase
     .from('swing_videos')
-    .select('id, status, storage_path, user_id')
+    .select('id, status, storage_path, user_id, view_type')
     .eq('id', videoId)
     .eq('user_id', user.id)
     .single();
@@ -167,6 +167,8 @@ export async function POST(
     processing_started_at: new Date().toISOString(),
   }).eq('id', videoId);
 
+  const viewType = video.view_type ?? 'face_on';
+
   let videoMetadata: VideoMetadata;
   let phaseMarkers: PhaseMarkers;
   let keypointTimeline: KeypointFrame[] = [];
@@ -182,7 +184,7 @@ export async function POST(
       .createSignedUrl(video.storage_path, 300); // 5 min expiry for analysis
 
     if (signedData?.signedUrl) {
-      const pythonResult = await callPythonAnalyzer(signedData.signedUrl);
+      const pythonResult = await callPythonAnalyzer(signedData.signedUrl, viewType);
 
       if (pythonResult) {
         videoMetadata    = pythonResult.videoMetadata;
@@ -218,6 +220,7 @@ export async function POST(
     phaseMarkers:   phaseMarkers!,
     videoMetadata:  videoMetadata!,
     issue:          detectedIssue!,
+    viewType,
     keypointTimeline: keypointTimeline.length > 0
       ? ({ frames: keypointTimeline } as KeypointTimeline)
       : undefined,

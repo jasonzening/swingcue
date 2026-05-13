@@ -18,6 +18,7 @@ interface Props {
   timeline: OverlayTimeline;
   phases: PhaseMarkers;        // in seconds
   duration: number;            // video duration in seconds
+  dataSource?: string;         // 'mediapipe' | 'stub' — dev indicator
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
@@ -39,7 +40,7 @@ const PHASE_BTNS: { key: keyof PhaseMarkers; label: string }[] = [
   { key: 'finishTime',     label: 'Finish' },
 ];
 
-export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur }: Props) {
+export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dataSource }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef    = useRef<number>(0);
@@ -169,6 +170,11 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur }: P
         {/* Badges */}
         <div className="sp-badges">
           <span className="sp-phase-badge">{phase.toUpperCase()}</span>
+          {dataSource && (
+            <span className={`sp-src-badge ${dataSource === 'mediapipe' ? 'sp-src-real' : 'sp-src-demo'}`}>
+              {dataSource === 'mediapipe' ? 'Real keypoints' : 'Demo overlay'}
+            </span>
+          )}
         </div>
         <div className="sp-layer-badge">{layerBadgeText()}</div>
 
@@ -269,6 +275,9 @@ const css = `
   /* ── Badges ── */
   .sp-badges { position:absolute; top:9px; left:10px; z-index:3; pointer-events:none; }
   .sp-phase-badge { display:inline-block; background:rgba(0,0,0,0.72); color:#a8f040; font-size:9px; font-weight:800; letter-spacing:.12em; padding:3px 9px; border-radius:100px; font-family:'DM Sans',system-ui; }
+  .sp-src-badge { display:inline-block; margin-left:6px; font-size:8px; font-weight:700; letter-spacing:.06em; padding:3px 8px; border-radius:100px; font-family:'DM Sans',system-ui; }
+  .sp-src-real { background:rgba(60,238,60,0.18); color:#3cee3c; }
+  .sp-src-demo { background:rgba(255,180,40,0.18); color:#ffb428; }
   .sp-layer-badge { position:absolute; top:9px; right:10px; display:inline-block; background:rgba(0,0,0,0.65); color:rgba(255,255,255,0.60); font-size:9px; font-weight:700; letter-spacing:.08em; padding:3px 9px; border-radius:100px; font-family:'DM Sans',system-ui; pointer-events:none; z-index:3; }
 
   /* ── Legend ── */

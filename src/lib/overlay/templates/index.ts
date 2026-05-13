@@ -137,15 +137,13 @@ function buildFallbackFrame(
 ══════════════════════════════════════ */
 export function generateOverlayTimeline(input: TemplateInput): OverlayTimeline {
   const {
-    phaseMarkers: phases, issue, keypointTimeline,
+    phaseMarkers: phases, issue, keypointTimeline, viewType: inputViewType,
   } = input;
 
   const kpFrames: KeypointFrame[] = keypointTimeline?.frames ?? [];
   const hasRealKeypoints = kpFrames.length >= 3;
 
-  // 视角：从 keypointTimeline 里没有，暂时默认 face_on
-  // 后续：从 swing_videos.view_type 字段传入
-  const viewType: ViewType = 'face_on';
+  const viewType: ViewType = (inputViewType as ViewType) ?? 'face_on';
 
   const phasePairs: [number, Phase][] = [
     [phases.setupTime,      'setup'],
