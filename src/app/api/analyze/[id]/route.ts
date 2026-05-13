@@ -1,13 +1,13 @@
 /**
  * analyze/[id]/route.ts
  *
- * 主分析 API。执行顺序：
- * 1. 获取视频 signed URL
- * 2. 调用 Python 分析服务（真实 MediaPipe 数据）
- * 3. 如果 Python 服务不可用，降级到 stub 数据
- * 4. 应用 Golf Intelligence Layer 确定主问题
- * 5. 生成 overlay timeline
- * 6. 写入 Supabase swing_analysis
+ * ä¸»åæ APIãæ§è¡é¡ºåºï¼
+ * 1. è·åè§é¢ signed URL
+ * 2. è°ç¨ Python åææå¡ï¼çå® MediaPipe æ°æ®ï¼
+ * 3. å¦æ Python æå¡ä¸å¯ç¨ï¼éçº§å° stub æ°æ®
+ * 4. åºç¨ Golf Intelligence Layer ç¡®å®ä¸»é®é¢
+ * 5. çæ overlay timeline
+ * 6. åå¥ Supabase swing_analysis
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -21,7 +21,7 @@ import type {
 
 const PYTHON_ANALYZER_URL = process.env.PYTHON_ANALYZER_URL ?? '';
 
-/* ── Stub data fallback ── */
+/* ââ Stub data fallback ââ */
 const STUBS: Array<{
   issue_type: MainIssueType;
   duration_estimate: number;
@@ -51,7 +51,7 @@ function proportionalPhases(dur: number): PhaseMarkers {
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
-/* ── Call Python analysis service ── */
+/* ââ Call Python analysis service ââ */
 async function callPythonAnalyzer(videoUrl: string, viewType: string = 'face_on'): Promise<{
   videoMetadata: VideoMetadata;
   phaseMarkers: PhaseMarkers;
@@ -60,7 +60,7 @@ async function callPythonAnalyzer(videoUrl: string, viewType: string = 'face_on'
   confidence: number;
 } | null> {
   if (!PYTHON_ANALYZER_URL) {
-    console.log('[analyze] PYTHON_ANALYZER_URL not set — using stub');
+    console.log('[analyze] PYTHON_ANALYZER_URL not set â using stub');
     return null;
   }
 
@@ -71,7 +71,7 @@ async function callPythonAnalyzer(videoUrl: string, viewType: string = 'face_on'
       body: JSON.stringify({
         video_url: videoUrl,
         view_type: viewType,
-        sample_fps: 4.0,
+        sample_fps: 10.0,
       }),
       signal: AbortSignal.timeout(30_000), // 30 sec timeout
     });
@@ -128,7 +128,7 @@ async function callPythonAnalyzer(videoUrl: string, viewType: string = 'face_on'
   }
 }
 
-/* ── Main API handler ── */
+/* ââ Main API handler ââ */
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -176,7 +176,7 @@ export async function POST(
   let issueConfidence: number;
   let dataSource = 'stub';
 
-  /* ── Try Python service ── */
+  /* ââ Try Python service ââ */
   if (PYTHON_ANALYZER_URL && video.storage_path) {
     // Get a signed URL for the Python service to download
     const { data: signedData } = await supabase.storage
@@ -198,7 +198,7 @@ export async function POST(
     }
   }
 
-  /* ── Fallback to stub if Python unavailable ── */
+  /* ââ Fallback to stub if Python unavailable ââ */
   if (dataSource === 'stub') {
     const stub = pickStub(videoId);
     const dur  = stub.duration_estimate;
@@ -212,10 +212,10 @@ export async function POST(
     console.log(`[analyze] Stub data used: ${detectedIssue}`);
   }
 
-  /* ── Golf Intelligence Layer ── */
+  /* ââ Golf Intelligence Layer ââ */
   const issueResult = getIssueResult(detectedIssue!, issueConfidence!);
 
-  /* ── Generate overlay timeline ── */
+  /* ââ Generate overlay timeline ââ */
   const overlayTimeline = generateOverlayTimeline({
     phaseMarkers:   phaseMarkers!,
     videoMetadata:  videoMetadata!,
@@ -226,7 +226,7 @@ export async function POST(
       : undefined,
   });
 
-  /* ── Write to Supabase ── */
+  /* ââ Write to Supabase ââ */
   try {
     const { data: analysis, error: insertErr } = await supabase
       .from('swing_analysis')
