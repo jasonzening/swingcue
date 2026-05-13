@@ -1,9 +1,9 @@
 /**
- * keypointOverlay.ts — 规范驱动的 overlay 生成器
+ * keypointOverlay.ts â è§èé©±å¨ç overlay çæå¨
  *
- * 严格按 bodyPointSpec / overlayLineSpec / issueDisplaySpec 生成 overlay。
- * 不再自由选点，不再随意连线。
- * 绿色目标点 = 真实当前点 + correction delta（基于规范）
+ * ä¸¥æ ¼æ bodyPointSpec / overlayLineSpec / issueDisplaySpec çæ overlayã
+ * ä¸åèªç±éç¹ï¼ä¸åéæè¿çº¿ã
+ * ç»¿è²ç®æ ç¹ = çå®å½åç¹ + correction deltaï¼åºäºè§èï¼
  */
 
 import type { OverlayElement, KeypointFrame } from '@/types/analysis';
@@ -18,7 +18,7 @@ import { getIssueDisplaySpec, filterPointsByPhase } from '@/lib/golf/issueDispla
 
 type Color = 'red' | 'green' | 'yellow' | 'white';
 
-/* ── delta 修正量 ── */
+/* ââ delta ä¿®æ­£é ââ */
 const DELTA = { small: 0.028, medium: 0.050, large: 0.078 } as const;
 
 export function applyCorrection(pt: Pt, dir: CorrectionDirection, mag: 'small'|'medium'|'large' = 'medium'): Pt {
@@ -41,21 +41,21 @@ export function applyCorrection(pt: Pt, dir: CorrectionDirection, mag: 'small'|'
   }
 }
 
-/* ── element builders ── */
+/* ââ element builders ââ */
 let _uid = 0;
 const uid = (p: string) => `${p}-${++_uid}`;
-const mkDot = (x: number, y: number, color: Color, r = 0.026, opacity = 0.94, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
+const mkDot = (x: number, y: number, color: Color, r = 0.007, opacity = 0.90, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'dot', id: uid('d'), x, y, color, radius: r, opacity, layer });
-const mkLine = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 2.8, opacity = 0.82, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
+const mkLine = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 1.0, opacity = 0.85, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'line', id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
 const mkArrow = (fx: number, fy: number, tx: number, ty: number): OverlayElement =>
-  ({ type: 'arrow', id: uid('a'), from: { x: fx, y: fy }, to: { x: tx, y: ty }, color: 'yellow', strokeWidth: 3, opacity: 0.90 });
+  ({ type: 'arrow', id: uid('a'), from: { x: fx, y: fy }, to: { x: tx, y: ty }, color: 'yellow', strokeWidth: 1.5, opacity: 0.90 });
 const mkCurve = (points: {x:number;y:number}[], color: Color, w = 3.5, opacity = 0.82): OverlayElement =>
   ({ type: 'curve', id: uid('c'), points, color, strokeWidth: w, opacity, layer: 'arms' });
 const mkLabel = (x: number, y: number, text: string, color: Color = 'white', size = 10): OverlayElement =>
   ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.80 });
 
-/* ── 从 KeypointFrame 解析规范点位（直接按名字映射，不走 MediaPipe 索引）── */
+/* ââ ä» KeypointFrame è§£æè§èç¹ä½ï¼ç´æ¥æåå­æ å°ï¼ä¸èµ° MediaPipe ç´¢å¼ï¼ââ */
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
   const result: Partial<Record<BodyPointName, Pt>> = {};
@@ -63,7 +63,7 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
   const toP = (pt?: { x: number; y: number; confidence?: number } | null): Pt | null =>
     pt ? { x: pt.x, y: pt.y, confidence: pt.confidence ?? 0.8 } : null;
 
-  // 直接按字段名赋值，置信度直接来自 Python 输出
+  // ç´æ¥æå­æ®µåèµå¼ï¼ç½®ä¿¡åº¦ç´æ¥æ¥èª Python è¾åº
   if (lm.head)          result.headCenter     = toP(lm.head)!;
   if (lm.leftShoulder)  result.leftShoulder   = toP(lm.leftShoulder)!;
   if (lm.rightShoulder) result.rightShoulder  = toP(lm.rightShoulder)!;
@@ -78,7 +78,7 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
   if (lm.leftAnkle)     result.leftAnkle      = toP(lm.leftAnkle)!;
   if (lm.rightAnkle)    result.rightAnkle     = toP(lm.rightAnkle)!;
 
-  // 派生点：直接算
+  // æ´¾çç¹ï¼ç´æ¥ç®
   const ls = result.leftShoulder, rs = result.rightShoulder;
   if (ls && rs) result.shoulderCenter = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2, confidence: 1 };
 
@@ -91,7 +91,7 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
   return result;
 }
 
-/* ── 结构线（两点都存在才画）── */
+/* ââ ç»æçº¿ï¼ä¸¤ç¹é½å­å¨æç»ï¼ââ */
 function buildStructureLine(
   lineName: StructureLineName,
   pts: Partial<Record<BodyPointName, Pt>>,
@@ -106,11 +106,11 @@ function buildStructureLine(
   for (let i = 0; i < valid.length - 1; i++) {
     els.push(mkLine(valid[i].x, valid[i].y, valid[i+1].x, valid[i+1].y, color, 2.8, opacity, dashed));
   }
-  valid.forEach(p => els.push(mkDot(p.x, p.y, color, 0.020, opacity)));
+  valid.forEach(p => els.push(mkDot(p.x, p.y, color, 0.006, opacity)));
   return els;
 }
 
-/* ── 绿色目标线（红点 + delta）── */
+/* ââ ç»¿è²ç®æ çº¿ï¼çº¢ç¹ + deltaï¼ââ */
 function buildGreenLine(
   lineName: StructureLineName,
   pts: Partial<Record<BodyPointName, Pt>>,
@@ -137,21 +137,21 @@ function buildGreenLine(
   return els;
 }
 
-/* ── impact 手臂三角结构 ── */
+/* ââ impact æèä¸è§ç»æ ââ */
 function buildArmTriangle(pts: Partial<Record<BodyPointName, Pt>>, color: Color, opacity: number): OverlayElement[] {
   const ls = pts.leftShoulder, rs = pts.rightShoulder, grip = pts.gripCenter;
   if (!ls || !rs || !grip) return [];
   return [
-    mkLine(ls.x, ls.y, grip.x, grip.y, color, 3.0, opacity),
-    mkLine(rs.x, rs.y, grip.x, grip.y, color, 3.0, opacity),
-    mkLine(ls.x, ls.y, rs.x, rs.y, color, 2.5, opacity * 0.80),
-    mkDot(ls.x, ls.y, color, 0.026, opacity),
-    mkDot(rs.x, rs.y, color, 0.026, opacity),
-    mkDot(grip.x, grip.y, color, 0.032, opacity),
+    mkLine(ls.x, ls.y, grip.x, grip.y, color, 1.2, opacity),
+    mkLine(rs.x, rs.y, grip.x, grip.y, color, 1.2, opacity),
+    mkLine(ls.x, ls.y, rs.x, rs.y, color, 1.0, opacity * 0.80),
+    mkDot(ls.x, ls.y, color, 0.008, opacity),
+    mkDot(rs.x, rs.y, color, 0.008, opacity),
+    mkDot(grip.x, grip.y, color, 0.010, opacity),
   ];
 }
 
-/* ── 基础骨架 fallback ── */
+/* ââ åºç¡éª¨æ¶ fallback ââ */
 function buildBasicSkeleton(pts: Partial<Record<BodyPointName, Pt>>): OverlayElement[] {
   const els: OverlayElement[] = [];
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
@@ -163,12 +163,12 @@ function buildBasicSkeleton(pts: Partial<Record<BodyPointName, Pt>>): OverlayEle
   return els;
 }
 
-/* ── 始终绘制的基础身体骨架（红点 + 红线）── */
+/* ââ å§ç»ç»å¶çåºç¡èº«ä½éª¨æ¶ï¼çº¢ç¹ + çº¢çº¿ï¼ââ */
 function buildFullBodySkeleton(pts: Partial<Record<BodyPointName, Pt>>): OverlayElement[] {
   const els: OverlayElement[] = [];
-  const DOT_R = 0.016;
+  const DOT_R = 0.007;
 
-  // 所有关键身体点 → 红色小圆点
+  // ææå³é®èº«ä½ç¹ â çº¢è²å°åç¹
   const bodyPoints: BodyPointName[] = [
     'headCenter',
     'leftShoulder', 'rightShoulder',
@@ -184,53 +184,53 @@ function buildFullBodySkeleton(pts: Partial<Record<BodyPointName, Pt>>): Overlay
     if (p) els.push(mkDot(p.x, p.y, 'red', DOT_R, 0.90));
   }
 
-  // 肩线
+  // è©çº¿
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
-  if (ls && rs) els.push(mkLine(ls.x, ls.y, rs.x, rs.y, 'red', 2.5, 0.85));
+  if (ls && rs) els.push(mkLine(ls.x, ls.y, rs.x, rs.y, 'red', 1.0, 0.88));
 
-  // 髋线
+  // é«çº¿
   const lh = pts.leftHip, rh = pts.rightHip;
-  if (lh && rh) els.push(mkLine(lh.x, lh.y, rh.x, rh.y, 'red', 2.5, 0.80));
+  if (lh && rh) els.push(mkLine(lh.x, lh.y, rh.x, rh.y, 'red', 1.0, 0.85));
 
-  // 脊柱线（白色半透明）
+  // èæ±çº¿ï¼ç½è²åéæï¼
   const sc = pts.shoulderCenter, hc = pts.hipCenter;
-  if (sc && hc) els.push(mkLine(sc.x, sc.y, hc.x, hc.y, 'white', 1.8, 0.45, true));
+  if (sc && hc) els.push(mkLine(sc.x, sc.y, hc.x, hc.y, 'white', 0.8, 0.40, true));
 
-  // 头 → 双肩
+  // å¤´ â åè©
   const head = pts.headCenter;
-  if (head && ls) els.push(mkLine(head.x, head.y, ls.x, ls.y, 'red', 2.2, 0.80));
-  if (head && rs) els.push(mkLine(head.x, head.y, rs.x, rs.y, 'red', 2.2, 0.80));
+  if (head && ls) els.push(mkLine(head.x, head.y, ls.x, ls.y, 'red', 1.0, 0.82));
+  if (head && rs) els.push(mkLine(head.x, head.y, rs.x, rs.y, 'red', 1.0, 0.82));
 
-  // 左臂链：左肩 → 左肘 → 左腕
+  // å·¦èé¾ï¼å·¦è© â å·¦è â å·¦è
   const le = pts.leftElbow, lw = pts.leftWrist;
-  if (ls && le) els.push(mkLine(ls.x, ls.y, le.x, le.y, 'red', 2.2, 0.82));
-  if (le && lw) els.push(mkLine(le.x, le.y, lw.x, lw.y, 'red', 2.2, 0.82));
+  if (ls && le) els.push(mkLine(ls.x, ls.y, le.x, le.y, 'red', 1.0, 0.85));
+  if (le && lw) els.push(mkLine(le.x, le.y, lw.x, lw.y, 'red', 1.0, 0.85));
 
-  // 右臂链：右肩 → 右肘 → 右腕
+  // å³èé¾ï¼å³è© â å³è â å³è
   const re = pts.rightElbow, rw = pts.rightWrist;
-  if (rs && re) els.push(mkLine(rs.x, rs.y, re.x, re.y, 'red', 2.2, 0.82));
-  if (re && rw) els.push(mkLine(re.x, re.y, rw.x, rw.y, 'red', 2.2, 0.82));
+  if (rs && re) els.push(mkLine(rs.x, rs.y, re.x, re.y, 'red', 1.0, 0.85));
+  if (re && rw) els.push(mkLine(re.x, re.y, rw.x, rw.y, 'red', 1.0, 0.85));
 
-  // 左腿链：左髋 → 左膝 → 左踝
+  // å·¦è¿é¾ï¼å·¦é« â å·¦è â å·¦è¸
   const lk = pts.leftKnee, la = pts.leftAnkle;
-  if (lh && lk) els.push(mkLine(lh.x, lh.y, lk.x, lk.y, 'red', 2.2, 0.82));
-  if (lk && la) els.push(mkLine(lk.x, lk.y, la.x, la.y, 'red', 2.2, 0.82));
+  if (lh && lk) els.push(mkLine(lh.x, lh.y, lk.x, lk.y, 'red', 1.0, 0.85));
+  if (lk && la) els.push(mkLine(lk.x, lk.y, la.x, la.y, 'red', 1.0, 0.85));
 
-  // 右腿链：右髋 → 右膝 → 右踝
+  // å³è¿é¾ï¼å³é« â å³è â å³è¸
   const rk = pts.rightKnee, ra = pts.rightAnkle;
-  if (rh && rk) els.push(mkLine(rh.x, rh.y, rk.x, rk.y, 'red', 2.2, 0.82));
-  if (rk && ra) els.push(mkLine(rk.x, rk.y, ra.x, ra.y, 'red', 2.2, 0.82));
+  if (rh && rk) els.push(mkLine(rh.x, rh.y, rk.x, rk.y, 'red', 1.0, 0.85));
+  if (rk && ra) els.push(mkLine(rk.x, rk.y, ra.x, ra.y, 'red', 1.0, 0.85));
 
-  // 双手中点（较大红点）
+  // åæä¸­ç¹ï¼è¾å¤§çº¢ç¹ï¼
   const grip = pts.gripCenter;
-  if (grip) els.push(mkDot(grip.x, grip.y, 'red', 0.030, 0.95));
+  if (grip) els.push(mkDot(grip.x, grip.y, 'red', 0.010, 0.92));
 
   return els;
 }
 
-/* ══════════════════════════════════════
-   主函数：规范驱动的 overlay frame 生成
-══════════════════════════════════════ */
+/* ââââââââââââââââââââââââââââââââââââââ
+   ä¸»å½æ°ï¼è§èé©±å¨ç overlay frame çæ
+ââââââââââââââââââââââââââââââââââââââ */
 export function generateSpecDrivenOverlayFrame(
   issue: MainIssueType,
   viewType: ViewType,
@@ -242,44 +242,44 @@ export function generateSpecDrivenOverlayFrame(
   const elements: OverlayElement[] = [];
   const pts = getKeypoints(kpFrame);
 
-  // ── STEP 1: 始终渲染完整身体骨架（红点 + 红线）──
+  // ââ STEP 1: å§ç»æ¸²æå®æ´èº«ä½éª¨æ¶ï¼çº¢ç¹ + çº¢çº¿ï¼ââ
   elements.push(...buildFullBodySkeleton(pts));
 
   const displaySpec = getIssueDisplaySpec(issue, viewType);
-  if (!displaySpec) return elements; // 没有 spec 就只返回骨架
+  if (!displaySpec) return elements; // æ²¡æ spec å°±åªè¿åéª¨æ¶
 
   const phasePoints = filterPointsByPhase(displaySpec, phase);
 
-  // ── STEP 2: Issue 专项 overlay（绿色目标 + 箭头）──
-  // 辅助线（白色淡）
+  // ââ STEP 2: Issue ä¸é¡¹ overlayï¼ç»¿è²ç®æ  + ç®­å¤´ï¼ââ
+  // è¾å©çº¿ï¼ç½è²æ·¡ï¼
   for (const ln of displaySpec.auxiliaryLines) {
     elements.push(...buildStructureLine(ln, pts, 'white', 0.42, false));
   }
 
-  // 必须显示的红色结构线
+  // å¿é¡»æ¾ç¤ºççº¢è²ç»æçº¿
   for (const ln of displaySpec.mustShowLines) {
     elements.push(...buildStructureLine(ln, pts, 'red', 0.85, false));
   }
 
-  // 绿色目标线（仅当有点需要 showGreen 时）
+  // ç»¿è²ç®æ çº¿ï¼ä»å½æç¹éè¦ showGreen æ¶ï¼
   if (phasePoints.some(p => p.showGreen)) {
     for (const ln of displaySpec.mustShowLines) {
       elements.push(...buildGreenLine(ln, pts, phasePoints));
     }
   }
 
-  // 每个规范点位：红点 + 绿点 + 箭头
+  // æ¯ä¸ªè§èç¹ä½ï¼çº¢ç¹ + ç»¿ç¹ + ç®­å¤´
   for (const ps of phasePoints) {
     const redPt = pts[ps.point];
     if (!redPt) continue;
 
     if (ps.showRed) {
-      elements.push(mkDot(redPt.x, redPt.y, 'red', ps.priority === 'must' ? 0.028 : 0.022, 0.95));
+      elements.push(mkDot(redPt.x, redPt.y, 'red', ps.priority === 'must' ? 0.009 : 0.007, 0.95));
     }
 
     if (ps.showGreen && ps.greenDirection) {
       const greenPt = applyCorrection(redPt, ps.greenDirection, ps.greenMagnitude ?? 'medium');
-      elements.push(mkDot(greenPt.x, greenPt.y, 'green', 0.024, 0.88));
+      elements.push(mkDot(greenPt.x, greenPt.y, 'green', 0.008, 0.88));
 
       if (ps.showArrow && Math.hypot(greenPt.x - redPt.x, greenPt.y - redPt.y) > 0.012) {
         elements.push(mkArrow(redPt.x, redPt.y, greenPt.x, greenPt.y));
@@ -287,7 +287,7 @@ export function generateSpecDrivenOverlayFrame(
     }
   }
 
-  // impact 手臂三角
+  // impact æèä¸è§
   if (displaySpec.showImpactTriangle && phase === 'impact') {
     elements.push(...buildArmTriangle(pts, 'red', 0.82));
     const grip = pts.gripCenter;
@@ -297,18 +297,18 @@ export function generateSpecDrivenOverlayFrame(
     }
   }
 
-  // 历史路径
+  // åå²è·¯å¾
   if (historyPts && historyPts.length >= 2) {
     elements.push(mkCurve(historyPts, 'red', 3.0, 0.70));
   }
 
-  // 阶段标签
+  // é¶æ®µæ ç­¾
   elements.push(mkLabel(0.50, 0.06, phase.toUpperCase(), 'white', 10));
 
   return elements;
 }
 
-/* ── 路径追踪：获取当前帧追踪点坐标 ── */
+/* ââ è·¯å¾è¿½è¸ªï¼è·åå½åå¸§è¿½è¸ªç¹åæ  ââ */
 export function getTrackedPoint(
   issue: MainIssueType, viewType: ViewType, kpFrame: KeypointFrame,
 ): { x: number; y: number } | null {
@@ -319,7 +319,7 @@ export function getTrackedPoint(
   return pt ? { x: pt.x, y: pt.y } : null;
 }
 
-/* ── nearest-frame 查找 ── */
+/* ââ nearest-frame æ¥æ¾ ââ */
 export function findNearestFrame(frames: KeypointFrame[], time: number): KeypointFrame | null {
   if (!frames.length) return null;
   let best = frames[0], bestDist = Math.abs(time - best.time);
