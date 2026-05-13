@@ -1,16 +1,57 @@
 /**
  * playerSync.ts
  *
- * 根据当前视频时间（秒）从 OverlayTimeline 中取对应的 overlay 元素。
- *
- * Phase 1：最近时间片匹配（离散帧）
- * Phase 2：将在这里加入线性插值，不影响调用方
+ * 根据当前视频时间从 OverlayTimeline 中取 overlay 元素。
+ * 核心升级：帧间线性插值 → 4fps keypoint 数据实现 60fps 平滑追踪。
  */
 import type { OverlayTimeline, OverlayFrame, OverlayElement, PhaseMarkers } from '@/types/analysis';
 
+/* ── 线性插值 ── */
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+function interpolateElement(a: OverlayElement, b: OverlayElement, t: number): OverlayElement {
+  if (a.type === 'dot' && b.type === 'dot') {
+    const ae = a as { x: number; y: number } & OverlayElement;
+    const be = b as { x: number; y: number } & OverlayElement;
+    return { ...ae, x: lerp(ae.x, be.x, t), y: lerp(ae.y, be.y, t) };
+  }
+  if (a.type === 'line' && b.type === 'line') {
+    const ae = a as { x1: number; y1: number; x2: number; y2: number } & OverlayElement;
+    const be = b as { x1: number; y1: number; x2: number; y2: number } & OverlayElement;
+    return {
+      ...ae,
+      x1: lerp(ae.x1, be.x1, t), y1: lerp(ae.y1, be.y1, t),
+      x2: lerp(ae.x2, be.x2, t), y2: lerp(ae.y2, be.y2, t),
+    };
+  }
+  if (a.type === 'arrow' && b.type === 'arrow') {
+    const ae = a as { from: {x:number;y:number}; to: {x:number;y:number} } & OverlayElement;
+    const be = b as { from: {x:number;y:number}; to: {x:number;y:number} } & OverlayElement;
+    return {
+      ...ae,
+      from: { x: lerp(ae.from.x, be.from.x, t), y: lerp(ae.from.y, be.from.y, t) },
+      to:   { x: lerp(ae.to.x,   be.to.x,   t), y: lerp(ae.to.y,   be.to.y,   t) },
+    };
+  }
+  return t < 0.5 ? a : b;
+}
+
+function interpolateFrames(aEls: OverlayElement[], bEls: OverlayElement[], t: number): OverlayElement[] {
+  if (!aEls.length || !bEls.length) return t < 0.5 ? aEls : bEls;
+  const len = Math.min(aEls.length, bEls.length);
+  const result: OverlayElement[] = [];
+  for (let i = 0; i < len; i++) {
+    const a = aEls[i], b = bEls[i];
+    result.push(a.type === b.type ? interpolateElement(a, b, t) : (t < 0.5 ? a : b));
+  }
+  if (aEls.length > len) result.push(...aEls.slice(len));
+  if (bEls.length > len) result.push(...bEls.slice(len));
+  return result;
+}
+
 /**
- * 从 timeline 中找到当前时间最近的帧，返回它的 elements。
- * 如果相邻帧之间有过渡区（frac > 0.4），将两帧 elements 合并渲染。
+ * getOverlayAtTime — 带插值的帧查找
+ * 在两个 keypoint 帧之间做线性插值，实现平滑连续追踪
  */
 export function getOverlayAtTime(
   timeline: OverlayTimeline,
@@ -19,33 +60,22 @@ export function getOverlayAtTime(
   const frames = timeline.frames;
   if (!frames.length) return [];
 
-  // 边界情况
   if (currentTime <= frames[0].time) return frames[0].elements;
   if (currentTime >= frames[frames.length - 1].time) return frames[frames.length - 1].elements;
 
-  // 找到包含当前时间的区间
   for (let i = 0; i < frames.length - 1; i++) {
     const a = frames[i];
     const b = frames[i + 1];
     if (currentTime >= a.time && currentTime <= b.time) {
       const span = b.time - a.time;
       const frac = span > 0 ? (currentTime - a.time) / span : 0;
-
-      // 过渡前半段只显示 a 帧
-      if (frac < 0.45) return a.elements;
-      // 过渡后半段混合显示（透明度渐变由 renderer 处理）
-      if (frac < 0.55) return [...a.elements, ...b.elements.map(el => ({ ...el, opacity: (el.opacity ?? 0.9) * ((frac - 0.45) / 0.1) }))];
-      // 后半段只显示 b 帧
-      return b.elements;
+      return interpolateFrames(a.elements, b.elements, frac);
     }
   }
 
   return frames[frames.length - 1].elements;
 }
 
-/**
- * 根据当前时间判断挥杆阶段
- */
 export function getCurrentPhase(
   phases: PhaseMarkers,
   currentTime: number,
@@ -59,7 +89,6 @@ export function getCurrentPhase(
     impact: phases.impactTime / duration,
     finish: phases.finishTime / duration,
   };
-
   if (normT >= p.finish) return 'finish';
   if (normT >= p.impact) return 'impact';
   if (normT >= p.transition) return 'transition';
@@ -67,16 +96,10 @@ export function getCurrentPhase(
   return 'setup';
 }
 
-/**
- * 找到阶段对应的时间（秒）
- */
 export function getPhaseTime(phases: PhaseMarkers, phase: keyof PhaseMarkers): number {
   return phases[phase];
 }
 
-/**
- * 格式化时间显示
- */
 export function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
