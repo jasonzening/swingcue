@@ -1,11 +1,12 @@
 /**
- * keypointOverlay.ts
+ * keypointOverlay.ts — 旋转盘双色显示
  *
- * 极简双色旋转盘设计：
- *   红色 = 用户当前位置（椭圆 + 穿越线）
- *   绿色 = 专业高尔夫球手的正确位置（椭圆 + 穿越线）
- *   穿越线比椭圆长20%，延伸到身体两侧外面
- *   只显示肩部和髋部，其余全部隐藏
+ * 红色 = 当前位置（椭圆 + 穿越线）
+ * 绿色 = 正确目标位置（椭圆 + 穿越线）
+ *
+ * 关键修正：angle 可能接近 ±π（比如 180°），
+ * 目标角度不能简单乘以 0.4，否则绿色线会变成斜线。
+ * 正确做法：从最近的水平轴（0 或 ±π）计算偏斜量，再减少偏斜。
  */
 
 import type { OverlayElement, KeypointFrame } from '@/types/analysis';
@@ -18,15 +19,12 @@ type Color = 'red' | 'green' | 'yellow' | 'white';
 let _uid = 0;
 const uid = (p: string) => `${p}-${++_uid}`;
 
-const mkDot = (x: number, y: number, color: Color, r = 0.009, opacity = 0.95, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
+const mkDot = (x: number, y: number, color: Color, r = 0.010, opacity = 0.95, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'dot', id: uid('d'), x, y, color, radius: r, opacity, layer });
-
-const mkLine = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 2.0, opacity = 0.90, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
+const mkLine = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 2.2, opacity = 0.90, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'line', id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
-
 const mkLabel = (x: number, y: number, text: string, color: Color = 'white', size = 10): OverlayElement =>
-  ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.90 });
-
+  ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.92 });
 const mkEllipse = (cx: number, cy: number, rx: number, ry: number, angle: number, color: Color, w = 3.5, opacity = 0.92, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'ellipse' as OverlayElement['type'], id: uid('e'), cx, cy, rx, ry, angle, color, strokeWidth: w, opacity, layer } as unknown as OverlayElement);
 
@@ -59,79 +57,99 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
 }
 
 /**
- * buildRotationDisc — 旋转盘核心函数
+ * computeTargetAngle
  *
- * 根据两端点画旋转盘：
- *   - 红色椭圆 = 实际旋转平面（连接两端点）
- *   - 红色穿越线 = 沿旋转轴延伸，比椭圆长20%
- *   - 红色端点 = 两端小圆点
- *   - 绿色椭圆 = 目标旋转平面（更平/正确角度）
- *   - 绿色穿越线 = 绿色旋转轴
+ * 从 angle 计算"更水平"的目标角度。
+ * 关键：angle 可能是任意弧度，需要找到最近的水平轴（0 或 ±π），
+ * 然后在该轴附近减少倾斜量（倾斜量乘以 0.35）。
  *
- * 绿色目标的计算逻辑：
- *   高尔夫标准：address时肩膀应接近水平，
- *   倾斜角应比用户更平（偏向水平轴）
+ * 例子：
+ *   angle =  π  (180°) → nearestH = π,  tilt = 0  → targetAngle = π   ✅
+ *   angle = 2.9 (166°) → nearestH = π,  tilt = 2.9-π ≈ -0.24 → targetAngle = π + (-0.24 × 0.35) ≈ 3.05 ✅
+ *   angle = 0.3 ( 17°) → nearestH = 0,  tilt = 0.3 → targetAngle = 0 + 0.3×0.35 ≈ 0.11 ✅
+ */
+function computeTargetAngle(angle: number): number {
+  // 找最近的水平轴：0 或 ±π
+  const nearestH = Math.round(angle / Math.PI) * Math.PI;
+  // 当前对水平轴的偏斜量
+  const tilt = angle - nearestH;
+  // 目标：减少 65% 的偏斜（高尔夫球手旋转更平）
+  return nearestH + tilt * 0.35;
+}
+
+/**
+ * buildRotationDisc — 旋转盘核心
+ *
+ * 对于每组端点（左肩/右肩 或 左髋/右髋）：
+ *   1. 计算实际旋转角和椭圆参数
+ *   2. 画红色椭圆 + 红色穿越线（比椭圆长 25%）+ 红色端点
+ *   3. 计算目标旋转角（更水平）
+ *   4. 画绿色椭圆 + 绿色穿越线 + 无端点（避免干扰）
  */
 function buildRotationDisc(
-  leftPt: Pt, rightPt: Pt,
+  leftPt: Pt,
+  rightPt: Pt,
   label: string,
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
   const els: OverlayElement[] = [];
 
-  // ── 当前实际位置（红色）──
+  // ── 几何计算 ──
   const cx = (leftPt.x + rightPt.x) / 2;
   const cy = (leftPt.y + rightPt.y) / 2;
   const dx = rightPt.x - leftPt.x;
   const dy = rightPt.y - leftPt.y;
-  const angle = Math.atan2(dy, dx); // 实际旋转角度（弧度）
-  const width = Math.hypot(dx, dy); // 两端点距离
+  const angle = Math.atan2(dy, dx);
+  const bodyWidth = Math.hypot(dx, dy);
 
-  // 椭圆尺寸：比身体宽，延伸到外面
-  const rx = width * 1.05;  // 长轴比肩宽大10%
-  const ry = rx * 0.36;     // 短轴 = 36%长轴，有足够厚度
+  // 椭圆：比身体宽度更大，延伸到两侧外面
+  const rx = bodyWidth * 1.08;
+  const ry = rx * 0.35;
 
-  // 穿越线端点：沿旋转轴方向，比椭圆长20%
-  const lineExt = rx * 1.25;
+  // 穿越线端点（比椭圆长 25%）
+  const lineExt = rx * 1.28;
   const cosA = Math.cos(angle), sinA = Math.sin(angle);
-  const lx1 = cx - lineExt * cosA, ly1 = cy - lineExt * sinA;
-  const lx2 = cx + lineExt * cosA, ly2 = cy + lineExt * sinA;
 
-  // 红色穿越线（先画，椭圆覆盖在上面）
-  els.push(mkLine(lx1, ly1, lx2, ly2, 'red', 2.0, 0.88, false, layer));
-  // 红色椭圆（用户当前平面）
+  // ── 🔴 红色：当前位置 ──
+  // 穿越线（先画，让椭圆压在上面）
+  els.push(mkLine(
+    cx - lineExt * cosA, cy - lineExt * sinA,
+    cx + lineExt * cosA, cy + lineExt * sinA,
+    'red', 2.2, 0.88, false, layer,
+  ));
+  // 椭圆
   els.push(mkEllipse(cx, cy, rx, ry, angle, 'red', 3.5, 0.92, layer));
-  // 红色端点
-  els.push(mkDot(leftPt.x, leftPt.y, 'red', 0.010, 0.95, layer));
+  // 端点
+  els.push(mkDot(leftPt.x,  leftPt.y,  'red', 0.010, 0.95, layer));
   els.push(mkDot(rightPt.x, rightPt.y, 'red', 0.010, 0.95, layer));
 
-  // ── 目标正确位置（绿色）──
-  // 专业球手的旋转平面更平（倾斜角更小）
-  // 绿色中心点与红色相同，但角度更接近水平（减少60%倾斜）
-  const targetAngle = angle * 0.4; // 目标角度 = 当前角度 × 40%（更平）
-  const targetRx = rx * 1.08;       // 绿色椭圆稍大，表示更充分旋转
-  const targetRy = ry * 0.80;       // 更扁，旋转更平
+  // ── 🟢 绿色：目标正确位置 ──
+  const targetAngle = computeTargetAngle(angle);
+  const targetRx = rx * 1.06;
+  const targetRy = ry * 0.78; // 更扁、更平
 
-  // 目标中心：沿法线方向偏移一点（视觉上分开）
-  const perpCos = Math.cos(angle + Math.PI / 2);
-  const perpSin = Math.sin(angle + Math.PI / 2);
-  const offset = ry * 0.3;
-  const tcx = cx + perpCos * offset;
-  const tcy = cy + perpSin * offset;
+  // 目标垂直偏移（沿椭圆法线方向，让两个椭圆稍微分开）
+  const perpCos = -sinA, perpSin = cosA; // 垂直于旋转轴
+  const offsetDist = ry * 0.35;
+  const tcx = cx + perpCos * offsetDist;
+  const tcy = cy + perpSin * offsetDist;
 
   // 绿色穿越线
-  const tLineExt = targetRx * 1.25;
+  const tLineExt = targetRx * 1.28;
   const tCosA = Math.cos(targetAngle), tSinA = Math.sin(targetAngle);
-  const tlx1 = tcx - tLineExt * tCosA, tly1 = tcy - tLineExt * tSinA;
-  const tlx2 = tcx + tLineExt * tCosA, tly2 = tcy + tLineExt * tSinA;
-
-  els.push(mkLine(tlx1, tly1, tlx2, tly2, 'green', 2.0, 0.82, false, layer));
-  // 绿色椭圆（目标平面）
+  els.push(mkLine(
+    tcx - tLineExt * tCosA, tcy - tLineExt * tSinA,
+    tcx + tLineExt * tCosA, tcy + tLineExt * tSinA,
+    'green', 2.0, 0.82, false, layer,
+  ));
+  // 绿色椭圆
   els.push(mkEllipse(tcx, tcy, targetRx, targetRy, targetAngle, 'green', 3.0, 0.82, layer));
 
-  // 标注
-  const deg = Math.round(Math.abs(angle * 180 / Math.PI));
-  els.push(mkLabel(cx, cy - ry * 1.6, label + '  ' + deg + '°', 'white', 10));
+  // ── 角度标注 ──
+  // 实际倾斜角：从水平轴的偏斜度数
+  const nearestH = Math.round(angle / Math.PI) * Math.PI;
+  const tiltDeg = Math.round(Math.abs((angle - nearestH) * 180 / Math.PI));
+  els.push(mkLabel(cx, cy - ry * 1.55, label + '  ' + tiltDeg + '°', 'white', 10));
 
   return els;
 }
@@ -148,22 +166,15 @@ export function generateSpecDrivenOverlayFrame(
   const pts = getKeypoints(kpFrame);
   const els: OverlayElement[] = [];
 
-  // 肩部旋转盘（Shoulders layer → body）
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
-  if (ls && rs) {
-    els.push(...buildRotationDisc(ls, rs, 'SHOULDERS', 'body'));
-  }
+  if (ls && rs) els.push(...buildRotationDisc(ls, rs, 'SHOULDERS', 'body'));
 
-  // 髋部旋转盘（Hips layer → club）
   const lh = pts.leftHip, rh = pts.rightHip;
-  if (lh && rh) {
-    els.push(...buildRotationDisc(lh, rh, 'HIPS', 'club'));
-  }
+  if (lh && rh) els.push(...buildRotationDisc(lh, rh, 'HIPS', 'club'));
 
   return els;
 }
 
-/* ── 工具函数（保持兼容） ── */
 export function getTrackedPoint(
   _issue: MainIssueType, _viewType: ViewType, kpFrame: KeypointFrame,
 ): { x: number; y: number } | null {
@@ -186,11 +197,11 @@ export function applyCorrection(pt: { x:number; y:number; confidence?:number }, 
   const DELTA: Record<string, number> = { small: 0.028, medium: 0.050, large: 0.078 };
   const d = DELTA[mag] ?? 0.050;
   switch (dir) {
-    case 'lower': return { ...pt, y: pt.y + d };
-    case 'higher': return { ...pt, y: pt.y - d };
-    case 'more_inside': return { ...pt, x: pt.x - d };
+    case 'lower':        return { ...pt, y: pt.y + d };
+    case 'higher':       return { ...pt, y: pt.y - d };
+    case 'more_inside':  return { ...pt, x: pt.x - d };
     case 'more_outside': return { ...pt, x: pt.x + d };
-    case 'more_centered': return { ...pt, x: 0.50 };
-    default: return pt;
+    case 'more_centered':return { ...pt, x: 0.50 };
+    default:             return pt;
   }
 }
