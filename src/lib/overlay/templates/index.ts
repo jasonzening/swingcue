@@ -166,3 +166,75 @@ export function generateOverlayTimeline(input: TemplateInput): OverlayTimeline {
 
   return { frames };
 }
+
+
+/* ══════════════════════════════════════
+Dense overlay：每个 keypoint 帧生成一帧 overlay
+用于前端连续追踪（解决5帧快照脱节问题）
+══════════════════════════════════════ */
+
+/**
+ * 计算给定时间属于哪个挥杆阶段
+ */
+function computePhase(phases: PhaseMarkers, time: number, duration: number): Phase {
+  if (duration <= 0) return 'setup';
+  const norm = time / duration;
+  const p = {
+    setup: phases.setupTime / duration,
+    top: phases.topTime / duration,
+    transition: phases.transitionTime / duration,
+    impact: phases.impactTime / duration,
+    finish: phases.finishTime / duration,
+  };
+  if (norm >= p.finish) return 'finish';
+  if (norm >= p.impact) return 'impact';
+  if (norm >= p.transition) return 'transition';
+  if (norm >= p.top) return 'top';
+  return 'setup';
+}
+
+/**
+ * generateDenseOverlayTimeline
+ *
+ * 每个 keypoint 帧都生成一帧 overlay。
+ * 结果约 25-30 帧（4fps 采样），SwingPlayer 可以流畅追踪身体。
+ * 仅在有真实 keypoint 数据时使用，否则退化到 generateOverlayTimeline。
+ */
+export function generateDenseOverlayTimeline(input: {
+  keypointFrames: KeypointFrame[];
+  phaseMarkers: PhaseMarkers;
+  issue: MainIssueType;
+  viewType: string;
+  duration: number;
+}): OverlayTimeline {
+  const { keypointFrames, phaseMarkers, issue, viewType, duration } = input;
+
+  if (!keypointFrames || keypointFrames.length < 3) {
+    return { frames: [] };
+  }
+
+  const vt: ViewType = (viewType as ViewType) ?? 'face_on';
+  const pathHistory: Array<{ x: number; y: number }> = [];
+  const frames: OverlayFrame[] = [];
+
+  for (const kpFrame of keypointFrames) {
+    const phase = computePhase(phaseMarkers, kpFrame.time, duration);
+
+    // 收集路径历史（手路径等）
+    const trackedPt = getTrackedPoint(issue, vt, kpFrame);
+    if (trackedPt) pathHistory.push(trackedPt);
+    if (pathHistory.length > 8) pathHistory.splice(0, pathHistory.length - 8);
+
+    const elements = generateSpecDrivenOverlayFrame(
+      issue,
+      vt,
+      phase,
+      kpFrame,
+      pathHistory.length >= 2 ? [...pathHistory] : undefined,
+    );
+
+    frames.push({ time: kpFrame.time, phase, elements });
+  }
+
+  return { frames };
+}
