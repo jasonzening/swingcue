@@ -1,18 +1,8 @@
 /**
- * keypointOverlay.ts
- *
- * 高尔夫分部位可视化系统
- *
- * Layer 分层：
- *   shoulders — 肩部旋转盘（椭圆）
- *   hips      — 髋部旋转盘（椭圆）
- *   head      — 头部轨迹（圆圈 + 路径）
- *   plane     — 挥杆平面（弧线）
- *   all       — 全部叠加
- *
- * 颜色规则：
- *   红色 = 用户当前轨迹/位置
- *   绿色 = 正确目标轨迹/位置
+ * keypointOverlay.ts — 大椭圆旋转盘，参考图风格
+ * 肩部红色大椭圆（延伸到身体外）+ 绿色目标椭圆
+ * 髋部黄色椭圆 + 绿色目标
+ * 头部大圆圈 + 轨迹
  */
 
 import type { OverlayElement, KeypointFrame } from '@/types/analysis';
@@ -22,312 +12,193 @@ import type { ViewType } from '@/lib/golf/overlayLineSpec';
 
 type Color = 'red' | 'green' | 'yellow' | 'white';
 
-/* ── element 构建器 ── */
 let _uid = 0;
 const uid = (p: string) => `${p}-${++_uid}`;
-
-const mkDot = (x: number, y: number, color: Color, r = 0.007, opacity = 0.92, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
-  ({ type: 'dot', id: uid('d'), x, y, color, radius: r, opacity, layer });
-
-const mkLine = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 1.0, opacity = 0.85, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
-  ({ type: 'line', id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
-
-const mkArrow = (fx: number, fy: number, tx: number, ty: number, color: Color = 'green'): OverlayElement =>
-  ({ type: 'arrow', id: uid('a'), from: { x: fx, y: fy }, to: { x: tx, y: ty }, color, strokeWidth: 1.2, opacity: 0.88 });
-
-const mkLabel = (x: number, y: number, text: string, color: Color = 'white', size = 9): OverlayElement =>
-  ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.82 });
-
+const mkDot   = (x: number, y: number, color: Color, r = 0.007, opacity = 0.92, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
+  ({ type: 'dot',   id: uid('d'), x, y, color, radius: r, opacity, layer });
+const mkLine  = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 1.0, opacity = 0.85, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
+  ({ type: 'line',  id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
+const mkArrow = (fx: number, fy: number, tx: number, ty: number, color: Color = 'red'): OverlayElement =>
+  ({ type: 'arrow', id: uid('a'), from: { x: fx, y: fy }, to: { x: tx, y: ty }, color, strokeWidth: 1.2, opacity: 0.90 });
+const mkLabel = (x: number, y: number, text: string, color: Color = 'white', size = 10): OverlayElement =>
+  ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.92 });
 const mkCurve = (points: {x:number;y:number}[], color: Color, w = 1.2, opacity = 0.80): OverlayElement =>
   ({ type: 'curve', id: uid('c'), points, color, strokeWidth: w, opacity, layer: 'arms' });
-
-/* ── ellipse element（新类型，OverlayRenderer 需支持）── */
-const mkEllipse = (cx: number, cy: number, rx: number, ry: number, angle: number, color: Color, w = 1.5, opacity = 0.85, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
+const mkEllipse = (cx: number, cy: number, rx: number, ry: number, angle: number, color: Color, w = 3.5, opacity = 0.92, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
   ({ type: 'ellipse' as OverlayElement['type'], id: uid('e'), cx, cy, rx, ry, angle, color, strokeWidth: w, opacity, layer } as unknown as OverlayElement);
 
-/* ── 从 KeypointFrame 解析关节点 ── */
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
-  const result: Partial<Record<BodyPointName, Pt>> = {};
-  const toP = (pt?: { x:number; y:number; confidence?:number } | null): Pt | null =>
+  const r: Partial<Record<BodyPointName, Pt>> = {};
+  const toP = (pt?: { x:number; y:number; confidence?:number } | null) =>
     pt ? { x: pt.x, y: pt.y, confidence: pt.confidence ?? 0.8 } : null;
-
-  if (lm.head)          result.headCenter     = toP(lm.head)!;
-  if (lm.leftShoulder)  result.leftShoulder   = toP(lm.leftShoulder)!;
-  if (lm.rightShoulder) result.rightShoulder  = toP(lm.rightShoulder)!;
-  if (lm.leftElbow)     result.leftElbow      = toP(lm.leftElbow)!;
-  if (lm.rightElbow)    result.rightElbow     = toP(lm.rightElbow)!;
-  if (lm.leftWrist)     result.leftWrist      = toP(lm.leftWrist)!;
-  if (lm.rightWrist)    result.rightWrist     = toP(lm.rightWrist)!;
-  if (lm.leftHip)       result.leftHip        = toP(lm.leftHip)!;
-  if (lm.rightHip)      result.rightHip       = toP(lm.rightHip)!;
-  if (lm.leftKnee)      result.leftKnee       = toP(lm.leftKnee)!;
-  if (lm.rightKnee)     result.rightKnee      = toP(lm.rightKnee)!;
-  if (lm.leftAnkle)     result.leftAnkle      = toP(lm.leftAnkle)!;
-  if (lm.rightAnkle)    result.rightAnkle     = toP(lm.rightAnkle)!;
-
-  const ls = result.leftShoulder, rs = result.rightShoulder;
-  if (ls && rs) result.shoulderCenter = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2, confidence:1 };
-  const lh = result.leftHip, rh = result.rightHip;
-  if (lh && rh) result.hipCenter = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2, confidence:1 };
-  const lw = result.leftWrist, rw = result.rightWrist;
-  if (lw && rw) result.gripCenter = { x:(lw.x+rw.x)/2, y:(lw.y+rw.y)/2, confidence:1 };
-
-  return result;
+  if (lm.head)          r.headCenter     = toP(lm.head)!;
+  if (lm.leftShoulder)  r.leftShoulder   = toP(lm.leftShoulder)!;
+  if (lm.rightShoulder) r.rightShoulder  = toP(lm.rightShoulder)!;
+  if (lm.leftElbow)     r.leftElbow      = toP(lm.leftElbow)!;
+  if (lm.rightElbow)    r.rightElbow     = toP(lm.rightElbow)!;
+  if (lm.leftWrist)     r.leftWrist      = toP(lm.leftWrist)!;
+  if (lm.rightWrist)    r.rightWrist     = toP(lm.rightWrist)!;
+  if (lm.leftHip)       r.leftHip        = toP(lm.leftHip)!;
+  if (lm.rightHip)      r.rightHip       = toP(lm.rightHip)!;
+  if (lm.leftKnee)      r.leftKnee       = toP(lm.leftKnee)!;
+  if (lm.rightKnee)     r.rightKnee      = toP(lm.rightKnee)!;
+  if (lm.leftAnkle)     r.leftAnkle      = toP(lm.leftAnkle)!;
+  if (lm.rightAnkle)    r.rightAnkle     = toP(lm.rightAnkle)!;
+  const ls = r.leftShoulder, rs = r.rightShoulder;
+  if (ls && rs) r.shoulderCenter = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2, confidence:1 };
+  const lh = r.leftHip, rh = r.rightHip;
+  if (lh && rh) r.hipCenter = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2, confidence:1 };
+  const lw = r.leftWrist, rw = r.rightWrist;
+  if (lw && rw) r.gripCenter = { x:(lw.x+rw.x)/2, y:(lw.y+rw.y)/2, confidence:1 };
+  return r;
 }
 
-/* ══════════════════════════════════════════
-  LAYER 1: 肩部旋转盘
-  - 红色椭圆 = 当前肩线旋转平面
-  - 绿色椭圆 = 目标（更平的旋转平面）
-  - 白色标注旋转角度
-══════════════════════════════════════════ */
+// 肩部旋转盘
 function buildShoulderLayer(pts: Partial<Record<BodyPointName, Pt>>, historyPts?: Array<{x:number;y:number}>): OverlayElement[] {
   const els: OverlayElement[] = [];
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
   if (!ls || !rs) return els;
+  const cx = (ls.x+rs.x)/2, cy = (ls.y+rs.y)/2;
+  const dx = rs.x-ls.x, dy = rs.y-ls.y;
+  const angle = Math.atan2(dy, dx);
+  const sw = Math.hypot(dx, dy);
+  // 椭圆尺寸：长轴 = 肩宽 × 1.1（大幅延伸到身体两侧外）
+  const rx = sw * 1.1;
+  const ry = rx * 0.38; // 厚度
 
-  const cx = (ls.x + rs.x) / 2;
-  const cy = (ls.y + rs.y) / 2;
-  const dx = rs.x - ls.x;
-  const dy = rs.y - ls.y;
-  const angle = Math.atan2(dy, dx); // 实际肩线角度（弧度）
-  const dist = Math.hypot(dx, dy);
-  const rx = dist / 2;             // 椭圆长轴 = 肩宽一半
-  const ry = rx * 0.22;            // 椭圆短轴 = 旋转盘的"厚度"
-
-  // 红色椭圆 = 当前肩部旋转平面
-  els.push(mkEllipse(cx, cy, rx, ry, angle, 'red', 1.8, 0.88, 'body'));
-
-  // 目标角度：比当前更平（接近水平）
-  const targetAngle = angle * 0.4; // 减少倾斜
-  const targetCy = cy + 0.01;
-  els.push(mkEllipse(cx, targetCy, rx * 1.05, ry * 0.85, targetAngle, 'green', 1.5, 0.75, 'body'));
-
-  // 肩部关节点
-  els.push(mkDot(ls.x, ls.y, 'red', 0.009, 0.92));
-  els.push(mkDot(rs.x, rs.y, 'red', 0.009, 0.92));
-  els.push(mkDot(cx, cy, 'white', 0.005, 0.60));
-
-  // 角度标注
+  // 🔴 红色大椭圆 = 当前肩部旋转平面
+  els.push(mkEllipse(cx, cy, rx, ry, angle, 'red', 3.5, 0.92, 'body'));
+  // 🟢 绿色目标椭圆（更平 = 角度更小）
+  els.push(mkEllipse(cx, cy-0.018, rx*1.06, ry*0.82, angle*0.30, 'green', 3.0, 0.82, 'body'));
+  // 白色水平参考虚线（横穿椭圆中心）
+  els.push(mkLine(cx-rx*1.25, cy, cx+rx*1.25, cy, 'white', 1.0, 0.50, true, 'body'));
+  // 端点
+  els.push(mkDot(ls.x, ls.y, 'red', 0.011, 0.95));
+  els.push(mkDot(rs.x, rs.y, 'red', 0.011, 0.95));
+  // 旋转角度标注
   const deg = Math.round(Math.abs(angle * 180 / Math.PI));
-  els.push(mkLabel(cx, cy - 0.06, `${deg}°`, 'white', 9));
-  els.push(mkLabel(cx, cy - 0.10, 'SHOULDERS', 'white', 8));
-
-  // 肩部历史路径（追踪肩膀中心移动）
-  if (historyPts && historyPts.length >= 2) {
-    els.push(mkCurve(historyPts, 'red', 1.0, 0.65));
-  }
-
+  els.push(mkLabel(cx, cy - ry*1.4 - 0.02, `SHOULDERS  ${deg}°`, 'white', 10));
+  if (historyPts && historyPts.length >= 2) els.push(mkCurve(historyPts, 'red', 1.0, 0.60));
   return els;
 }
 
-/* ══════════════════════════════════════════
-  LAYER 2: 髋部旋转盘
-  - 红色椭圆 = 当前髋线旋转平面
-  - 绿色椭圆 = 目标（髋部旋转应领先肩部）
-  - X-Factor: 髋比肩多转15-20°
-══════════════════════════════════════════ */
+// 髋部旋转盘（黄色）
 function buildHipLayer(pts: Partial<Record<BodyPointName, Pt>>, shoulderAngle: number): OverlayElement[] {
   const els: OverlayElement[] = [];
   const lh = pts.leftHip, rh = pts.rightHip;
   if (!lh || !rh) return els;
-
-  const cx = (lh.x + rh.x) / 2;
-  const cy = (lh.y + rh.y) / 2;
-  const dx = rh.x - lh.x;
-  const dy = rh.y - lh.y;
+  const cx = (lh.x+rh.x)/2, cy = (lh.y+rh.y)/2;
+  const dx = rh.x-lh.x, dy = rh.y-lh.y;
   const angle = Math.atan2(dy, dx);
-  const dist = Math.hypot(dx, dy);
-  const rx = dist / 2;
-  const ry = rx * 0.20;
+  const hw = Math.hypot(dx, dy);
+  const rx = hw * 1.0;
+  const ry = rx * 0.32;
 
-  // 红色椭圆 = 当前髋部平面
-  els.push(mkEllipse(cx, cy, rx, ry, angle, 'red', 1.8, 0.88, 'body'));
-
-  // 绿色椭圆 = 目标（髋部应该转更多，角度更平）
-  const targetAngle = angle * 0.3;
-  els.push(mkEllipse(cx, cy + 0.01, rx * 1.08, ry * 0.80, targetAngle, 'green', 1.5, 0.72, 'body'));
-
-  // 髋部关节点
-  els.push(mkDot(lh.x, lh.y, 'red', 0.009, 0.92));
-  els.push(mkDot(rh.x, rh.y, 'red', 0.009, 0.92));
-
-  // X-Factor 标注（髋与肩的旋转差）
+  // 🟡 黄色大椭圆 = 当前髋部
+  els.push(mkEllipse(cx, cy, rx, ry, angle, 'yellow', 3.5, 0.92, 'body'));
+  // 🟢 绿色目标
+  els.push(mkEllipse(cx, cy-0.012, rx*1.08, ry*0.75, angle*0.20, 'green', 2.8, 0.75, 'body'));
+  // 参考线
+  els.push(mkLine(cx-rx*1.25, cy, cx+rx*1.25, cy, 'white', 1.0, 0.45, true, 'body'));
+  els.push(mkDot(lh.x, lh.y, 'yellow', 0.011, 0.92));
+  els.push(mkDot(rh.x, rh.y, 'yellow', 0.011, 0.92));
   const hipDeg = Math.round(Math.abs(angle * 180 / Math.PI));
-  const shoulderDeg = Math.round(Math.abs(shoulderAngle * 180 / Math.PI));
-  const xFactor = Math.abs(shoulderDeg - hipDeg);
-  els.push(mkLabel(cx, cy - 0.04, `HIPS ${hipDeg}°`, 'white', 9));
-  if (xFactor > 0) {
-    els.push(mkLabel(cx, cy - 0.08, `X: ${xFactor}°`, 'yellow', 8));
-  }
-
+  const xFactor = Math.max(0, Math.round(Math.abs(shoulderAngle*180/Math.PI) - hipDeg));
+  els.push(mkLabel(cx, cy - ry*1.4 - 0.02, `HIPS  ${hipDeg}°  X:${xFactor}°`, 'yellow', 10));
   return els;
 }
 
-/* ══════════════════════════════════════════
-  LAYER 3: 头部追踪
-  - 绿色圆圈 = 头部应该保持的位置（地址位）
-  - 红色圆圈 + 轨迹 = 头部实际移动路径
-  - 横向偏移量标注
-══════════════════════════════════════════ */
+// 头部大圆圈
 function buildHeadLayer(pts: Partial<Record<BodyPointName, Pt>>, headHistory: Array<{x:number;y:number}>): OverlayElement[] {
   const els: OverlayElement[] = [];
   const head = pts.headCenter;
   if (!head) return els;
-
-  // 绿色圆圈 = 理想位置（用历史第一帧作为基准）
-  const baseX = headHistory.length > 0 ? headHistory[0].x : head.x;
-  const baseY = headHistory.length > 0 ? headHistory[0].y : head.y;
-
-  // 绘制绿色目标圆圈（较大、半透明）
-  els.push(mkEllipse(baseX, baseY, 0.055, 0.055, 0, 'green', 1.2, 0.55, 'body'));
-  // 绿色十字标记中心
-  els.push(mkDot(baseX, baseY, 'green', 0.006, 0.70));
-
-  // 红色当前头部位置
-  els.push(mkDot(head.x, head.y, 'red', 0.010, 0.95));
-
-  // 头部移动轨迹
-  if (headHistory.length >= 2) {
-    els.push(mkCurve(headHistory, 'red', 1.0, 0.72));
+  const bx = headHistory.length > 0 ? headHistory[0].x : head.x;
+  const by = headHistory.length > 0 ? headHistory[0].y : head.y;
+  const r = 0.075;
+  els.push(mkEllipse(bx, by, r, r, 0, 'green', 2.5, 0.75, 'body'));
+  els.push(mkLine(bx-r*1.3, by, bx+r*1.3, by, 'green', 0.8, 0.40, true, 'body'));
+  els.push(mkLine(bx, by-r*1.3, bx, by+r*1.3, 'green', 0.8, 0.40, true, 'body'));
+  els.push(mkDot(head.x, head.y, 'red', 0.013, 0.95));
+  if (headHistory.length >= 2) els.push(mkCurve(headHistory, 'red', 1.0, 0.75));
+  const ox = head.x - bx;
+  if (Math.abs(ox) > 0.012) {
+    els.push(mkArrow(bx, head.y, head.x, head.y, 'red'));
+    els.push(mkLabel(head.x, head.y-0.09, (ox>0?'→':'←')+' '+Math.round(Math.abs(ox)*100)+'%', 'red', 10));
   }
-
-  // 横向偏移箭头（如果偏移明显）
-  const offsetX = head.x - baseX;
-  if (Math.abs(offsetX) > 0.015) {
-    els.push(mkArrow(baseX, head.y, head.x, head.y, offsetX > 0 ? 'red' : 'red'));
-    const offsetPx = Math.round(Math.abs(offsetX) * 100);
-    els.push(mkLabel(head.x, head.y - 0.06, `±${offsetPx}%`, 'red', 8));
-  }
-
-  els.push(mkLabel(baseX, baseY - 0.09, 'HEAD', 'white', 8));
-
+  els.push(mkLabel(bx, by-r-0.05, 'HEAD', 'white', 10));
   return els;
 }
 
-/* ══════════════════════════════════════════
-  LAYER 4: 挥杆平面
-  - 红色弧线 = 手部实际运动轨迹
-  - 绿色线 = 标准 Ben Hogan 挥杆平面
-  - 双臂三角
-══════════════════════════════════════════ */
+// 挥杆平面
 function buildSwingPlaneLayer(pts: Partial<Record<BodyPointName, Pt>>, handHistory: Array<{x:number;y:number}>): OverlayElement[] {
   const els: OverlayElement[] = [];
   const grip = pts.gripCenter;
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
-
-  // 标准挥杆平面线（肩部连到球的理想角度）
   if (ls && rs) {
     const sc = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
-    // 绿色挥杆平面参考线（从肩中心向下延伸到球的方向）
-    els.push(mkLine(sc.x, sc.y, sc.x + 0.02, sc.y + 0.30, 'green', 1.2, 0.65, true, 'arms'));
-    els.push(mkLabel(sc.x + 0.06, sc.y + 0.15, 'PLANE', 'green', 8));
-
-    // 双臂三角
+    els.push(mkLine(sc.x, sc.y, sc.x+0.02, sc.y+0.32, 'green', 1.5, 0.65, true, 'arms'));
+    els.push(mkLabel(sc.x+0.08, sc.y+0.18, 'PLANE', 'green', 10));
     if (grip) {
-      els.push(mkLine(ls.x, ls.y, grip.x, grip.y, 'red', 1.0, 0.80, false, 'arms'));
-      els.push(mkLine(rs.x, rs.y, grip.x, grip.y, 'red', 1.0, 0.80, false, 'arms'));
-      els.push(mkLine(ls.x, ls.y, rs.x, rs.y, 'red', 1.0, 0.75, false, 'arms'));
-      // 绿色目标三角（更靠近身体）
-      const gGrip = { x: grip.x + (sc.x - grip.x) * 0.12, y: grip.y - 0.02 };
-      els.push(mkLine(ls.x, ls.y, gGrip.x, gGrip.y, 'green', 1.0, 0.68, true, 'arms'));
-      els.push(mkLine(rs.x, rs.y, gGrip.x, gGrip.y, 'green', 1.0, 0.68, true, 'arms'));
-      els.push(mkDot(grip.x, grip.y, 'red', 0.010, 0.95, 'arms'));
-      els.push(mkDot(gGrip.x, gGrip.y, 'green', 0.008, 0.82, 'arms'));
+      els.push(mkLine(ls.x, ls.y, grip.x, grip.y, 'red', 1.2, 0.82, false, 'arms'));
+      els.push(mkLine(rs.x, rs.y, grip.x, grip.y, 'red', 1.2, 0.82, false, 'arms'));
+      els.push(mkLine(ls.x, ls.y, rs.x, rs.y, 'red', 1.0, 0.72, false, 'arms'));
+      const gGrip = { x: grip.x+(sc.x-grip.x)*0.12, y: grip.y-0.02 };
+      els.push(mkLine(ls.x, ls.y, gGrip.x, gGrip.y, 'green', 1.0, 0.65, true, 'arms'));
+      els.push(mkLine(rs.x, rs.y, gGrip.x, gGrip.y, 'green', 1.0, 0.65, true, 'arms'));
+      els.push(mkDot(grip.x, grip.y, 'red', 0.012, 0.95, 'arms'));
+      els.push(mkDot(gGrip.x, gGrip.y, 'green', 0.009, 0.82, 'arms'));
     }
   }
-
-  // 手部实际运动轨迹（红色曲线）
-  if (handHistory.length >= 2) {
-    els.push(mkCurve(handHistory, 'red', 1.2, 0.80));
-  }
-
-  // 关节点
-  if (ls) els.push(mkDot(ls.x, ls.y, 'red', 0.007, 0.88, 'arms'));
-  if (rs) els.push(mkDot(rs.x, rs.y, 'red', 0.007, 0.88, 'arms'));
-
+  if (handHistory.length >= 2) els.push(mkCurve(handHistory, 'red', 1.2, 0.82));
+  if (ls) els.push(mkDot(ls.x, ls.y, 'red', 0.008, 0.88, 'arms'));
+  if (rs) els.push(mkDot(rs.x, rs.y, 'red', 0.008, 0.88, 'arms'));
   return els;
 }
 
-/* ══════════════════════════════════════════
-  主导出函数：按 layer 分路输出
-══════════════════════════════════════════ */
 export function generateSpecDrivenOverlayFrame(
-  issue: MainIssueType,
-  viewType: ViewType,
-  phase: string,
-  kpFrame: KeypointFrame,
-  historyPts?: Array<{ x: number; y: number }>,
+  issue: MainIssueType, viewType: ViewType, phase: string,
+  kpFrame: KeypointFrame, historyPts?: Array<{ x:number; y:number }>,
 ): OverlayElement[] {
   _uid = 0;
   const pts = getKeypoints(kpFrame);
-  const elements: OverlayElement[] = [];
-
-  // 计算肩部角度（供髋部X-Factor使用）
+  const els: OverlayElement[] = [];
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
   let shoulderAngle = 0;
-  if (ls && rs) {
-    shoulderAngle = Math.atan2(rs.y - ls.y, rs.x - ls.x);
-  }
+  if (ls && rs) shoulderAngle = Math.atan2(rs.y-ls.y, rs.x-ls.x);
 
-  // LAYER: shoulders — 肩部旋转盘
-  elements.push(...buildShoulderLayer(pts, historyPts));
+  els.push(...buildShoulderLayer(pts, historyPts));
+  els.push(...buildHipLayer(pts, shoulderAngle));
+  els.push(...buildHeadLayer(pts, historyPts ? historyPts.slice(-10) : []));
+  els.push(...buildSwingPlaneLayer(pts, historyPts || []));
 
-  // LAYER: hips (club) — 髋部旋转盘
-  elements.push(...buildHipLayer(pts, shoulderAngle));
-
-  // LAYER: head (body) — 头部追踪
-  const headHistory = historyPts ? historyPts.slice(-8) : [];
-  elements.push(...buildHeadLayer(pts, headHistory));
-
-  // LAYER: plane (arms) — 挥杆平面
-  elements.push(...buildSwingPlaneLayer(pts, historyPts || []));
-
-  // 全身关键点（轻量辅助）
-  const allJoints: BodyPointName[] = [
-    'leftKnee','rightKnee','leftAnkle','rightAnkle',
-    'leftHip','rightHip',
-  ];
-  for (const pn of allJoints) {
-    const p = pts[pn];
-    if (p) elements.push(mkDot(p.x, p.y, 'red', 0.006, 0.70, 'body'));
-  }
-
-  // 腿部连线（辅助参考）
+  // 腿部辅助
   const lh = pts.leftHip, rh = pts.rightHip;
   const lk = pts.leftKnee, rk = pts.rightKnee;
   const la = pts.leftAnkle, ra = pts.rightAnkle;
-  if (lh && lk) elements.push(mkLine(lh.x, lh.y, lk.x, lk.y, 'red', 0.8, 0.55, false, 'body'));
-  if (lk && la) elements.push(mkLine(lk.x, lk.y, la.x, la.y, 'red', 0.8, 0.55, false, 'body'));
-  if (rh && rk) elements.push(mkLine(rh.x, rh.y, rk.x, rk.y, 'red', 0.8, 0.55, false, 'body'));
-  if (rk && ra) elements.push(mkLine(rk.x, rk.y, ra.x, ra.y, 'red', 0.8, 0.55, false, 'body'));
-
-  return elements;
+  if (lh && lk) els.push(mkLine(lh.x, lh.y, lk.x, lk.y, 'red', 0.8, 0.48, false, 'body'));
+  if (lk && la) els.push(mkLine(lk.x, lk.y, la.x, la.y, 'red', 0.8, 0.48, false, 'body'));
+  if (rh && rk) els.push(mkLine(rh.x, rh.y, rk.x, rk.y, 'red', 0.8, 0.48, false, 'body'));
+  if (rk && ra) els.push(mkLine(rk.x, rk.y, ra.x, ra.y, 'red', 0.8, 0.48, false, 'body'));
+  const legPts: BodyPointName[] = ['leftKnee','rightKnee','leftAnkle','rightAnkle'];
+  for (const pn of legPts) { const p = pts[pn]; if (p) els.push(mkDot(p.x, p.y, 'red', 0.006, 0.62, 'body')); }
+  return els;
 }
 
-/* ── 路径追踪点 ── */
-export function getTrackedPoint(
-  issue: MainIssueType, viewType: ViewType, kpFrame: KeypointFrame,
-): { x: number; y: number } | null {
+export function getTrackedPoint(_issue: MainIssueType, _viewType: ViewType, kpFrame: KeypointFrame): { x:number; y:number } | null {
   const pts = getKeypoints(kpFrame);
-  // 追踪肩膀中心（最能体现旋转）
   const sc = pts.shoulderCenter;
   return sc ? { x: sc.x, y: sc.y } : null;
 }
 
-/* ── 最近帧查找 ── */
 export function findNearestFrame(frames: KeypointFrame[], time: number): KeypointFrame | null {
   if (!frames.length) return null;
   let best = frames[0], bestDist = Math.abs(time - best.time);
-  for (const f of frames) {
-    const d = Math.abs(time - f.time);
-    if (d < bestDist) { best = f; bestDist = d; }
-  }
+  for (const f of frames) { const d = Math.abs(time - f.time); if (d < bestDist) { best = f; bestDist = d; } }
   return best;
 }
 
-/* ── applyCorrection (保持兼容性) ── */
 export function applyCorrection(pt: { x:number; y:number; confidence?:number }, dir: string, mag = 'medium'): { x:number; y:number; confidence?:number } {
   const DELTA: Record<string, number> = { small: 0.028, medium: 0.050, large: 0.078 };
   const d = DELTA[mag] ?? 0.050;
