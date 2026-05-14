@@ -1,16 +1,16 @@
 /**
- * keypointOverlay.ts
+ * keypointOverlay.ts — Shoulder / Hip Anchored Disc
  *
- * Shoulder / Hip Rotation Disc — 透视绑定修复版
+ * 硬规则（不可违反）：
+ *  guideLineStart = left keypoint  (精确）
+ *  guideLineEnd   = right keypoint (精确）
+ *  disc center    = midpoint(left, right)
+ *  disc long axis = angle(left → right)，clamped ±30° face_on / ±45° dtl
+ *  disc rx        = dist(left, right) × 0.55  → 椭圆端点刚好包住两个关键点
+ *  disc ry        = rx × heightRatio (shoulder 0.32, hip 0.28)
  *
- * 核心原则：
- * 1. 圆盘锚定关键点：rx = bodyDist × 0.78，clamp [rxMin, rxMax]
- * 2. rotationAngle clamped：face_on ±30°，dtl ±45°
- * 3. 帧间平滑：max delta 8° per frame
- * 4. perspectiveRatio 控制 ry（随转身压扁）
- * 5. confidence < 0.4 不画
- * 6. 椭圆用 zone polygon 模拟（兼容现有 OverlayElement 类型）
- * 7. 颜色：current=red, target=green，均在 BaseElement.color 范围内
+ * 帧间平滑：max 8° delta per frame（防 MediaPipe 抖动）
+ * confidence < 0.4 → 只画连线，不画圆盘
  */
 
 import type {
@@ -27,258 +27,258 @@ const _prevAngle: Record<string, number> = {};
 let _uid = 0;
 const uid = (p: string) => `${p}-${++_uid}`;
 
-const clamp = (v: number, lo: number, hi: number) =>
-  Math.max(lo, Math.min(hi, v));
-const toRad = (deg: number) => deg * Math.PI / 180;
+const clamp  = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const toRad  = (deg: number) => deg * Math.PI / 180;
 const dist2D = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
-const mid2D  = (a: Pt, b: Pt): Pt => ({
-  x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, confidence: 1,
-});
+const mid2D  = (a: Pt, b: Pt): Pt => ({ x:(a.x+b.x)/2, y:(a.y+b.y)/2, confidence:1 });
 
-type AllowedColor = 'red' | 'green' | 'yellow' | 'white';
+type AC = 'red' | 'green' | 'yellow' | 'white'; // AllowedColor
 
-const mkLine = (
-  x1: number, y1: number, x2: number, y2: number,
-  color: AllowedColor, w = 1.8, opacity = 0.85, dashed = false,
-  layer: OverlayElement['layer'] = 'body',
-): LineElement => ({ type: 'line', id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
+const mkLine = (x1:number,y1:number,x2:number,y2:number, c:AC, w=2.0, op=0.88, dash=false, layer:OverlayElement['layer']='body'): LineElement =>
+  ({type:'line',id:uid('l'),x1,y1,x2,y2,color:c,strokeWidth:w,opacity:op,dashed:dash,layer});
+const mkZone = (pts:Array<{x:number;y:number}>, c:AC, fillOp=0.14, op=0.85, layer:OverlayElement['layer']='body'): ZoneElement =>
+  ({type:'zone',id:uid('z'),points:pts,color:c,fillOpacity:fillOp,opacity:op,layer});
+const mkDot  = (x:number,y:number, c:AC, r=0.009, op=0.90, layer:OverlayElement['layer']='body'): DotElement =>
+  ({type:'dot',id:uid('d'),x,y,color:c,radius:r,opacity:op,layer});
+const mkLabel= (x:number,y:number,text:string,c:AC='white',size=9,op=0.72): LabelElement =>
+  ({type:'label',id:uid('t'),x,y,text,color:c,size,opacity:op});
 
-const mkZone = (
-  points: Array<{ x: number; y: number }>,
-  color: AllowedColor, fillOpacity = 0.14, opacity = 0.88,
-  layer: OverlayElement['layer'] = 'body',
-): ZoneElement => ({ type: 'zone', id: uid('z'), points, color, fillOpacity, opacity, layer });
-
-const mkDot = (
-  x: number, y: number,
-  color: AllowedColor, r = 0.009, opacity = 0.90,
-  layer: OverlayElement['layer'] = 'body',
-): DotElement => ({ type: 'dot', id: uid('d'), x, y, color, radius: r, opacity, layer });
-
-const mkLabel = (
-  x: number, y: number, text: string,
-  color: AllowedColor = 'white', size = 9, opacity = 0.75,
-): LabelElement => ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity });
-
-/* ── 椭圆近似（40 点 polygon）── */
-function ellipsePoints(
-  cx: number, cy: number,
-  rx: number, ry: number,
-  angleDeg: number,
-  n = 40,
-): Array<{ x: number; y: number }> {
-  const ar = toRad(angleDeg);
-  const cosA = Math.cos(ar), sinA = Math.sin(ar);
-  const pts: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i < n; i++) {
-    const t  = (2 * Math.PI * i) / n;
-    const ex = rx * Math.cos(t);
-    const ey = ry * Math.sin(t);
-    pts.push({ x: cx + ex * cosA - ey * sinA, y: cy + ex * sinA + ey * cosA });
+/* ── 椭圆 polygon（40 点）── */
+function ellipsePts(cx:number,cy:number,rx:number,ry:number,deg:number,n=40): Array<{x:number;y:number}> {
+  const ar=toRad(deg), cosA=Math.cos(ar), sinA=Math.sin(ar);
+  const pts:Array<{x:number;y:number}>=[];
+  for(let i=0;i<n;i++){
+    const t=(2*Math.PI*i)/n, ex=rx*Math.cos(t), ey=ry*Math.sin(t);
+    pts.push({x:cx+ex*cosA-ey*sinA, y:cy+ex*sinA+ey*cosA});
   }
   return pts;
 }
 
-/* ══════════════════════════════════════════════════════
-   computePerspectiveDisc
-══════════════════════════════════════════════════════ */
-export interface DiscParams {
+/* ══════════════════════════════════════════════════
+   buildAnchoredDisc
+   ──────────────────────────────────────────────────
+   所有几何量严格从 leftPoint / rightPoint 推导。
+   guideLineStart / guideLineEnd = 原始关键点，不做任何偏移。
+══════════════════════════════════════════════════ */
+interface AnchoredDisc {
   cx: number; cy: number;
   rx: number; ry: number;
   rotationDeg: number;
-  guideStart: { x: number; y: number };
-  guideEnd:   { x: number; y: number };
+  guideLineStart: Pt;   // = leftPoint（精确，无偏移）
+  guideLineEnd:   Pt;   // = rightPoint（精确，无偏移）
   alpha: number;
-  visible: boolean;
+  valid: boolean;
+  tooNarrow: boolean;   // confidence 不足时只画线
 }
 
-export function computePerspectiveDisc(args: {
-  leftPoint:      Pt;
-  rightPoint:     Pt;
-  viewType:       ViewType;
-  kind:           'shoulder' | 'hip';
-  previousAngle?: number;
-}): DiscParams {
-  const { leftPoint: lp, rightPoint: rp, viewType, kind, previousAngle } = args;
-
-  const FAIL: DiscParams = {
-    cx: 0, cy: 0, rx: 0, ry: 0, rotationDeg: 0,
-    guideStart: { x: 0, y: 0 }, guideEnd: { x: 0, y: 0 },
-    alpha: 0, visible: false,
+function buildAnchoredDisc(
+  leftPoint:  Pt,
+  rightPoint: Pt,
+  options: {
+    heightRatio: number;   // ry = rx × heightRatio
+    maxAngleDeg: number;   // clamp rotation
+    prevAngleKey: string;  // 帧间平滑 key
+  },
+): AnchoredDisc {
+  const FAIL: AnchoredDisc = {
+    cx:0,cy:0,rx:0,ry:0,rotationDeg:0,
+    guideLineStart:leftPoint,guideLineEnd:rightPoint,
+    alpha:0,valid:false,tooNarrow:false,
   };
 
-  if ((lp.confidence ?? 0.8) < 0.40 || (rp.confidence ?? 0.8) < 0.40) return FAIL;
+  const lc = leftPoint.confidence  ?? 0.8;
+  const rc = rightPoint.confidence ?? 0.8;
 
-  const center   = mid2D(lp, rp);
-  const bodyDist = dist2D(lp, rp);
+  // confidence 太低 → 不画圆盘（tooNarrow=true 只画线）
+  const tooNarrow = lc < 0.40 || rc < 0.40;
 
-  /* rx: 动态绑定到关键点间距 */
-  const rxMin = kind === 'shoulder' ? 0.12 : 0.09;
-  const rxMax = kind === 'shoulder' ? 0.32 : 0.24;
-  const rx = clamp(bodyDist * 0.78, rxMin, rxMax);
+  // 中心 = 精确中点
+  const cx = (leftPoint.x + rightPoint.x) / 2;
+  const cy = (leftPoint.y + rightPoint.y) / 2;
 
-  /* rotation angle: clamp + 帧间平滑 */
-  const rawDeg = Math.atan2(rp.y - lp.y, rp.x - lp.x) * 180 / Math.PI;
-  const maxAng = viewType === 'face_on' ? 30 : 45;
-  const clampedDeg = clamp(rawDeg, -maxAng, maxAng);
+  // 两点距离
+  const dist = dist2D(leftPoint, rightPoint);
+  if (dist < 0.01) return FAIL; // 两点几乎重合，跳过
 
-  let smoothedDeg = clampedDeg;
-  if (previousAngle !== undefined) {
-    const delta = clamp(clampedDeg - previousAngle, -8, 8);
-    smoothedDeg = previousAngle + delta;
+  // rx = dist × 0.55：椭圆半长轴 ≈ 两点间距的一半 × 1.1
+  // 这样椭圆端点正好超出两个关键点少许，视觉上包住双点
+  const rx = clamp(dist * 0.55, 0.06, 0.30);
+
+  // ry = rx × heightRatio
+  const ry = clamp(rx * options.heightRatio, 0.012, 0.12);
+
+  // 旋转角 = left→right 方向（弧度转度）
+  const rawDeg = Math.atan2(
+    rightPoint.y - leftPoint.y,
+    rightPoint.x - leftPoint.x,
+  ) * 180 / Math.PI;
+
+  // clamp ±maxAngleDeg
+  const clampedDeg = clamp(rawDeg, -options.maxAngleDeg, options.maxAngleDeg);
+
+  // 帧间平滑：max delta 8°
+  const prev = _prevAngle[options.prevAngleKey];
+  let smoothDeg = clampedDeg;
+  if (prev !== undefined) {
+    const delta = clamp(clampedDeg - prev, -8, 8);
+    smoothDeg = prev + delta;
   }
+  _prevAngle[options.prevAngleKey] = smoothDeg;
 
-  /* perspective ratio → ry */
-  const refW = kind === 'shoulder'
-    ? (viewType === 'face_on' ? 0.22 : 0.14)
-    : (viewType === 'face_on' ? 0.16 : 0.10);
-  const visRatio = clamp(Math.abs(rp.x - lp.x) / refW, 0, 1.0);
+  const alpha = tooNarrow ? 0 : 0.82;
 
-  if (visRatio < 0.22) return FAIL;
-
-  const ryRatioMax = viewType === 'face_on'
-    ? (kind === 'shoulder' ? 0.36 : 0.32)
-    : (kind === 'shoulder' ? 0.28 : 0.24);
-  const ryRatio = clamp(ryRatioMax * visRatio, 0.06, ryRatioMax);
-  const ry = rx * ryRatio;
-
-  /* guide line 端点（比 rx 长 30%）*/
-  const guideExt = rx * 1.30;
-  const ar    = toRad(smoothedDeg);
-  const cosA  = Math.cos(ar), sinA = Math.sin(ar);
-  const guideStart = { x: center.x - guideExt * cosA, y: center.y - guideExt * sinA };
-  const guideEnd   = { x: center.x + guideExt * cosA, y: center.y + guideExt * sinA };
-
-  const alpha = 0.45 + visRatio * 0.40;
-
-  return { cx: center.x, cy: center.y, rx, ry, rotationDeg: smoothedDeg, guideStart, guideEnd, alpha, visible: true };
+  return {
+    cx, cy, rx, ry,
+    rotationDeg: smoothDeg,
+    guideLineStart: leftPoint,   // ← 精确关键点
+    guideLineEnd:   rightPoint,  // ← 精确关键点
+    alpha,
+    valid: true,
+    tooNarrow,
+  };
 }
 
-/* ── 绘制单个圆盘 ── */
-function drawDisc(
-  params: DiscParams,
-  color: AllowedColor,
-  lp: Pt, rp: Pt,
+/* ── 把 AnchoredDisc 转成 OverlayElement 列表 ── */
+function discToElements(
+  disc: AnchoredDisc,
+  color: AC,
   label: string,
-  visRefW: number,
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
-  if (!params.visible) return [];
-  const { cx, cy, rx, ry, rotationDeg, guideStart, guideEnd, alpha } = params;
+  if (!disc.valid) return [];
+  const {cx,cy,rx,ry,rotationDeg,guideLineStart:gS,guideLineEnd:gE,alpha,tooNarrow} = disc;
   const els: OverlayElement[] = [];
 
-  /* guide line */
-  els.push(mkLine(guideStart.x, guideStart.y, guideEnd.x, guideEnd.y, color, 1.8, alpha * 0.85, false, layer));
+  // ① 精确横杠：left keypoint → right keypoint（硬规则）
+  els.push(mkLine(gS.x,gS.y, gE.x,gE.y, color, 2.2, alpha, false, layer));
 
-  /* 椭圆填充 + 轮廓 */
-  const pts = ellipsePoints(cx, cy, rx, ry, rotationDeg, 40);
-  const fillOp  = color === 'red' ? 0.14 : 0.16;
-  els.push(mkZone(pts, color, fillOp, alpha, layer));
+  // ② 端点关节圆点（绑定在真实关键点上）
+  if ((gS.confidence ?? 0.8) > 0.35) els.push(mkDot(gS.x,gS.y, color, 0.010, alpha, layer));
+  if ((gE.confidence ?? 0.8) > 0.35) els.push(mkDot(gE.x,gE.y, color, 0.010, alpha, layer));
 
-  /* 端点 */
-  if ((lp.confidence ?? 0.8) > 0.50) els.push(mkDot(lp.x, lp.y, color, 0.009, alpha * 0.92, layer));
-  if ((rp.confidence ?? 0.8) > 0.50) els.push(mkDot(rp.x, rp.y, color, 0.009, alpha * 0.92, layer));
+  // confidence 不足 → 只画线，不画圆盘
+  if (tooNarrow) return els;
 
-  /* label（仅正面时）*/
-  const vis = Math.abs(rp.x - lp.x) / visRefW;
-  if (vis > 0.60) {
-    els.push(mkLabel(cx, cy - ry * 1.7, label + '  ' + Math.round(Math.abs(rotationDeg)) + '°', 'white', 9, 0.72));
-  }
+  // ③ 椭圆（zone polygon）：中心=midpoint，长轴=两点连线方向
+  const pts = ellipsePts(cx,cy,rx,ry,rotationDeg,40);
+  const fillOp = color==='red' ? 0.14 : 0.16;
+  els.push(mkZone(pts, color, fillOp, alpha * 0.95, layer));
+
+  // ④ label（角度）
+  els.push(mkLabel(cx, cy - ry*1.8, label + '  ' + Math.round(Math.abs(rotationDeg)) + '°', 'white', 9, 0.70));
 
   return els;
 }
 
-/* ══════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════
    关键点解析
-══════════════════════════════════════════════════════ */
+══════════════════════════════════════════════════ */
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
   const r: Partial<Record<BodyPointName, Pt>> = {};
-  const toP = (pt?: { x: number; y: number; confidence?: number } | null) =>
-    pt ? { x: pt.x, y: pt.y, confidence: pt.confidence ?? 0.8 } : null;
-  if (lm.head)          r.headCenter    = toP(lm.head)!;
-  if (lm.leftShoulder)  r.leftShoulder  = toP(lm.leftShoulder)!;
-  if (lm.rightShoulder) r.rightShoulder = toP(lm.rightShoulder)!;
-  if (lm.leftElbow)     r.leftElbow     = toP(lm.leftElbow)!;
-  if (lm.rightElbow)    r.rightElbow    = toP(lm.rightElbow)!;
-  if (lm.leftWrist)     r.leftWrist     = toP(lm.leftWrist)!;
-  if (lm.rightWrist)    r.rightWrist    = toP(lm.rightWrist)!;
-  if (lm.leftHip)       r.leftHip       = toP(lm.leftHip)!;
-  if (lm.rightHip)      r.rightHip      = toP(lm.rightHip)!;
-  if (lm.leftKnee)      r.leftKnee      = toP(lm.leftKnee)!;
-  if (lm.rightKnee)     r.rightKnee     = toP(lm.rightKnee)!;
-  if (lm.leftAnkle)     r.leftAnkle     = toP(lm.leftAnkle)!;
-  if (lm.rightAnkle)    r.rightAnkle    = toP(lm.rightAnkle)!;
-  const ls = r.leftShoulder, rs = r.rightShoulder;
-  if (ls && rs) r.shoulderCenter = mid2D(ls, rs);
-  const lh = r.leftHip, rh = r.rightHip;
-  if (lh && rh) r.hipCenter = mid2D(lh, rh);
-  const lw = r.leftWrist, rw = r.rightWrist;
-  if (lw && rw) r.gripCenter = mid2D(lw, rw);
+  const toP = (pt?: {x:number;y:number;confidence?:number}|null) =>
+    pt ? {x:pt.x,y:pt.y,confidence:pt.confidence??0.8} : null;
+  if(lm.head)          r.headCenter    = toP(lm.head)!;
+  if(lm.leftShoulder)  r.leftShoulder  = toP(lm.leftShoulder)!;
+  if(lm.rightShoulder) r.rightShoulder = toP(lm.rightShoulder)!;
+  if(lm.leftElbow)     r.leftElbow     = toP(lm.leftElbow)!;
+  if(lm.rightElbow)    r.rightElbow    = toP(lm.rightElbow)!;
+  if(lm.leftWrist)     r.leftWrist     = toP(lm.leftWrist)!;
+  if(lm.rightWrist)    r.rightWrist    = toP(lm.rightWrist)!;
+  if(lm.leftHip)       r.leftHip       = toP(lm.leftHip)!;
+  if(lm.rightHip)      r.rightHip      = toP(lm.rightHip)!;
+  if(lm.leftKnee)      r.leftKnee      = toP(lm.leftKnee)!;
+  if(lm.rightKnee)     r.rightKnee     = toP(lm.rightKnee)!;
+  if(lm.leftAnkle)     r.leftAnkle     = toP(lm.leftAnkle)!;
+  if(lm.rightAnkle)    r.rightAnkle    = toP(lm.rightAnkle)!;
+  const ls=r.leftShoulder,rs=r.rightShoulder;
+  if(ls&&rs) r.shoulderCenter=mid2D(ls,rs);
+  const lh=r.leftHip,rh=r.rightHip;
+  if(lh&&rh) r.hipCenter=mid2D(lh,rh);
+  const lw=r.leftWrist,rw=r.rightWrist;
+  if(lw&&rw) r.gripCenter=mid2D(lw,rw);
   return r;
 }
 
-/* ══════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════
    主生成函数
-══════════════════════════════════════════════════════ */
+══════════════════════════════════════════════════ */
 export function generateSpecDrivenOverlayFrame(
   issue: MainIssueType,
   viewType: ViewType,
   phase: string,
   kpFrame: KeypointFrame,
-  _historyPts?: Array<{ x: number; y: number }>,
+  _historyPts?: Array<{x:number;y:number}>,
 ): OverlayElement[] {
   _uid = 0;
   const pts = getKeypoints(kpFrame);
   const els: OverlayElement[] = [];
+  const maxAng = viewType==='face_on' ? 30 : 45;
 
   /* Shoulder Disc */
-  const ls = pts.leftShoulder, rs = pts.rightShoulder;
-  if (ls && rs) {
-    const sp = computePerspectiveDisc({ leftPoint: ls, rightPoint: rs, viewType, kind: 'shoulder', previousAngle: _prevAngle['shoulder'] });
-    if (sp.visible) _prevAngle['shoulder'] = sp.rotationDeg;
-    const refW = viewType === 'face_on' ? 0.22 : 0.14;
-    els.push(...drawDisc(sp, 'red', ls, rs, 'SHOULDERS', refW, 'body'));
+  const ls=pts.leftShoulder, rs=pts.rightShoulder;
+  if(ls&&rs){
+    const disc = buildAnchoredDisc(ls, rs, {
+      heightRatio: 0.32,      // ry = rx × 0.32
+      maxAngleDeg: maxAng,
+      prevAngleKey: 'shoulder',
+    });
+    els.push(...discToElements(disc, 'red', 'SHOULDERS', 'body'));
   }
 
   /* Hip Ring */
-  const lh = pts.leftHip, rh = pts.rightHip;
-  if (lh && rh) {
-    const hp = computePerspectiveDisc({ leftPoint: lh, rightPoint: rh, viewType, kind: 'hip', previousAngle: _prevAngle['hip'] });
-    if (hp.visible) _prevAngle['hip'] = hp.rotationDeg;
-    const refW = viewType === 'face_on' ? 0.16 : 0.10;
-    els.push(...drawDisc(hp, 'red', lh, rh, 'HIPS', refW, 'club'));
+  const lh=pts.leftHip, rh=pts.rightHip;
+  if(lh&&rh){
+    const disc = buildAnchoredDisc(lh, rh, {
+      heightRatio: 0.28,      // ry = rx × 0.28（比肩部更扁）
+      maxAngleDeg: maxAng,
+      prevAngleKey: 'hip',
+    });
+    els.push(...discToElements(disc, 'red', 'HIPS', 'club'));
   }
 
   return els;
 }
 
 /* ── 兼容性导出 ── */
-export function getTrackedPoint(
-  _issue: MainIssueType, _viewType: ViewType, kpFrame: KeypointFrame,
-): { x: number; y: number } | null {
-  const pts = getKeypoints(kpFrame);
-  return pts.shoulderCenter ? { x: pts.shoulderCenter.x, y: pts.shoulderCenter.y } : null;
+export function computePerspectiveDisc(args: {
+  leftPoint: Pt; rightPoint: Pt;
+  viewType: ViewType; kind: 'shoulder'|'hip'; previousAngle?: number;
+}) {
+  const {leftPoint:lp,rightPoint:rp,viewType,kind,previousAngle} = args;
+  const maxAng = viewType==='face_on' ? 30 : 45;
+  return buildAnchoredDisc(lp, rp, {
+    heightRatio: kind==='shoulder' ? 0.32 : 0.28,
+    maxAngleDeg: maxAng,
+    prevAngleKey: kind,
+  });
 }
 
-export function findNearestFrame(frames: KeypointFrame[], time: number): KeypointFrame | null {
-  if (!frames.length) return null;
-  let best = frames[0], bestDist = Math.abs(time - best.time);
-  for (const f of frames) { const d = Math.abs(time - f.time); if (d < bestDist) { best = f; bestDist = d; } }
+export function getTrackedPoint(
+  _i:MainIssueType,_v:ViewType,kpFrame:KeypointFrame,
+):{x:number;y:number}|null{
+  const pts=getKeypoints(kpFrame);
+  return pts.shoulderCenter?{x:pts.shoulderCenter.x,y:pts.shoulderCenter.y}:null;
+}
+
+export function findNearestFrame(frames:KeypointFrame[],time:number):KeypointFrame|null{
+  if(!frames.length) return null;
+  let best=frames[0],bestD=Math.abs(time-best.time);
+  for(const f of frames){const d=Math.abs(time-f.time);if(d<bestD){best=f;bestD=d;}}
   return best;
 }
 
 export function applyCorrection(
-  pt: { x: number; y: number; confidence?: number }, dir: string, mag = 'medium',
-): { x: number; y: number; confidence?: number } {
-  const DELTA: Record<string, number> = { small: 0.028, medium: 0.050, large: 0.078 };
-  const d = DELTA[mag] ?? 0.050;
-  switch (dir) {
-    case 'lower':          return { ...pt, y: pt.y + d };
-    case 'higher':         return { ...pt, y: pt.y - d };
-    case 'more_inside':    return { ...pt, x: pt.x - d };
-    case 'more_outside':   return { ...pt, x: pt.x + d };
-    case 'more_centered':  return { ...pt, x: 0.50 };
-    default:               return pt;
+  pt:{x:number;y:number;confidence?:number},dir:string,mag='medium',
+):{x:number;y:number;confidence?:number}{
+  const D:Record<string,number>={small:0.028,medium:0.050,large:0.078};
+  const d=D[mag]??0.050;
+  switch(dir){
+    case 'lower':         return{...pt,y:pt.y+d};
+    case 'higher':        return{...pt,y:pt.y-d};
+    case 'more_inside':   return{...pt,x:pt.x-d};
+    case 'more_outside':  return{...pt,x:pt.x+d};
+    case 'more_centered': return{...pt,x:0.50};
+    default:              return pt;
   }
 }
