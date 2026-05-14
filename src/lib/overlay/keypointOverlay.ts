@@ -1,16 +1,10 @@
 /**
- * keypointOverlay.ts
+ * keypointOverlay.ts — 红色旋转盘（极简版）
  *
- * 旋转盘核心原则：
- *   - 圆盘大小固定不变（基于视频宽度的固定比例）
- *   - 只有角度跟着肩膀/髋部连线实时变化
- *   - 轴线穿过两端点并延伸到圆盘外侧
- *   - 红色=当前，绿色=目标（更水平）
- *
- * 为什么用固定大小：
- *   转身后从正面看肩宽像素变小（透视），
- *   用动态宽度会导致圆盘忽大忽小。
- *   正确做法：用视频宽度的固定比例作为圆盘大小。
+ * 只有红色圆盘跟随身体：
+ *   - 圆盘大小固定（不随转身变化）
+ *   - 圆盘角度跟着肩膀/髋部连线实时变化
+ *   - 轴线穿过两端点延伸到圆盘外侧
  */
 
 import type { OverlayElement, KeypointFrame } from '@/types/analysis';
@@ -59,67 +53,39 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
   return r;
 }
 
-/**
- * buildRotationDisc
- *
- * @param leftPt   左端点（左肩/左髋）
- * @param rightPt  右端点（右肩/右髋）
- * @param fixedRx  固定长轴（归一化，不随转身变化）
- * @param fixedRy  固定短轴
- * @param label    标注文字
- * @param layer    所属layer
- */
-function buildRotationDisc(
-  leftPt: Pt,
-  rightPt: Pt,
-  fixedRx: number,
-  fixedRy: number,
+function buildDisc(
+  leftPt: Pt, rightPt: Pt,
+  fixedRx: number, fixedRy: number,
   label: string,
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
   const els: OverlayElement[] = [];
 
-  // 圆盘中心 = 两端点中心
   const cx = (leftPt.x + rightPt.x) / 2;
   const cy = (leftPt.y + rightPt.y) / 2;
-
-  // 旋转角度 = 两端点连线的角度（这是唯一会变化的参数）
   const angle = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x);
 
-  // 轴线长 = 比圆盘长30%（穿越圆盘延伸出去）
+  // 轴线：比圆盘长30%，穿越并延伸出去
   const lineExt = fixedRx * 1.32;
   const cosA = Math.cos(angle), sinA = Math.sin(angle);
 
-  // ── 🔴 红色：当前位置 ──
+  // 轴线（先画，圆盘盖在上面）
   els.push(mkLine(
     cx - lineExt * cosA, cy - lineExt * sinA,
     cx + lineExt * cosA, cy + lineExt * sinA,
-    'red', 2.5, 0.92, false, layer,
+    'red', 2.5, 0.90, false, layer,
   ));
+
+  // 红色圆盘
   els.push(mkEllipse(cx, cy, fixedRx, fixedRy, angle, 'red', 3.5, 0.90, layer));
+
+  // 两端关节点
   els.push(mkDot(leftPt.x,  leftPt.y,  'red', 0.011, 0.96, layer));
   els.push(mkDot(rightPt.x, rightPt.y, 'red', 0.011, 0.96, layer));
 
-  // ── 🟢 绿色：目标位置（更水平，同样大小）──
+  // 倾斜角标注
   const nearestH = Math.round(angle / Math.PI) * Math.PI;
-  const tilt = angle - nearestH;
-  const targetAngle = nearestH + tilt * 0.35;
-
-  // 垂直偏移让两个圆盘分开（沿法线方向）
-  const perpCos = -sinA, perpSin = cosA;
-  const tcx = cx + perpCos * fixedRy * 0.45;
-  const tcy = cy + perpSin * fixedRy * 0.45;
-  const tCosA = Math.cos(targetAngle), tSinA = Math.sin(targetAngle);
-
-  els.push(mkLine(
-    tcx - lineExt * tCosA, tcy - lineExt * tSinA,
-    tcx + lineExt * tCosA, tcy + lineExt * tSinA,
-    'green', 2.2, 0.85, false, layer,
-  ));
-  els.push(mkEllipse(tcx, tcy, fixedRx, fixedRy, targetAngle, 'green', 3.0, 0.82, layer));
-
-  // 倾斜角度标注
-  const tiltDeg = Math.round(Math.abs(tilt * 180 / Math.PI));
+  const tiltDeg = Math.round(Math.abs((angle - nearestH) * 180 / Math.PI));
   els.push(mkLabel(cx, cy - fixedRy * 1.55, label + '  ' + tiltDeg + '°', 'white', 10));
 
   return els;
@@ -136,24 +102,17 @@ export function generateSpecDrivenOverlayFrame(
   const pts = getKeypoints(kpFrame);
   const els: OverlayElement[] = [];
 
-  // ── 固定圆盘尺寸（归一化，相对于视频宽度）──
-  // 肩部：宽度 = 视频宽的 26%，厚度 = 宽度的 35%
+  // 固定圆盘尺寸（视频宽度的比例，不随转身变化）
   const SHOULDER_RX = 0.26;
   const SHOULDER_RY = SHOULDER_RX * 0.35;
-
-  // 髋部：比肩部稍窄
   const HIP_RX = 0.20;
   const HIP_RY = HIP_RX * 0.35;
 
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
-  if (ls && rs) {
-    els.push(...buildRotationDisc(ls, rs, SHOULDER_RX, SHOULDER_RY, 'SHOULDERS', 'body'));
-  }
+  if (ls && rs) els.push(...buildDisc(ls, rs, SHOULDER_RX, SHOULDER_RY, 'SHOULDERS', 'body'));
 
   const lh = pts.leftHip, rh = pts.rightHip;
-  if (lh && rh) {
-    els.push(...buildRotationDisc(lh, rh, HIP_RX, HIP_RY, 'HIPS', 'club'));
-  }
+  if (lh && rh) els.push(...buildDisc(lh, rh, HIP_RX, HIP_RY, 'HIPS', 'club'));
 
   return els;
 }
@@ -162,8 +121,7 @@ export function getTrackedPoint(
   _issue: MainIssueType, _viewType: ViewType, kpFrame: KeypointFrame,
 ): { x: number; y: number } | null {
   const pts = getKeypoints(kpFrame);
-  const sc = pts.shoulderCenter;
-  return sc ? { x: sc.x, y: sc.y } : null;
+  return pts.shoulderCenter ? { x: pts.shoulderCenter.x, y: pts.shoulderCenter.y } : null;
 }
 
 export function findNearestFrame(frames: KeypointFrame[], time: number): KeypointFrame | null {
