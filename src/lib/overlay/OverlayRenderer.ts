@@ -1,8 +1,11 @@
 /**
- * OverlayRenderer.ts
+ * OverlayRenderer.ts — 旋转盘渲染器（样板图风格）
  *
- * ÃÂ©ÃÂ«ÃÂÃÂ¥ÃÂ°ÃÂÃÂ¥ÃÂ¤ÃÂ«ÃÂ¥ÃÂÃÂÃÂ©ÃÂÃÂ¨ÃÂ¤ÃÂ½ÃÂÃÂ¥ÃÂÃÂ¯ÃÂ¨ÃÂ§ÃÂÃÂ¥ÃÂÃÂÃÂ¦ÃÂ¸ÃÂ²ÃÂ¦ÃÂÃÂÃÂ¥ÃÂÃÂ¨
- * ÃÂ¦ÃÂÃÂ°ÃÂ¥ÃÂ¢ÃÂÃÂ¯ÃÂ¼ÃÂdrawEllipse ÃÂ¢ÃÂÃÂ ÃÂ¦ÃÂÃÂÃÂ¨ÃÂ½ÃÂ¬ÃÂ§ÃÂÃÂÃÂ¦ÃÂ¤ÃÂ­ÃÂ¥ÃÂÃÂÃÂ¯ÃÂ¼ÃÂÃÂ¨ÃÂÃÂ©ÃÂ©ÃÂÃÂ¨/ÃÂ©ÃÂ«ÃÂÃÂ©ÃÂÃÂ¨ÃÂ¯ÃÂ¼ÃÂ
+ * drawEllipse: AlignSnow 霓虹旋转盘
+ *   - 外层强发光（blur=28，给人 3D 光环感）
+ *   - 内层清晰粗描边（5px）
+ *   - 半透明填充（22%）
+ *   - 两层叠加 → 样板图效果
  */
 
 import type {
@@ -15,10 +18,10 @@ type Ctx = CanvasRenderingContext2D;
 type Pt = { x: number; y: number };
 
 export const COLORS = {
-  red:    '#ff3c3c',
-  green:  '#3cee3c',
-  yellow: '#ffd040',
-  white:  'rgba(255,255,255,0.90)',
+  red:    '#ff3030',
+  green:  '#32ff50',
+  yellow: '#ffe040',
+  white:  'rgba(255,255,255,0.92)',
   gray:   'rgba(200,200,200,0.82)',
   black:  'rgba(0,0,0,0.80)',
 } as const;
@@ -31,7 +34,6 @@ function resolveColor(c?: string): string {
   return COLORS.white;
 }
 
-/** ÃÂ¥ÃÂÃÂ³ÃÂ¨ÃÂÃÂÃÂ¥ÃÂÃÂÃÂ§ÃÂÃÂ¹ */
 export function drawJointDot(
   ctx: Ctx, x: number, y: number, W: number, H: number,
   color: string, radius = 0.008, opacity = 0.92,
@@ -51,7 +53,6 @@ export function drawJointDot(
   ctx.restore();
 }
 
-/** ÃÂ§ÃÂ»ÃÂÃÂ¦ÃÂÃÂÃÂ§ÃÂºÃÂ¿ */
 export function drawStructureLine(
   ctx: Ctx, x1: number, y1: number, x2: number, y2: number,
   W: number, H: number, color: string, strokeWidth = 1.0, opacity = 0.85, dashed = false,
@@ -61,8 +62,6 @@ export function drawStructureLine(
   ctx.strokeStyle = color;
   ctx.lineWidth = strokeWidth * (Math.min(W, H) / 320);
   ctx.lineCap = 'round';
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur = 2;
   if (dashed) ctx.setLineDash([strokeWidth * 2.5, strokeWidth * 2]);
   ctx.beginPath();
   ctx.moveTo(x1 * W, y1 * H);
@@ -73,48 +72,61 @@ export function drawStructureLine(
 }
 
 /**
- * drawEllipse ÃÂ¢ÃÂÃÂ ÃÂ¦ÃÂÃÂÃÂ¨ÃÂ½ÃÂ¬ÃÂ§ÃÂÃÂÃÂ¦ÃÂ¤ÃÂ­ÃÂ¥ÃÂÃÂÃÂ¯ÃÂ¼ÃÂAlignSnow ÃÂ©ÃÂ£ÃÂÃÂ¦ÃÂ ÃÂ¼ÃÂ¦ÃÂ ÃÂ¸ÃÂ¥ÃÂ¿ÃÂÃÂ¥ÃÂÃÂÃÂ§ÃÂ´ÃÂ ÃÂ¯ÃÂ¼ÃÂ
+ * drawEllipse — 样板图霓虹旋转盘
  *
- * cx, cy: ÃÂ¦ÃÂ¤ÃÂ­ÃÂ¥ÃÂÃÂÃÂ¤ÃÂ¸ÃÂ­ÃÂ¥ÃÂ¿ÃÂÃÂ¯ÃÂ¼ÃÂÃÂ¥ÃÂ½ÃÂÃÂ¤ÃÂ¸ÃÂÃÂ¥ÃÂÃÂÃÂ¯ÃÂ¼ÃÂ
- * rx, ry: ÃÂ©ÃÂÃÂ¿ÃÂ¨ÃÂ½ÃÂ´/ÃÂ§ÃÂÃÂ­ÃÂ¨ÃÂ½ÃÂ´ÃÂ¥ÃÂÃÂÃÂ¥ÃÂ¾ÃÂÃÂ¯ÃÂ¼ÃÂÃÂ¥ÃÂ½ÃÂÃÂ¤ÃÂ¸ÃÂÃÂ¥ÃÂÃÂÃÂ¯ÃÂ¼ÃÂÃÂ§ÃÂÃÂ¸ÃÂ¥ÃÂ¯ÃÂ¹ÃÂ¤ÃÂºÃÂÃÂ¨ÃÂ§ÃÂÃÂ©ÃÂ¢ÃÂÃÂ¥ÃÂ®ÃÂ½ÃÂ¥ÃÂºÃÂ¦ÃÂ¯ÃÂ¼ÃÂ
- * angle:  ÃÂ¦ÃÂÃÂÃÂ¨ÃÂ½ÃÂ¬ÃÂ¨ÃÂ§ÃÂÃÂ¥ÃÂºÃÂ¦ÃÂ¯ÃÂ¼ÃÂÃÂ¥ÃÂ¼ÃÂ§ÃÂ¥ÃÂºÃÂ¦ÃÂ¯ÃÂ¼ÃÂ0 = ÃÂ¦ÃÂ°ÃÂ´ÃÂ¥ÃÂ¹ÃÂ³ÃÂ¯ÃÂ¼ÃÂ
- * ÃÂ¦ÃÂ¸ÃÂ²ÃÂ¦ÃÂÃÂÃÂ¤ÃÂ¸ÃÂºÃÂ¯ÃÂ¼ÃÂÃÂ¦ÃÂÃÂÃÂ¨ÃÂ¾ÃÂ¹ÃÂ¦ÃÂ¤ÃÂ­ÃÂ¥ÃÂÃÂ + ÃÂ¥ÃÂÃÂÃÂ©ÃÂÃÂ¨ÃÂ¥ÃÂÃÂÃÂ©ÃÂÃÂÃÂ¦ÃÂÃÂÃÂ¥ÃÂ¡ÃÂ«ÃÂ¥ÃÂÃÂ
+ * 三层渲染：
+ *  1. 超大发光外圈（glow halo）→ 3D光环感
+ *  2. 清晰粗描边（主轮廓）
+ *  3. 半透明填充（盘面感）
+ *
+ * 注意：rx/ry 是归一化值（相对视频宽度），
+ * 因为椭圆是旋转盘，长轴和短轴都用 W 作基准保持宽高比一致。
  */
 export function drawEllipse(
-  ctx: Ctx, cx: number, cy: number, rx: number, ry: number, angle: number,
-  W: number, H: number, color: string, strokeWidth = 3.5, opacity = 0.92,
+  ctx: Ctx,
+  cx: number, cy: number,
+  rx: number, ry: number,
+  angleDeg: number,
+  W: number, H: number,
+  color: string,
+  strokeWidth = 5.0,
+  opacity = 0.92,
 ) {
-  const pcx = cx * W, pcy = cy * H;
-  const prx = rx * W, pry = ry * W;
+  const pcx = cx * W;
+  const pcy = cy * H;
+  const prx = rx * W;   // 长轴像素
+  const pry = ry * W;   // 短轴像素（都用W，保持3D旋转盘比例）
+
+  const angle = angleDeg * Math.PI / 180;
 
   ctx.save();
   ctx.translate(pcx, pcy);
   ctx.rotate(angle);
 
-  // Ã¥Â¤ÂÃ¥Â±ÂÃ¥Â¤Â§Ã¥ÂÂÃ¥ÂÂ Ã¢ÂÂ Ã©ÂÂÃ¨ÂÂ¹Ã¦ÂÂÃ¯Â¼ÂÃ¥ÂÂÃ¨ÂÂÃ¥ÂÂ¾Ã©Â£ÂÃ¦Â Â¼Ã¯Â¼Â
-  ctx.globalAlpha = opacity * 0.30;
+  // ── 层1：外层超大发光 halo（blur=28）──
+  ctx.globalAlpha = opacity * 0.28;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 22;
+  ctx.shadowBlur  = 28;
   ctx.strokeStyle = color;
-  ctx.lineWidth = strokeWidth * 2.8;
+  ctx.lineWidth   = strokeWidth * 3.2;
   ctx.beginPath();
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Ã¥ÂÂÃ¥Â±ÂÃ¦Â¸ÂÃ¦ÂÂ°Ã¤Â¸Â»Ã§ÂºÂ¿
+  // ── 层2：主描边（清晰轮廓）──
   ctx.globalAlpha = opacity;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur  = 10;
   ctx.strokeStyle = color;
-  ctx.lineWidth = strokeWidth;
+  ctx.lineWidth   = strokeWidth;
   ctx.beginPath();
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Ã¥ÂÂÃ©ÂÂ¨Ã¥ÂÂÃ©ÂÂÃ¦ÂÂÃ¥Â¡Â«Ã¥ÂÂ
-  ctx.shadowBlur = 0;
-  ctx.globalAlpha = opacity * 0.10;
-  ctx.fillStyle = color;
+  // ── 层3：半透明填充（盘面感）──
+  ctx.shadowBlur  = 0;
+  ctx.globalAlpha = opacity * 0.22;
+  ctx.fillStyle   = color;
   ctx.beginPath();
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -135,8 +147,6 @@ export function drawCurvePath(
   ctx.lineWidth = lw;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur = 2;
   ctx.beginPath();
   const [sx, sy] = px(points[0]);
   ctx.moveTo(sx, sy);
@@ -148,43 +158,36 @@ export function drawCurvePath(
   const last = px(points[points.length - 1]);
   ctx.lineTo(last[0], last[1]);
   ctx.stroke();
-  ctx.shadowBlur = 0;
-  ctx.beginPath();
-  ctx.arc(last[0], last[1], lw * 1.5, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
   ctx.restore();
 }
 
-/** ÃÂ¦ÃÂÃÂ¹ÃÂ¥ÃÂÃÂÃÂ§ÃÂ®ÃÂ­ÃÂ¥ÃÂ¤ÃÂ´ */
 export function drawArrow(
   ctx: Ctx, fromX: number, fromY: number, toX: number, toY: number,
   W: number, H: number, color: string, strokeWidth = 1.5, opacity = 0.90,
 ) {
-  const fx = fromX * W, fy = fromY * H, tx = toX * W, ty = toY * H;
-  const angle = Math.atan2(ty - fy, tx - fx);
-  const dist = Math.hypot(tx - fx, ty - fy);
+  const fx = fromX*W, fy = fromY*H, tx = toX*W, ty = toY*H;
+  const a = Math.atan2(ty-fy, tx-fx);
+  const dist = Math.hypot(tx-fx, ty-fy);
   const headLen = Math.min(14, dist * 0.38);
-  const lw = strokeWidth * (Math.min(W, H) / 320);
+  const lw = strokeWidth * (Math.min(W,H) / 320);
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.strokeStyle = color; ctx.fillStyle = color;
   ctx.lineWidth = lw; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(fx,fy); ctx.lineTo(tx,ty); ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(tx, ty);
-  ctx.lineTo(tx - headLen * Math.cos(angle - 0.40), ty - headLen * Math.sin(angle - 0.40));
-  ctx.lineTo(tx - headLen * Math.cos(angle + 0.40), ty - headLen * Math.sin(angle + 0.40));
+  ctx.moveTo(tx,ty);
+  ctx.lineTo(tx - headLen*Math.cos(a-0.40), ty - headLen*Math.sin(a-0.40));
+  ctx.lineTo(tx - headLen*Math.cos(a+0.40), ty - headLen*Math.sin(a+0.40));
   ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 
-/** ÃÂ¦ÃÂÃÂÃÂ¥ÃÂ­ÃÂÃÂ¦ÃÂ ÃÂÃÂ§ÃÂ­ÃÂ¾ */
 export function drawLabel(
   ctx: Ctx, x: number, y: number, W: number, H: number,
   text: string, color: string, fontSize = 10, opacity = 0.88,
 ) {
-  const size = fontSize * Math.min(W, H) / 320;
+  const size = fontSize * Math.min(W,H) / 320;
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.font = `700 ${size}px "DM Sans", system-ui, sans-serif`;
@@ -192,55 +195,50 @@ export function drawLabel(
   ctx.shadowColor = 'rgba(0,0,0,0.90)';
   ctx.shadowBlur = 5;
   ctx.fillStyle = color;
-  ctx.fillText(text, x * W, y * H);
+  ctx.fillText(text, x*W, y*H);
   ctx.restore();
 }
 
-/** Badge */
 export function drawBadge(
   ctx: Ctx, x: number, y: number, W: number, H: number,
-  variant: 'correct' | 'wrong', opacity = 0.88,
+  variant: 'correct'|'wrong', opacity = 0.88,
 ) {
-  const px2 = x * W, py2 = y * H;
-  const r = Math.min(W, H) * 0.032;
+  const px2=x*W, py2=y*H, r=Math.min(W,H)*0.032;
   ctx.save();
   ctx.globalAlpha = opacity;
-  ctx.beginPath();
-  ctx.arc(px2, py2, r, 0, Math.PI * 2);
-  ctx.fillStyle = variant === 'correct' ? COLORS.green : COLORS.red;
+  ctx.beginPath(); ctx.arc(px2,py2,r,0,Math.PI*2);
+  ctx.fillStyle = variant==='correct' ? COLORS.green : COLORS.red;
   ctx.fill();
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = r * 0.22;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle='#fff'; ctx.lineWidth=r*0.22;
+  ctx.lineCap='round'; ctx.lineJoin='round';
   ctx.beginPath();
-  if (variant === 'correct') {
-    ctx.moveTo(px2 - r * 0.5, py2);
-    ctx.lineTo(px2 - r * 0.1, py2 + r * 0.4);
-    ctx.lineTo(px2 + r * 0.55, py2 - r * 0.35);
+  if(variant==='correct'){
+    ctx.moveTo(px2-r*0.5,py2); ctx.lineTo(px2-r*0.1,py2+r*0.4); ctx.lineTo(px2+r*0.55,py2-r*0.35);
   } else {
-    ctx.moveTo(px2 - r * 0.4, py2 - r * 0.4); ctx.lineTo(px2 + r * 0.4, py2 + r * 0.4);
-    ctx.moveTo(px2 + r * 0.4, py2 - r * 0.4); ctx.lineTo(px2 - r * 0.4, py2 + r * 0.4);
+    ctx.moveTo(px2-r*0.4,py2-r*0.4); ctx.lineTo(px2+r*0.4,py2+r*0.4);
+    ctx.moveTo(px2+r*0.4,py2-r*0.4); ctx.lineTo(px2-r*0.4,py2+r*0.4);
   }
-  ctx.stroke();
-  ctx.restore();
+  ctx.stroke(); ctx.restore();
 }
 
-/** Zone */
 export function drawZone(
   ctx: Ctx, points: Pt[], W: number, H: number,
-  color: string, fillOpacity = 0.08,
+  color: string, fillOpacity = 0.18, strokeOpacity = 0.88, strokeWidth = 4.5,
 ) {
   if (points.length < 3) return;
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(points[0].x * W, points[0].y * H);
-  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x * W, points[i].y * H);
+  ctx.moveTo(points[0].x*W, points[0].y*H);
+  for(let i=1;i<points.length;i++) ctx.lineTo(points[i].x*W, points[i].y*H);
   ctx.closePath();
   ctx.fillStyle = color; ctx.globalAlpha = fillOpacity; ctx.fill();
-  ctx.globalAlpha = 0.35; ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+  ctx.shadowColor = color; ctx.shadowBlur = 10;
+  ctx.globalAlpha = strokeOpacity; ctx.strokeStyle = color;
+  ctx.lineWidth = strokeWidth; ctx.lineJoin = 'round'; ctx.stroke();
   ctx.restore();
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ¤ÃÂ¸ÃÂ»ÃÂ¥ÃÂÃÂÃÂ¥ÃÂÃÂÃÂ¥ÃÂÃÂ½ÃÂ¦ÃÂÃÂ° ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
+/* ══ 主分发 ══ */
 export function renderElement(
   ctx: Ctx, el: OverlayElement, W: number, H: number, layer = 'all',
 ) {
@@ -248,16 +246,16 @@ export function renderElement(
   const color = resolveColor(el.color);
   const opacity = el.opacity ?? 0.88;
 
-  // ÃÂ¦ÃÂ¤ÃÂ­ÃÂ¥ÃÂÃÂÃÂ¯ÃÂ¼ÃÂÃÂ¦ÃÂÃÂ°ÃÂ§ÃÂ±ÃÂ»ÃÂ¥ÃÂÃÂÃÂ¯ÃÂ¼ÃÂÃÂ©ÃÂÃÂÃÂ¨ÃÂ¿ÃÂ type ÃÂ¥ÃÂÃÂ¤ÃÂ¦ÃÂÃÂ­ÃÂ¯ÃÂ¼ÃÂ
+  // ellipse type（通过 unknown 绕过 TS，renderer 已支持）
   const elAny = el as unknown as Record<string, unknown>;
-  if (elAny.type === 'ellipse') {
+  if (elAny['type'] === 'ellipse') {
     drawEllipse(
       ctx,
-      elAny.cx as number, elAny.cy as number,
-      elAny.rx as number, elAny.ry as number,
-      elAny.angle as number,
+      elAny['cx'] as number, elAny['cy'] as number,
+      elAny['rx'] as number, elAny['ry'] as number,
+      elAny['angleDeg'] as number,
       W, H, color,
-      (elAny.strokeWidth as number) ?? 1.8,
+      (elAny['strokeWidth'] as number) ?? 5.0,
       opacity,
     );
     return;
@@ -296,7 +294,8 @@ export function renderElement(
     }
     case 'zone': {
       const e = el as ZoneElement;
-      drawZone(ctx, e.points, W, H, color, e.fillOpacity ?? 0.08);
+      const zo = el as unknown as { strokeWidth?: number };
+      drawZone(ctx, e.points, W, H, color, e.fillOpacity ?? 0.18, opacity, zo.strokeWidth ?? 4.5);
       break;
     }
   }
