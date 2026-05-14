@@ -1,186 +1,259 @@
 /**
  * keypointOverlay.ts
  *
- * 旋转盘显示原则（美术透视规则）：
+ * Shoulder / Hip Rotation Disc — 透视绑定修复版
  *
- * ① 颜色：灰色（rgba(200,200,200,0.82)），不刺眼
- *
- * ② 透视压缩：
- *    圆盘是肩膀连线绕垂直轴旋转形成的平面。
- *    正面时：ry = 最大值（圆盘正面朝镜头）
- *    转45°时：ry = ry_max × cos(45°) ≈ 70%（压扁）
- *    转90°时：ry → 0（侧面看只剩一条线）
- *    visRatio = apparentWidth / refWidth ≈ cos(旋转角)
- *    perspRy  = fixedRy × visRatio
- *
- * ③ 倾斜角度（关键修正）：
- *    问题：atan2(dy, dx) 当 dx 很小时（身体转侧）dy/dx 被放大，
- *          导致圆盘极端倾斜——这不符合透视原则。
- *    解决：用 Y 方向的差值除以"参考宽度"（而不是当前 dx），
- *          得到稳定的倾斜角。
- *    tiltAngle = atan2(dy, refWidth) → 只反映实际脊柱倾斜
- *    旋转角（身体转向）不影响 tiltAngle，只影响 visRatio。
- *
- * ④ 隐藏条件：
- *    visRatio < 0.22 → 身体已转超过约 75° → 圆盘失去参考意义
- *    confidence < 0.40 → 关键点被遮挡
+ * 核心原则：
+ * 1. 圆盘锚定关键点：rx = bodyDist × 0.78，clamp [rxMin, rxMax]
+ * 2. rotationAngle clamped：face_on ±30°，dtl ±45°
+ * 3. 帧间平滑：max delta 8° per frame
+ * 4. perspectiveRatio 控制 ry（随转身压扁）
+ * 5. confidence < 0.4 不画
+ * 6. 椭圆用 zone polygon 模拟（兼容现有 OverlayElement 类型）
+ * 7. 颜色：current=red, target=green，均在 BaseElement.color 范围内
  */
 
-import type { OverlayElement, KeypointFrame } from '@/types/analysis';
+import type {
+  OverlayElement, KeypointFrame,
+  LineElement, ZoneElement, DotElement, LabelElement,
+} from '@/types/analysis';
 import type { MainIssueType } from '@/types/analysis';
 import type { BodyPointName, Pt } from '@/lib/golf/bodyPointSpec';
 import type { ViewType } from '@/lib/golf/overlayLineSpec';
 
-type Color = 'red' | 'green' | 'yellow' | 'white' | 'gray';
+/* ── 帧间平滑状态 ── */
+const _prevAngle: Record<string, number> = {};
 
 let _uid = 0;
 const uid = (p: string) => `${p}-${++_uid}`;
 
-const DISC_COLOR: Color = 'gray';
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, v));
+const toRad = (deg: number) => deg * Math.PI / 180;
+const dist2D = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
+const mid2D  = (a: Pt, b: Pt): Pt => ({
+  x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, confidence: 1,
+});
 
-const mkDot = (x: number, y: number, color: Color, r = 0.009, opacity = 0.78, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
-  ({ type: 'dot', id: uid('d'), x, y, color, radius: r, opacity, layer });
-const mkLine = (x1: number, y1: number, x2: number, y2: number, color: Color, w = 2.0, opacity = 0.75, dashed = false, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
-  ({ type: 'line', id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
-const mkLabel = (x: number, y: number, text: string, color: Color = 'gray', size = 9): OverlayElement =>
-  ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity: 0.72 });
-const mkEllipse = (cx: number, cy: number, rx: number, ry: number, angle: number, color: Color, w = 2.5, opacity = 0.80, layer: OverlayElement['layer'] = 'body'): OverlayElement =>
-  ({ type: 'ellipse' as OverlayElement['type'], id: uid('e'), cx, cy, rx, ry, angle, color, strokeWidth: w, opacity, layer } as unknown as OverlayElement);
+type AllowedColor = 'red' | 'green' | 'yellow' | 'white';
 
-export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
-  const lm = kpFrame.landmarks;
-  const r: Partial<Record<BodyPointName, Pt>> = {};
-  const toP = (pt?: { x:number; y:number; confidence?:number } | null) =>
-    pt ? { x: pt.x, y: pt.y, confidence: pt.confidence ?? 0.8 } : null;
-  if (lm.head)          r.headCenter     = toP(lm.head)!;
-  if (lm.leftShoulder)  r.leftShoulder   = toP(lm.leftShoulder)!;
-  if (lm.rightShoulder) r.rightShoulder  = toP(lm.rightShoulder)!;
-  if (lm.leftElbow)     r.leftElbow      = toP(lm.leftElbow)!;
-  if (lm.rightElbow)    r.rightElbow     = toP(lm.rightElbow)!;
-  if (lm.leftWrist)     r.leftWrist      = toP(lm.leftWrist)!;
-  if (lm.rightWrist)    r.rightWrist     = toP(lm.rightWrist)!;
-  if (lm.leftHip)       r.leftHip        = toP(lm.leftHip)!;
-  if (lm.rightHip)      r.rightHip       = toP(lm.rightHip)!;
-  if (lm.leftKnee)      r.leftKnee       = toP(lm.leftKnee)!;
-  if (lm.rightKnee)     r.rightKnee      = toP(lm.rightKnee)!;
-  if (lm.leftAnkle)     r.leftAnkle      = toP(lm.leftAnkle)!;
-  if (lm.rightAnkle)    r.rightAnkle     = toP(lm.rightAnkle)!;
-  const ls = r.leftShoulder, rs = r.rightShoulder;
-  if (ls && rs) r.shoulderCenter = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2, confidence:1 };
-  const lh = r.leftHip, rh = r.rightHip;
-  if (lh && rh) r.hipCenter = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2, confidence:1 };
-  const lw = r.leftWrist, rw = r.rightWrist;
-  if (lw && rw) r.gripCenter = { x:(lw.x+rw.x)/2, y:(lw.y+rw.y)/2, confidence:1 };
-  return r;
+const mkLine = (
+  x1: number, y1: number, x2: number, y2: number,
+  color: AllowedColor, w = 1.8, opacity = 0.85, dashed = false,
+  layer: OverlayElement['layer'] = 'body',
+): LineElement => ({ type: 'line', id: uid('l'), x1, y1, x2, y2, color, strokeWidth: w, opacity, dashed, layer });
+
+const mkZone = (
+  points: Array<{ x: number; y: number }>,
+  color: AllowedColor, fillOpacity = 0.14, opacity = 0.88,
+  layer: OverlayElement['layer'] = 'body',
+): ZoneElement => ({ type: 'zone', id: uid('z'), points, color, fillOpacity, opacity, layer });
+
+const mkDot = (
+  x: number, y: number,
+  color: AllowedColor, r = 0.009, opacity = 0.90,
+  layer: OverlayElement['layer'] = 'body',
+): DotElement => ({ type: 'dot', id: uid('d'), x, y, color, radius: r, opacity, layer });
+
+const mkLabel = (
+  x: number, y: number, text: string,
+  color: AllowedColor = 'white', size = 9, opacity = 0.75,
+): LabelElement => ({ type: 'label', id: uid('t'), x, y, text, color, size, opacity });
+
+/* ── 椭圆近似（40 点 polygon）── */
+function ellipsePoints(
+  cx: number, cy: number,
+  rx: number, ry: number,
+  angleDeg: number,
+  n = 40,
+): Array<{ x: number; y: number }> {
+  const ar = toRad(angleDeg);
+  const cosA = Math.cos(ar), sinA = Math.sin(ar);
+  const pts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < n; i++) {
+    const t  = (2 * Math.PI * i) / n;
+    const ex = rx * Math.cos(t);
+    const ey = ry * Math.sin(t);
+    pts.push({ x: cx + ex * cosA - ey * sinA, y: cy + ex * sinA + ey * cosA });
+  }
+  return pts;
 }
 
-/**
- * buildDisc
- *
- * @param leftPt    左端点（左肩/左髋）
- * @param rightPt   右端点（右肩/右髋）
- * @param fixedRx   固定长轴（不随转身变化）
- * @param fixedRy   固定短轴（正面朝向时最大值）
- * @param refWidth  参考宽度（正面时两点水平间距）
- * @param label     标注文字
- * @param layer     层
- */
-function buildDisc(
-  leftPt: Pt, rightPt: Pt,
-  fixedRx: number, fixedRy: number,
-  refWidth: number,
-  label: string,
-  layer: OverlayElement['layer'] = 'body',
-): OverlayElement[] {
+/* ══════════════════════════════════════════════════════
+   computePerspectiveDisc
+══════════════════════════════════════════════════════ */
+export interface DiscParams {
+  cx: number; cy: number;
+  rx: number; ry: number;
+  rotationDeg: number;
+  guideStart: { x: number; y: number };
+  guideEnd:   { x: number; y: number };
+  alpha: number;
+  visible: boolean;
+}
 
-  // ── 遮挡检测 ──
-  if ((leftPt.confidence ?? 0.8) < 0.40 || (rightPt.confidence ?? 0.8) < 0.40) return [];
+export function computePerspectiveDisc(args: {
+  leftPoint:      Pt;
+  rightPoint:     Pt;
+  viewType:       ViewType;
+  kind:           'shoulder' | 'hip';
+  previousAngle?: number;
+}): DiscParams {
+  const { leftPoint: lp, rightPoint: rp, viewType, kind, previousAngle } = args;
 
-  const cx = (leftPt.x + rightPt.x) / 2;
-  const cy = (leftPt.y + rightPt.y) / 2;
-  const rawDx = rightPt.x - leftPt.x; // 当前水平间距
-  const rawDy = rightPt.y - leftPt.y; // Y差（脊柱倾斜）
+  const FAIL: DiscParams = {
+    cx: 0, cy: 0, rx: 0, ry: 0, rotationDeg: 0,
+    guideStart: { x: 0, y: 0 }, guideEnd: { x: 0, y: 0 },
+    alpha: 0, visible: false,
+  };
 
-  // 转身可见度：当前水平间距 / 参考宽度（正面时 = 1.0）
-  const apparentW = Math.abs(rawDx);
-  const visRatio  = Math.min(1.0, apparentW / refWidth);
+  if ((lp.confidence ?? 0.8) < 0.40 || (rp.confidence ?? 0.8) < 0.40) return FAIL;
 
-  // 转身超过75°（visRatio < 0.22）→ 隐藏
-  if (visRatio < 0.22) return [];
+  const center   = mid2D(lp, rp);
+  const bodyDist = dist2D(lp, rp);
 
-  // ── 透视压缩短轴 ──
-  const perspRy = fixedRy * visRatio;
+  /* rx: 动态绑定到关键点间距 */
+  const rxMin = kind === 'shoulder' ? 0.12 : 0.09;
+  const rxMax = kind === 'shoulder' ? 0.32 : 0.24;
+  const rx = clamp(bodyDist * 0.78, rxMin, rxMax);
 
-  // ── 倾斜角度（美术透视修正）──
-  // 关键：用 refWidth 作为 dx 基准，而不是当前 rawDx
-  // 这样 tiltAngle 只反映实际脊柱倾斜（rawDy），
-  // 不会因为转身后 dx 变小而被放大
-  const sign = rawDx >= 0 ? 1 : -1;
-  const tiltAngle = Math.atan2(rawDy, sign * refWidth);
+  /* rotation angle: clamp + 帧间平滑 */
+  const rawDeg = Math.atan2(rp.y - lp.y, rp.x - lp.x) * 180 / Math.PI;
+  const maxAng = viewType === 'face_on' ? 30 : 45;
+  const clampedDeg = clamp(rawDeg, -maxAng, maxAng);
 
-  // 透明度随可见度渐变（转身时自然淡出）
-  const alpha = 0.45 + visRatio * 0.35; // 0.45~0.80
-
-  const els: OverlayElement[] = [];
-
-  // 轴线：从左端点到右端点，再延伸到圆盘外侧
-  // 轴线长 = 圆盘长轴 × 1.3（穿过并延伸出去）
-  const lineExt = fixedRx * 1.32;
-  const cosT = Math.cos(tiltAngle), sinT = Math.sin(tiltAngle);
-
-  els.push(mkLine(
-    cx - lineExt * cosT, cy - lineExt * sinT,
-    cx + lineExt * cosT, cy + lineExt * sinT,
-    DISC_COLOR, 1.8, alpha * 0.90, false, layer,
-  ));
-
-  // 椭圆（透视压缩）
-  if (perspRy > 0.015) {
-    els.push(mkEllipse(cx, cy, fixedRx, perspRy, tiltAngle, DISC_COLOR, 2.5, alpha, layer));
+  let smoothedDeg = clampedDeg;
+  if (previousAngle !== undefined) {
+    const delta = clamp(clampedDeg - previousAngle, -8, 8);
+    smoothedDeg = previousAngle + delta;
   }
 
-  // 端点（仅在可见度足够时显示）
-  if ((leftPt.confidence  ?? 0.8) > 0.50) els.push(mkDot(leftPt.x,  leftPt.y,  DISC_COLOR, 0.009, alpha * 0.90, layer));
-  if ((rightPt.confidence ?? 0.8) > 0.50) els.push(mkDot(rightPt.x, rightPt.y, DISC_COLOR, 0.009, alpha * 0.90, layer));
+  /* perspective ratio → ry */
+  const refW = kind === 'shoulder'
+    ? (viewType === 'face_on' ? 0.22 : 0.14)
+    : (viewType === 'face_on' ? 0.16 : 0.10);
+  const visRatio = clamp(Math.abs(rp.x - lp.x) / refW, 0, 1.0);
 
-  // 倾斜角标注（仅正面时显示，转身后角度已无参考意义）
-  if (visRatio > 0.60) {
-    const tiltDeg = Math.round(Math.abs(rawDy / refWidth) * 90); // 简单倾斜估算
-    els.push(mkLabel(cx, cy - perspRy * 1.6, label + '  ' + tiltDeg + '°', DISC_COLOR, 9));
+  if (visRatio < 0.22) return FAIL;
+
+  const ryRatioMax = viewType === 'face_on'
+    ? (kind === 'shoulder' ? 0.36 : 0.32)
+    : (kind === 'shoulder' ? 0.28 : 0.24);
+  const ryRatio = clamp(ryRatioMax * visRatio, 0.06, ryRatioMax);
+  const ry = rx * ryRatio;
+
+  /* guide line 端点（比 rx 长 30%）*/
+  const guideExt = rx * 1.30;
+  const ar    = toRad(smoothedDeg);
+  const cosA  = Math.cos(ar), sinA = Math.sin(ar);
+  const guideStart = { x: center.x - guideExt * cosA, y: center.y - guideExt * sinA };
+  const guideEnd   = { x: center.x + guideExt * cosA, y: center.y + guideExt * sinA };
+
+  const alpha = 0.45 + visRatio * 0.40;
+
+  return { cx: center.x, cy: center.y, rx, ry, rotationDeg: smoothedDeg, guideStart, guideEnd, alpha, visible: true };
+}
+
+/* ── 绘制单个圆盘 ── */
+function drawDisc(
+  params: DiscParams,
+  color: AllowedColor,
+  lp: Pt, rp: Pt,
+  label: string,
+  visRefW: number,
+  layer: OverlayElement['layer'] = 'body',
+): OverlayElement[] {
+  if (!params.visible) return [];
+  const { cx, cy, rx, ry, rotationDeg, guideStart, guideEnd, alpha } = params;
+  const els: OverlayElement[] = [];
+
+  /* guide line */
+  els.push(mkLine(guideStart.x, guideStart.y, guideEnd.x, guideEnd.y, color, 1.8, alpha * 0.85, false, layer));
+
+  /* 椭圆填充 + 轮廓 */
+  const pts = ellipsePoints(cx, cy, rx, ry, rotationDeg, 40);
+  const fillOp  = color === 'red' ? 0.14 : 0.16;
+  els.push(mkZone(pts, color, fillOp, alpha, layer));
+
+  /* 端点 */
+  if ((lp.confidence ?? 0.8) > 0.50) els.push(mkDot(lp.x, lp.y, color, 0.009, alpha * 0.92, layer));
+  if ((rp.confidence ?? 0.8) > 0.50) els.push(mkDot(rp.x, rp.y, color, 0.009, alpha * 0.92, layer));
+
+  /* label（仅正面时）*/
+  const vis = Math.abs(rp.x - lp.x) / visRefW;
+  if (vis > 0.60) {
+    els.push(mkLabel(cx, cy - ry * 1.7, label + '  ' + Math.round(Math.abs(rotationDeg)) + '°', 'white', 9, 0.72));
   }
 
   return els;
 }
 
+/* ══════════════════════════════════════════════════════
+   关键点解析
+══════════════════════════════════════════════════════ */
+export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
+  const lm = kpFrame.landmarks;
+  const r: Partial<Record<BodyPointName, Pt>> = {};
+  const toP = (pt?: { x: number; y: number; confidence?: number } | null) =>
+    pt ? { x: pt.x, y: pt.y, confidence: pt.confidence ?? 0.8 } : null;
+  if (lm.head)          r.headCenter    = toP(lm.head)!;
+  if (lm.leftShoulder)  r.leftShoulder  = toP(lm.leftShoulder)!;
+  if (lm.rightShoulder) r.rightShoulder = toP(lm.rightShoulder)!;
+  if (lm.leftElbow)     r.leftElbow     = toP(lm.leftElbow)!;
+  if (lm.rightElbow)    r.rightElbow    = toP(lm.rightElbow)!;
+  if (lm.leftWrist)     r.leftWrist     = toP(lm.leftWrist)!;
+  if (lm.rightWrist)    r.rightWrist    = toP(lm.rightWrist)!;
+  if (lm.leftHip)       r.leftHip       = toP(lm.leftHip)!;
+  if (lm.rightHip)      r.rightHip      = toP(lm.rightHip)!;
+  if (lm.leftKnee)      r.leftKnee      = toP(lm.leftKnee)!;
+  if (lm.rightKnee)     r.rightKnee     = toP(lm.rightKnee)!;
+  if (lm.leftAnkle)     r.leftAnkle     = toP(lm.leftAnkle)!;
+  if (lm.rightAnkle)    r.rightAnkle    = toP(lm.rightAnkle)!;
+  const ls = r.leftShoulder, rs = r.rightShoulder;
+  if (ls && rs) r.shoulderCenter = mid2D(ls, rs);
+  const lh = r.leftHip, rh = r.rightHip;
+  if (lh && rh) r.hipCenter = mid2D(lh, rh);
+  const lw = r.leftWrist, rw = r.rightWrist;
+  if (lw && rw) r.gripCenter = mid2D(lw, rw);
+  return r;
+}
+
+/* ══════════════════════════════════════════════════════
+   主生成函数
+══════════════════════════════════════════════════════ */
 export function generateSpecDrivenOverlayFrame(
   issue: MainIssueType,
   viewType: ViewType,
   phase: string,
   kpFrame: KeypointFrame,
-  historyPts?: Array<{ x: number; y: number }>,
+  _historyPts?: Array<{ x: number; y: number }>,
 ): OverlayElement[] {
   _uid = 0;
   const pts = getKeypoints(kpFrame);
   const els: OverlayElement[] = [];
 
-  // 固定圆盘尺寸
-  const SHOULDER_RX  = 0.26;
-  const SHOULDER_RY  = SHOULDER_RX * 0.34;
-  const SHOULDER_REF = 0.22; // 正面朝向时肩宽约 22% 视频宽
-
-  const HIP_RX  = 0.20;
-  const HIP_RY  = HIP_RX * 0.34;
-  const HIP_REF = 0.16; // 正面朝向时髋宽约 16%
-
+  /* Shoulder Disc */
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
-  if (ls && rs) els.push(...buildDisc(ls, rs, SHOULDER_RX, SHOULDER_RY, SHOULDER_REF, 'SHOULDERS', 'body'));
+  if (ls && rs) {
+    const sp = computePerspectiveDisc({ leftPoint: ls, rightPoint: rs, viewType, kind: 'shoulder', previousAngle: _prevAngle['shoulder'] });
+    if (sp.visible) _prevAngle['shoulder'] = sp.rotationDeg;
+    const refW = viewType === 'face_on' ? 0.22 : 0.14;
+    els.push(...drawDisc(sp, 'red', ls, rs, 'SHOULDERS', refW, 'body'));
+  }
 
+  /* Hip Ring */
   const lh = pts.leftHip, rh = pts.rightHip;
-  if (lh && rh) els.push(...buildDisc(lh, rh, HIP_RX, HIP_RY, HIP_REF, 'HIPS', 'club'));
+  if (lh && rh) {
+    const hp = computePerspectiveDisc({ leftPoint: lh, rightPoint: rh, viewType, kind: 'hip', previousAngle: _prevAngle['hip'] });
+    if (hp.visible) _prevAngle['hip'] = hp.rotationDeg;
+    const refW = viewType === 'face_on' ? 0.16 : 0.10;
+    els.push(...drawDisc(hp, 'red', lh, rh, 'HIPS', refW, 'club'));
+  }
 
   return els;
 }
 
+/* ── 兼容性导出 ── */
 export function getTrackedPoint(
   _issue: MainIssueType, _viewType: ViewType, kpFrame: KeypointFrame,
 ): { x: number; y: number } | null {
@@ -195,8 +268,10 @@ export function findNearestFrame(frames: KeypointFrame[], time: number): Keypoin
   return best;
 }
 
-export function applyCorrection(pt: { x:number; y:number; confidence?:number }, dir: string, mag = 'medium'): { x:number; y:number; confidence?:number } {
-  const DELTA: Record<string, number> = { small:0.028, medium:0.050, large:0.078 };
+export function applyCorrection(
+  pt: { x: number; y: number; confidence?: number }, dir: string, mag = 'medium',
+): { x: number; y: number; confidence?: number } {
+  const DELTA: Record<string, number> = { small: 0.028, medium: 0.050, large: 0.078 };
   const d = DELTA[mag] ?? 0.050;
   switch (dir) {
     case 'lower':          return { ...pt, y: pt.y + d };
