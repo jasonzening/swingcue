@@ -1,8 +1,8 @@
 /**
  * OverlayRenderer.ts
  *
- * é«å°å¤«åé¨ä½å¯è§åæ¸²æå¨
- * æ°å¢ï¼drawEllipse â æè½¬çæ¤­åï¼è©é¨/é«é¨ï¼
+ * Ã©Â«ÂÃ¥Â°ÂÃ¥Â¤Â«Ã¥ÂÂÃ©ÂÂ¨Ã¤Â½ÂÃ¥ÂÂ¯Ã¨Â§ÂÃ¥ÂÂÃ¦Â¸Â²Ã¦ÂÂÃ¥ÂÂ¨
+ * Ã¦ÂÂ°Ã¥Â¢ÂÃ¯Â¼ÂdrawEllipse Ã¢ÂÂ Ã¦ÂÂÃ¨Â½Â¬Ã§ÂÂÃ¦Â¤Â­Ã¥ÂÂÃ¯Â¼ÂÃ¨ÂÂ©Ã©ÂÂ¨/Ã©Â«ÂÃ©ÂÂ¨Ã¯Â¼Â
  */
 
 import type {
@@ -19,6 +19,7 @@ export const COLORS = {
   green:  '#3cee3c',
   yellow: '#ffd040',
   white:  'rgba(255,255,255,0.90)',
+  gray:   'rgba(200,200,200,0.82)',
   black:  'rgba(0,0,0,0.80)',
 } as const;
 
@@ -26,10 +27,11 @@ function resolveColor(c?: string): string {
   if (c === 'red')    return COLORS.red;
   if (c === 'green')  return COLORS.green;
   if (c === 'yellow') return COLORS.yellow;
+  if (c === 'gray')   return COLORS.gray;
   return COLORS.white;
 }
 
-/** å³èåç¹ */
+/** Ã¥ÂÂ³Ã¨ÂÂÃ¥ÂÂÃ§ÂÂ¹ */
 export function drawJointDot(
   ctx: Ctx, x: number, y: number, W: number, H: number,
   color: string, radius = 0.008, opacity = 0.92,
@@ -49,7 +51,7 @@ export function drawJointDot(
   ctx.restore();
 }
 
-/** ç»æçº¿ */
+/** Ã§Â»ÂÃ¦ÂÂÃ§ÂºÂ¿ */
 export function drawStructureLine(
   ctx: Ctx, x1: number, y1: number, x2: number, y2: number,
   W: number, H: number, color: string, strokeWidth = 1.0, opacity = 0.85, dashed = false,
@@ -71,12 +73,12 @@ export function drawStructureLine(
 }
 
 /**
- * drawEllipse â æè½¬çæ¤­åï¼AlignSnow é£æ ¼æ ¸å¿åç´ ï¼
+ * drawEllipse Ã¢ÂÂ Ã¦ÂÂÃ¨Â½Â¬Ã§ÂÂÃ¦Â¤Â­Ã¥ÂÂÃ¯Â¼ÂAlignSnow Ã©Â£ÂÃ¦Â Â¼Ã¦Â Â¸Ã¥Â¿ÂÃ¥ÂÂÃ§Â´Â Ã¯Â¼Â
  *
- * cx, cy: æ¤­åä¸­å¿ï¼å½ä¸åï¼
- * rx, ry: é¿è½´/ç­è½´åå¾ï¼å½ä¸åï¼ç¸å¯¹äºè§é¢å®½åº¦ï¼
- * angle:  æè½¬è§åº¦ï¼å¼§åº¦ï¼0 = æ°´å¹³ï¼
- * æ¸²æä¸ºï¼æè¾¹æ¤­å + åé¨åéæå¡«å
+ * cx, cy: Ã¦Â¤Â­Ã¥ÂÂÃ¤Â¸Â­Ã¥Â¿ÂÃ¯Â¼ÂÃ¥Â½ÂÃ¤Â¸ÂÃ¥ÂÂÃ¯Â¼Â
+ * rx, ry: Ã©ÂÂ¿Ã¨Â½Â´/Ã§ÂÂ­Ã¨Â½Â´Ã¥ÂÂÃ¥Â¾ÂÃ¯Â¼ÂÃ¥Â½ÂÃ¤Â¸ÂÃ¥ÂÂÃ¯Â¼ÂÃ§ÂÂ¸Ã¥Â¯Â¹Ã¤ÂºÂÃ¨Â§ÂÃ©Â¢ÂÃ¥Â®Â½Ã¥ÂºÂ¦Ã¯Â¼Â
+ * angle:  Ã¦ÂÂÃ¨Â½Â¬Ã¨Â§ÂÃ¥ÂºÂ¦Ã¯Â¼ÂÃ¥Â¼Â§Ã¥ÂºÂ¦Ã¯Â¼Â0 = Ã¦Â°Â´Ã¥Â¹Â³Ã¯Â¼Â
+ * Ã¦Â¸Â²Ã¦ÂÂÃ¤Â¸ÂºÃ¯Â¼ÂÃ¦ÂÂÃ¨Â¾Â¹Ã¦Â¤Â­Ã¥ÂÂ + Ã¥ÂÂÃ©ÂÂ¨Ã¥ÂÂÃ©ÂÂÃ¦ÂÂÃ¥Â¡Â«Ã¥ÂÂ
  */
 export function drawEllipse(
   ctx: Ctx, cx: number, cy: number, rx: number, ry: number, angle: number,
@@ -89,7 +91,7 @@ export function drawEllipse(
   ctx.translate(pcx, pcy);
   ctx.rotate(angle);
 
-  // 外层大发光 — 霓虹感（参考图风格）
+  // å¤å±å¤§åå â éè¹æï¼åèå¾é£æ ¼ï¼
   ctx.globalAlpha = opacity * 0.30;
   ctx.shadowColor = color;
   ctx.shadowBlur = 22;
@@ -99,7 +101,7 @@ export function drawEllipse(
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // 内层清晰主线
+  // åå±æ¸æ°ä¸»çº¿
   ctx.globalAlpha = opacity;
   ctx.shadowColor = color;
   ctx.shadowBlur = 8;
@@ -109,7 +111,7 @@ export function drawEllipse(
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // 内部半透明填充
+  // åé¨åéæå¡«å
   ctx.shadowBlur = 0;
   ctx.globalAlpha = opacity * 0.10;
   ctx.fillStyle = color;
@@ -154,7 +156,7 @@ export function drawCurvePath(
   ctx.restore();
 }
 
-/** æ¹åç®­å¤´ */
+/** Ã¦ÂÂ¹Ã¥ÂÂÃ§Â®Â­Ã¥Â¤Â´ */
 export function drawArrow(
   ctx: Ctx, fromX: number, fromY: number, toX: number, toY: number,
   W: number, H: number, color: string, strokeWidth = 1.5, opacity = 0.90,
@@ -177,7 +179,7 @@ export function drawArrow(
   ctx.restore();
 }
 
-/** æå­æ ç­¾ */
+/** Ã¦ÂÂÃ¥Â­ÂÃ¦Â ÂÃ§Â­Â¾ */
 export function drawLabel(
   ctx: Ctx, x: number, y: number, W: number, H: number,
   text: string, color: string, fontSize = 10, opacity = 0.88,
@@ -238,7 +240,7 @@ export function drawZone(
   ctx.restore();
 }
 
-/* ââ ä¸»ååå½æ° ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Ã¤Â¸Â»Ã¥ÂÂÃ¥ÂÂÃ¥ÂÂ½Ã¦ÂÂ° Ã¢ÂÂÃ¢ÂÂ */
 export function renderElement(
   ctx: Ctx, el: OverlayElement, W: number, H: number, layer = 'all',
 ) {
@@ -246,7 +248,7 @@ export function renderElement(
   const color = resolveColor(el.color);
   const opacity = el.opacity ?? 0.88;
 
-  // æ¤­åï¼æ°ç±»åï¼éè¿ type å¤æ­ï¼
+  // Ã¦Â¤Â­Ã¥ÂÂÃ¯Â¼ÂÃ¦ÂÂ°Ã§Â±Â»Ã¥ÂÂÃ¯Â¼ÂÃ©ÂÂÃ¨Â¿Â type Ã¥ÂÂ¤Ã¦ÂÂ­Ã¯Â¼Â
   const elAny = el as unknown as Record<string, unknown>;
   if (elAny.type === 'ellipse') {
     drawEllipse(
