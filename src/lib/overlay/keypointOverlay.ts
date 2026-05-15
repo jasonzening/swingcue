@@ -115,8 +115,8 @@ function buildDisc(
 
   // 髋部点外扩
   const hipOff = opts.hipOffset ?? 0;
-  const lDotX = leftPt.x  - hipOff;
-  const rDotX = rightPt.x + hipOff;
+  const lDotX = leftPt.x  - hipOff - dist * 0.52;  // 外扩到骨骼边缘
+  const rDotX = rightPt.x + hipOff + dist * 0.52;
 
   // 低 confidence → 只画中心点
   if (lc < 0.35 || rc < 0.35) {
