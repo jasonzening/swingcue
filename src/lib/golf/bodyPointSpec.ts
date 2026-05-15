@@ -228,7 +228,7 @@ export const BODY_POINT_SPEC: Record<BodyPointName, BodyPointDef> = {
  * 从 MediaPipe 关键点数组中提取指定点位
  * 支持原始点和派生点
  */
-export type Pt = { x: number; y: number; confidence?: number };
+export type Pt = { x: number; y: number; z?: number; confidence?: number };
 
 export function resolvePoint(
   name: BodyPointName,
