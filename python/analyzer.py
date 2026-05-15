@@ -6,6 +6,9 @@ analyzer.py — SwingCue 视频分析核心
 2. 提取 VideoMetadata（真实 duration, fps, width, height）
 3. MediaPipe Pose 逐帧分析
 4. 输出 KeypointTimeline（归一化 0-1 坐标）
+
+Level2 升级：Point2D 新增 z 字段（MediaPipe 深度，负值=靠近镜头）
+用于前端精确计算肩部旋转盘遮挡关系
 """
 
 import os
@@ -22,28 +25,27 @@ logger = logging.getLogger(__name__)
 
 # MediaPipe Pose landmark indices (subset we care about)
 LM = {
-    'NOSE':            0,
-    'LEFT_SHOULDER':   11,
-    'RIGHT_SHOULDER':  12,
-    'LEFT_ELBOW':      13,
-    'RIGHT_ELBOW':     14,
-    'LEFT_WRIST':      15,
-    'RIGHT_WRIST':     16,
-    'LEFT_HIP':        23,
-    'RIGHT_HIP':       24,
-    'LEFT_KNEE':       25,
-    'RIGHT_KNEE':      26,
-    'LEFT_ANKLE':      27,
-    'RIGHT_ANKLE':     28,
+    'NOSE': 0,
+    'LEFT_SHOULDER': 11,
+    'RIGHT_SHOULDER': 12,
+    'LEFT_ELBOW': 13,
+    'RIGHT_ELBOW': 14,
+    'LEFT_WRIST': 15,
+    'RIGHT_WRIST': 16,
+    'LEFT_HIP': 23,
+    'RIGHT_HIP': 24,
+    'LEFT_KNEE': 25,
+    'RIGHT_KNEE': 26,
+    'LEFT_ANKLE': 27,
+    'RIGHT_ANKLE': 28,
 }
-
 
 @dataclass
 class Point2D:
-    x: float        # normalized 0–1 (relative to video width)
-    y: float        # normalized 0–1 (relative to video height)
+    x: float          # normalized 0-1 (relative to video width)
+    y: float          # normalized 0-1 (relative to video height)
+    z: float          # MediaPipe depth (negative = closer to camera)
     confidence: float
-
 
 @dataclass
 class BodyLandmarks:
@@ -61,10 +63,9 @@ class BodyLandmarks:
     leftAnkle: Optional[Point2D] = None
     rightAnkle: Optional[Point2D] = None
 
-
 @dataclass
 class KeypointFrame:
-    time: float          # seconds
+    time: float  # seconds
     landmarks: BodyLandmarks
 
     def to_dict(self) -> Dict[str, Any]:
@@ -76,9 +77,11 @@ class KeypointFrame:
                      'leftAnkle', 'rightAnkle']:
             pt = getattr(lm, attr)
             if pt is not None:
-                result['landmarks'][attr] = {'x': pt.x, 'y': pt.y, 'confidence': pt.confidence}
+                result['landmarks'][attr] = {
+                    'x': pt.x, 'y': pt.y, 'z': pt.z,
+                    'confidence': pt.confidence
+                }
         return result
-
 
 @dataclass
 class VideoMetadata:
@@ -86,7 +89,6 @@ class VideoMetadata:
     fps: float
     width: int
     height: int
-
 
 def download_video(url: str, timeout: int = 60) -> str:
     """Download video to a temp file, return path."""
@@ -109,12 +111,11 @@ def download_video(url: str, timeout: int = 60) -> str:
     logger.info(f"Downloaded {size_mb:.1f} MB")
     return tmp_path
 
-
 def get_video_metadata(cap: cv2.VideoCapture) -> VideoMetadata:
     """Extract real video metadata from OpenCV capture."""
-    fps   = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     duration = total_frames / fps if fps > 0 else 0.0
     return VideoMetadata(
@@ -123,7 +124,6 @@ def get_video_metadata(cap: cv2.VideoCapture) -> VideoMetadata:
         width=width,
         height=height,
     )
-
 
 def extract_landmarks(result, conf_threshold: float = 0.3) -> Optional[BodyLandmarks]:
     """Convert MediaPipe result to our BodyLandmarks structure."""
@@ -139,6 +139,7 @@ def extract_landmarks(result, conf_threshold: float = 0.3) -> Optional[BodyLandm
         return Point2D(
             x=round(float(lm.x), 4),
             y=round(float(lm.y), 4),
+            z=round(float(lm.z), 4),  # Level2: 深度信息
             confidence=round(float(lm.visibility), 3),
         )
 
@@ -158,14 +159,12 @@ def extract_landmarks(result, conf_threshold: float = 0.3) -> Optional[BodyLandm
         rightAnkle=pt(LM['RIGHT_ANKLE']),
     )
 
-
 def moving_average(arr: np.ndarray, window: int = 3) -> np.ndarray:
     """Simple moving average smoothing."""
     if len(arr) < window:
         return arr
     kernel = np.ones(window) / window
     return np.convolve(arr, kernel, mode='same')
-
 
 def analyze_video(video_path: str, sample_fps: float = 4.0) -> tuple[VideoMetadata, List[KeypointFrame]]:
     """
@@ -186,7 +185,7 @@ def analyze_video(video_path: str, sample_fps: float = 4.0) -> tuple[VideoMetada
 
     pose_config = mp.solutions.pose.Pose(
         static_image_mode=False,
-        model_complexity=1,           # 0=lite, 1=full, 2=heavy
+        model_complexity=1,  # 0=lite, 1=full, 2=heavy
         smooth_landmarks=True,
         enable_segmentation=False,
         min_detection_confidence=0.5,
