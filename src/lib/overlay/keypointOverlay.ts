@@ -1,18 +1,17 @@
 /**
- * keypointOverlay.ts — Shoulder / Hip Rotation Disc
+ * keypointOverlay.ts — 样板图风格旋转盘
  *
- * 修复要点：
- * 1. 角度归一化：atan2 → [-90,+90] 再 clamp ±12°（face_on）
- *    防止 ±180° 大斜线
- * 2. guide line 长度 = rx * 1.55（严格在圆盘内，不超出）
- * 3. 填充 opacity 0.22，strokeWidth 4.5
- * 4. 隐藏角度数字（暂时），避免 180° 误导
- * 5. 圆盘中心下移 dist*0.18（包住肩膀+上胸）
+ * 关键参数（对标样板图）：
+ *   肩部盘：rx = shoulderDist × 1.20，ry = rx × 0.20（非常扁平，高宽比 1:5）
+ *   髋部环：rx = hipDist     × 1.00，ry = rx × 0.18（更扁）
+ *   guide line：白色，长度 = rx × 1.60，严格在椭圆内
+ *   center：shoulderCenter 下移 dist × 0.08（轻微下移，不要太多）
+ *   angle：clamp ±12° face_on，归一化防 ±180°
  */
 
 import type {
   OverlayElement, KeypointFrame,
-  LineElement, ZoneElement, DotElement, LabelElement,
+  LineElement, DotElement, LabelElement,
 } from '@/types/analysis';
 import type { MainIssueType } from '@/types/analysis';
 import type { BodyPointName, Pt } from '@/lib/golf/bodyPointSpec';
@@ -22,37 +21,38 @@ const _prevAngle: Record<string, number> = {};
 let _uid = 0;
 const uid   = (p: string) => `${p}-${++_uid}`;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const toRad = (d: number) => d * Math.PI / 180;
 const dist2D = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
 const mid2D  = (a: Pt, b: Pt): Pt => ({ x:(a.x+b.x)/2, y:(a.y+b.y)/2, confidence:1 });
 
 type AC = 'red' | 'green' | 'yellow' | 'white';
 
-const mkLine  = (x1:number,y1:number,x2:number,y2:number,c:AC,w=2.5,op=0.88,dash=false,layer:OverlayElement['layer']='body'): LineElement =>
-  ({type:'line',id:uid('l'),x1,y1,x2,y2,color:c,strokeWidth:w,opacity:op,dashed:dash,layer});
-const mkZone  = (pts:Array<{x:number;y:number}>,c:AC,fillOp=0.22,op=0.92,layer:OverlayElement['layer']='body'): ZoneElement =>
-  ({type:'zone',id:uid('z'),points:pts,color:c,fillOpacity:fillOp,opacity:op,layer});
-const mkDot   = (x:number,y:number,c:AC,r=0.008,op=0.65,layer:OverlayElement['layer']='body'): DotElement =>
+const mkLine  = (x1:number,y1:number,x2:number,y2:number,c:AC,w=2.5,op=0.88,layer:OverlayElement['layer']='body'): LineElement =>
+  ({type:'line',id:uid('l'),x1,y1,x2,y2,color:c,strokeWidth:w,opacity:op,layer});
+const mkDot   = (x:number,y:number,c:AC,r=0.008,op=0.70,layer:OverlayElement['layer']='body'): DotElement =>
   ({type:'dot',id:uid('d'),x,y,color:c,radius:r,opacity:op,layer});
-const mkLabel = (x:number,y:number,text:string,c:AC='white',size=10,op=0.78): LabelElement =>
+const mkLabel = (x:number,y:number,text:string,c:AC='white',size=10,op=0.80): LabelElement =>
   ({type:'label',id:uid('t'),x,y,text,color:c,size,opacity:op});
 
-/* ── 椭圆 polygon ── */
-function ellipsePts(cx:number,cy:number,rx:number,ry:number,deg:number,n=48):Array<{x:number;y:number}>{
-  const ar=toRad(deg),cosA=Math.cos(ar),sinA=Math.sin(ar);
-  const pts:Array<{x:number;y:number}>=[];
-  for(let i=0;i<n;i++){
-    const t=(2*Math.PI*i)/n,ex=rx*Math.cos(t),ey=ry*Math.sin(t);
-    pts.push({x:cx+ex*cosA-ey*sinA,y:cy+ex*sinA+ey*cosA});
-  }
-  return pts;
+/** mkEllipse — type:'ellipse' 由 renderer.drawEllipse 处理（三层霓虹发光）*/
+function mkEllipse(
+  cx:number, cy:number,
+  rx:number, ry:number,
+  angleDeg:number,
+  color: AC,
+  strokeWidth=5.0,
+  opacity=0.92,
+  layer:OverlayElement['layer']='body',
+): OverlayElement {
+  return {
+    type: 'ellipse' as OverlayElement['type'],
+    id: uid('e'),
+    cx, cy, rx, ry,
+    angleDeg,
+    color, strokeWidth, opacity, layer,
+  } as unknown as OverlayElement;
 }
 
-/**
- * normalizeAngle
- * atan2 返回 [-180, +180]，当右肩在左肩左侧时会返回 ±180°。
- * 归一化到 [-90, +90]（只关心横轴倾斜量）。
- */
+/** 角度归一化到 [-90, +90]，防止 atan2 返回 ±180° */
 function normalizeAngle(deg: number): number {
   let a = deg;
   if (a >  90) a -= 180;
@@ -63,25 +63,22 @@ function normalizeAngle(deg: number): number {
 /* ═══════════════════════════════════════════════════
    buildDisc — 旋转盘核心
    ─────────────────────────────────────────────────
-   leftPt/rightPt: 精确关键点
-   dropRatio: 圆盘中心下移量 / dist（shoulder=0.18, hip=0）
-   rxMult: rx = dist * rxMult
-   ryRatio: ry = rx * ryRatio
-   maxAng: clamp angle（face_on shoulder=12, hip=10）
-   guideRatio: guide line 长度 = rx * guideRatio（≤1.55，不超出圆盘）
+   对标样板图：
+   - 椭圆极度扁平（ryRatio 0.20，高宽比 1:5）
+   - 椭圆要比肩宽大（rxMult 1.20）
+   - guide line 白色穿越盘面
+   - 中心轻微下移（dropRatio 0.08）
 ═══════════════════════════════════════════════════ */
 function buildDisc(
-  leftPt:    Pt,
-  rightPt:   Pt,
+  leftPt: Pt, rightPt: Pt,
   opts: {
     dropRatio:  number;
     rxMult:     number;
     rxMin:      number;
     rxMax:      number;
-    ryRatio:    number;
-    maxAng:     number;
+    ryRatio:    number;   // ← 关键：样板图约 0.20
+    maxAngle:   number;
     guideRatio: number;
-    showLabel:  boolean;
     label:      string;
   },
   color: AC,
@@ -89,54 +86,53 @@ function buildDisc(
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
   const els: OverlayElement[] = [];
+
   const lc = leftPt.confidence  ?? 0.8;
   const rc = rightPt.confidence ?? 0.8;
   const dist = dist2D(leftPt, rightPt);
-  if (dist < 0.02) return els;
+  if (dist < 0.015) return els;
 
-  /* ── 圆盘几何 ── */
+  /* 圆盘几何 */
   const cx = (leftPt.x + rightPt.x) / 2;
   const cy = (leftPt.y + rightPt.y) / 2 + dist * opts.dropRatio;
   const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
-  const ry = rx * opts.ryRatio;
+  const ry = rx * opts.ryRatio;   // ← 非常扁平
 
-  /* ── 角度归一化 + clamp + 帧间平滑 ── */
-  const rawDeg = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x) * 180 / Math.PI;
-  const normDeg  = normalizeAngle(rawDeg);           // → [-90, +90]
-  const clampDeg = clamp(normDeg, -opts.maxAng, opts.maxAng);
-  const prev = _prevAngle[prevKey];
+  /* 角度归一化 + clamp + 帧间平滑 */
+  const rawDeg   = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x) * 180 / Math.PI;
+  const normDeg  = normalizeAngle(rawDeg);
+  const clampDeg = clamp(normDeg, -opts.maxAngle, opts.maxAngle);
+  const prev     = _prevAngle[prevKey];
   const smoothDeg = prev !== undefined
     ? prev + clamp(clampDeg - prev, -8, 8)
     : clampDeg;
   _prevAngle[prevKey] = smoothDeg;
 
-  /* ── 低 confidence：只画连线 ── */
+  /* 低 confidence → 只画肩线 */
   if (lc < 0.38 || rc < 0.38) {
-    els.push(mkLine(leftPt.x,leftPt.y,rightPt.x,rightPt.y,color,1.5,0.50,true,layer));
+    els.push(mkLine(leftPt.x,leftPt.y,rightPt.x,rightPt.y,color,1.5,0.50,layer));
     return els;
   }
 
-  /* ── 椭圆填充 (zone polygon) ── */
-  const fillPts = ellipsePts(cx,cy,rx,ry,smoothDeg,48);
-  els.push(mkZone(fillPts, color, 0.22, 0.92, layer));
+  /* ① 霓虹椭圆盘（type:'ellipse'，三层发光）*/
+  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, 0.92, layer));
 
-  /* ── Guide line：严格在圆盘内，长度 = rx * guideRatio ── */
-  const guideLen = rx * opts.guideRatio;   // guideRatio ≤ 1.55 → 不超出圆盘
-  const ar = toRad(smoothDeg), cosA = Math.cos(ar), sinA = Math.sin(ar);
+  /* ② 白色 guide line：穿越盘面，长 rx * guideRatio */
+  const guideLen = rx * opts.guideRatio;
+  const ar = smoothDeg * Math.PI / 180;
+  const cosA = Math.cos(ar), sinA = Math.sin(ar);
   els.push(mkLine(
     cx - guideLen*cosA, cy - guideLen*sinA,
     cx + guideLen*cosA, cy + guideLen*sinA,
-    color, 3.0, 0.88, false, layer,
+    'white', 2.5, 0.85, layer,
   ));
 
-  /* ── 关节圆点（小，不抢眼）── */
-  if (lc > 0.35) els.push(mkDot(leftPt.x,  leftPt.y,  color, 0.008, 0.62, layer));
-  if (rc > 0.35) els.push(mkDot(rightPt.x, rightPt.y, color, 0.008, 0.62, layer));
+  /* ③ 端点圆点（小，锚定真实关节）*/
+  if (lc > 0.40) els.push(mkDot(leftPt.x,  leftPt.y,  color, 0.008, 0.65, layer));
+  if (rc > 0.40) els.push(mkDot(rightPt.x, rightPt.y, color, 0.008, 0.65, layer));
 
-  /* ── label（不显示角度数字，避免 180° 误导）── */
-  if (opts.showLabel) {
-    els.push(mkLabel(cx, cy - ry * 1.70, opts.label, 'white', 10, 0.78));
-  }
+  /* ④ 标签 */
+  els.push(mkLabel(cx, cy - ry * 2.0, opts.label, 'white', 10, 0.78));
 
   return els;
 }
@@ -181,35 +177,33 @@ export function generateSpecDrivenOverlayFrame(
   const pts = getKeypoints(kpFrame);
   const els: OverlayElement[] = [];
 
-  /* Shoulder Disc */
+  /* Shoulder Disc — 极度扁平，对标样板图 */
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
   if (ls && rs) {
     els.push(...buildDisc(ls, rs, {
-      dropRatio:  0.18,    // 圆盘中心下移 18%，包住上胸
-      rxMult:     1.15,    // rx 比肩宽大 15%
-      rxMin:      0.14,
-      rxMax:      0.36,
-      ryRatio:    viewType === 'face_on' ? 0.42 : 0.30,
-      maxAng:     viewType === 'face_on' ? 12 : 35,  // ← 12° 限制大斜线
-      guideRatio: 1.45,    // guide 不超出圆盘（1.45 < 1.0/0.42*0.5 ≈ 2.38，安全）
-      showLabel:  true,
-      label:      'SHOULDERS',   // 不显示角度数字
+      dropRatio:  0.08,   // 轻微下移，不要太多
+      rxMult:     1.20,   // 比肩宽大 20%
+      rxMin:      0.15,
+      rxMax:      0.40,
+      ryRatio:    viewType === 'face_on' ? 0.20 : 0.14, // ← 核心：非常扁平
+      maxAngle:   viewType === 'face_on' ? 12 : 35,
+      guideRatio: 1.50,   // guide line 长度（在椭圆内）
+      label:      'SHOULDERS',
     }, 'red', 'shoulder', 'body'));
   }
 
-  /* Hip Ring */
+  /* Hip Ring — 更扁 */
   const lh = pts.leftHip, rh = pts.rightHip;
   if (lh && rh) {
     els.push(...buildDisc(lh, rh, {
       dropRatio:  0,
-      rxMult:     0.95,
+      rxMult:     1.00,
       rxMin:      0.08,
-      rxMax:      0.24,
-      ryRatio:    viewType === 'face_on' ? 0.25 : 0.20,
-      maxAng:     viewType === 'face_on' ? 10 : 30,
-      guideRatio: 1.35,
-      showLabel:  true,
-      label:      'HIPS',        // 不显示角度数字
+      rxMax:      0.26,
+      ryRatio:    viewType === 'face_on' ? 0.18 : 0.12,
+      maxAngle:   viewType === 'face_on' ? 10 : 30,
+      guideRatio: 1.40,
+      label:      'HIPS',
     }, 'red', 'hip', 'club'));
   }
 
@@ -221,20 +215,20 @@ export function computePerspectiveDisc(args:{leftPoint:Pt;rightPoint:Pt;viewType
   const{leftPoint:lp,rightPoint:rp,viewType,kind}=args;
   const dist=dist2D(lp,rp);
   const cx=(lp.x+rp.x)/2,cy=(lp.y+rp.y)/2;
-  const rxM=kind==='shoulder'?1.15:0.95;
-  const rx=clamp(dist*rxM,kind==='shoulder'?0.14:0.08,kind==='shoulder'?0.36:0.24);
-  const ryR=viewType==='face_on'?(kind==='shoulder'?0.42:0.25):(kind==='shoulder'?0.30:0.20);
+  const rxM=kind==='shoulder'?1.20:1.00;
+  const rx=clamp(dist*rxM,kind==='shoulder'?0.15:0.08,kind==='shoulder'?0.40:0.26);
+  const ryR=viewType==='face_on'?(kind==='shoulder'?0.20:0.18):(kind==='shoulder'?0.14:0.12);
   const ry=rx*ryR;
   const rawDeg=Math.atan2(rp.y-lp.y,rp.x-lp.x)*180/Math.PI;
   const normDeg=normalizeAngle(rawDeg);
   const maxA=viewType==='face_on'?(kind==='shoulder'?12:10):(kind==='shoulder'?35:30);
   const smoothDeg=clamp(normDeg,-maxA,maxA);
-  const ar=toRad(smoothDeg),cosA=Math.cos(ar),sinA=Math.sin(ar);
-  const gl=rx*1.45,drop=kind==='shoulder'?dist*0.18:0;
+  const ar=smoothDeg*Math.PI/180,cosA=Math.cos(ar),sinA=Math.sin(ar);
+  const gl=rx*1.50,drop=kind==='shoulder'?dist*0.08:0;
   return{cx,cy:cy+drop,rx,ry,rotationDeg:smoothDeg,
     guideStart:{x:cx-gl*cosA,y:cy+drop-gl*sinA},
     guideEnd:{x:cx+gl*cosA,y:cy+drop+gl*sinA},
-    alpha:0.88,visible:dist>0.02};
+    alpha:0.92,visible:dist>0.015};
 }
 
 export function getTrackedPoint(_i:MainIssueType,_v:ViewType,kpFrame:KeypointFrame):{x:number;y:number}|null{
