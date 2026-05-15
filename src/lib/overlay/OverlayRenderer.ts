@@ -1,10 +1,10 @@
 /**
- * OverlayRenderer.ts — 旋转盘渲染器（样板图1:1复刻）
+ * OverlayRenderer.ts â æè½¬çæ¸²æå¨ï¼æ ·æ¿å¾1:1å¤å»ï¼
  *
- * drawEllipse 三层渲染 + 3D前后弧区分：
- *   前弧（朝镜头）= 粗实线 + 强发光
- *   后弧（背镜头）= 细虚线 + 淡（模拟被身体遮挡）
- *   填充 = 半透明覆盖整盘
+ * drawEllipse ä¸å±æ¸²æ + 3Dååå¼§åºåï¼
+ *   åå¼§ï¼æéå¤´ï¼= ç²å®çº¿ + å¼ºåå
+ *   åå¼§ï¼èéå¤´ï¼= ç»èçº¿ + æ·¡ï¼æ¨¡æè¢«èº«ä½é®æ¡ï¼
+ *   å¡«å = åéæè¦çæ´ç
  */
 
 import type {
@@ -64,15 +64,15 @@ export function drawStructureLine(
 }
 
 /**
- * drawEllipse — 3D旋转盘（一比一对标样板图）
+ * drawEllipse â 3Dæè½¬çï¼ä¸æ¯ä¸å¯¹æ æ ·æ¿å¾ï¼
  *
- * 前弧 = 朝向镜头的半弧（粗 + 强发光）
- * 后弧 = 背向镜头的半弧（细虚线 + 淡，模拟被身体遮挡）
- * 填充 = 整盘半透明
+ * åå¼§ = æåéå¤´çåå¼§ï¼ç² + å¼ºååï¼
+ * åå¼§ = èåéå¤´çåå¼§ï¼ç»èçº¿ + æ·¡ï¼æ¨¡æè¢«èº«ä½é®æ¡ï¼
+ * å¡«å = æ´çåéæ
  *
- * face_on 视角：
- *   前弧 = ellipse 下半圆（y+方向，靠近镜头）
- *   后弧 = ellipse 上半圆（y-方向，穿过身体后面）
+ * face_on è§è§ï¼
+ *   åå¼§ = ellipse ä¸ååï¼y+æ¹åï¼é è¿éå¤´ï¼
+ *   åå¼§ = ellipse ä¸ååï¼y-æ¹åï¼ç©¿è¿èº«ä½åé¢ï¼
  */
 export function drawEllipse(
   ctx: Ctx,
@@ -86,55 +86,43 @@ export function drawEllipse(
 ) {
   const pcx = cx * W, pcy = cy * H;
   const prx = rx * W;
-  const pry = ry * W;   // 用 W 作基准保持 3D 旋转盘比例
+  const pry = ry * W;   // 用 W 作基准，保持旋转盘横向比例
   const angle = angleDeg * Math.PI / 180;
 
   ctx.save();
   ctx.translate(pcx, pcy);
   ctx.rotate(angle);
 
-  // ── 1. 整盘半透明填充（样板图有明显填充色）──
+  // 1. 外层超大发光 halo（blur=28，样板图霓虹感）
+  ctx.globalAlpha = opacity * 0.28;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 28;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = strokeWidth * 3.2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 2. 清晰主描边
+  ctx.globalAlpha = opacity;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 10;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = strokeWidth;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 3. 半透明填充（22%，样板图有明显盘面感）
+  ctx.shadowBlur  = 0;
   ctx.globalAlpha = opacity * 0.22;
-  ctx.fillStyle = color;
+  ctx.fillStyle   = color;
   ctx.beginPath();
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // ── 2. 后弧（上半弧，背向镜头，细虚线 + 淡）──
-  // 模拟被身体遮挡：opacity × 0.30，线宽 1px，虚线
-  ctx.globalAlpha = opacity * 0.30;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = strokeWidth * 0.55;
-  ctx.setLineDash([8, 6]);
-  ctx.shadowBlur = 0;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, prx, pry, 0, Math.PI, 2 * Math.PI); // 上半弧（后）
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // ── 3. 前弧外层大发光 halo（下半弧）──
-  ctx.globalAlpha = opacity * 0.32;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 24;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = strokeWidth * 3.0;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI); // 下半弧（前）
-  ctx.stroke();
-
-  // ── 4. 前弧主线（清晰粗亮）──
-  ctx.globalAlpha = opacity;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 10;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = strokeWidth;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI); // 下半弧（前）
-  ctx.stroke();
-
   ctx.restore();
 }
-
 export function drawCurvePath(
   ctx: Ctx, points: Pt[], W: number, H: number,
   color: string, strokeWidth = 1.5, opacity = 0.80,
