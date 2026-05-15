@@ -1,10 +1,10 @@
 /**
- * OverlayRenderer.ts â æè½¬çæ¸²æå¨ï¼æ ·æ¿å¾1:1å¤å»ï¼
+ * OverlayRenderer.ts Ã¢ÂÂ Ã¦ÂÂÃ¨Â½Â¬Ã§ÂÂÃ¦Â¸Â²Ã¦ÂÂÃ¥ÂÂ¨Ã¯Â¼ÂÃ¦Â Â·Ã¦ÂÂ¿Ã¥ÂÂ¾1:1Ã¥Â¤ÂÃ¥ÂÂ»Ã¯Â¼Â
  *
- * drawEllipse ä¸å±æ¸²æ + 3Dååå¼§åºåï¼
- *   åå¼§ï¼æéå¤´ï¼= ç²å®çº¿ + å¼ºåå
- *   åå¼§ï¼èéå¤´ï¼= ç»èçº¿ + æ·¡ï¼æ¨¡æè¢«èº«ä½é®æ¡ï¼
- *   å¡«å = åéæè¦çæ´ç
+ * drawEllipse Ã¤Â¸ÂÃ¥Â±ÂÃ¦Â¸Â²Ã¦ÂÂ + 3DÃ¥ÂÂÃ¥ÂÂÃ¥Â¼Â§Ã¥ÂÂºÃ¥ÂÂÃ¯Â¼Â
+ *   Ã¥ÂÂÃ¥Â¼Â§Ã¯Â¼ÂÃ¦ÂÂÃ©ÂÂÃ¥Â¤Â´Ã¯Â¼Â= Ã§Â²ÂÃ¥Â®ÂÃ§ÂºÂ¿ + Ã¥Â¼ÂºÃ¥ÂÂÃ¥ÂÂ
+ *   Ã¥ÂÂÃ¥Â¼Â§Ã¯Â¼ÂÃ¨ÂÂÃ©ÂÂÃ¥Â¤Â´Ã¯Â¼Â= Ã§Â»ÂÃ¨ÂÂÃ§ÂºÂ¿ + Ã¦Â·Â¡Ã¯Â¼ÂÃ¦Â¨Â¡Ã¦ÂÂÃ¨Â¢Â«Ã¨ÂºÂ«Ã¤Â½ÂÃ©ÂÂ®Ã¦ÂÂ¡Ã¯Â¼Â
+ *   Ã¥Â¡Â«Ã¥ÂÂ = Ã¥ÂÂÃ©ÂÂÃ¦ÂÂÃ¨Â¦ÂÃ§ÂÂÃ¦ÂÂ´Ã§ÂÂ
  */
 
 import type {
@@ -64,15 +64,15 @@ export function drawStructureLine(
 }
 
 /**
- * drawEllipse â 3Dæè½¬çï¼ä¸æ¯ä¸å¯¹æ æ ·æ¿å¾ï¼
+ * drawEllipse Ã¢ÂÂ 3DÃ¦ÂÂÃ¨Â½Â¬Ã§ÂÂÃ¯Â¼ÂÃ¤Â¸ÂÃ¦Â¯ÂÃ¤Â¸ÂÃ¥Â¯Â¹Ã¦Â ÂÃ¦Â Â·Ã¦ÂÂ¿Ã¥ÂÂ¾Ã¯Â¼Â
  *
- * åå¼§ = æåéå¤´çåå¼§ï¼ç² + å¼ºååï¼
- * åå¼§ = èåéå¤´çåå¼§ï¼ç»èçº¿ + æ·¡ï¼æ¨¡æè¢«èº«ä½é®æ¡ï¼
- * å¡«å = æ´çåéæ
+ * Ã¥ÂÂÃ¥Â¼Â§ = Ã¦ÂÂÃ¥ÂÂÃ©ÂÂÃ¥Â¤Â´Ã§ÂÂÃ¥ÂÂÃ¥Â¼Â§Ã¯Â¼ÂÃ§Â²Â + Ã¥Â¼ÂºÃ¥ÂÂÃ¥ÂÂÃ¯Â¼Â
+ * Ã¥ÂÂÃ¥Â¼Â§ = Ã¨ÂÂÃ¥ÂÂÃ©ÂÂÃ¥Â¤Â´Ã§ÂÂÃ¥ÂÂÃ¥Â¼Â§Ã¯Â¼ÂÃ§Â»ÂÃ¨ÂÂÃ§ÂºÂ¿ + Ã¦Â·Â¡Ã¯Â¼ÂÃ¦Â¨Â¡Ã¦ÂÂÃ¨Â¢Â«Ã¨ÂºÂ«Ã¤Â½ÂÃ©ÂÂ®Ã¦ÂÂ¡Ã¯Â¼Â
+ * Ã¥Â¡Â«Ã¥ÂÂ = Ã¦ÂÂ´Ã§ÂÂÃ¥ÂÂÃ©ÂÂÃ¦ÂÂ
  *
- * face_on è§è§ï¼
- *   åå¼§ = ellipse ä¸ååï¼y+æ¹åï¼é è¿éå¤´ï¼
- *   åå¼§ = ellipse ä¸ååï¼y-æ¹åï¼ç©¿è¿èº«ä½åé¢ï¼
+ * face_on Ã¨Â§ÂÃ¨Â§ÂÃ¯Â¼Â
+ *   Ã¥ÂÂÃ¥Â¼Â§ = ellipse Ã¤Â¸ÂÃ¥ÂÂÃ¥ÂÂÃ¯Â¼Ây+Ã¦ÂÂ¹Ã¥ÂÂÃ¯Â¼ÂÃ©ÂÂ Ã¨Â¿ÂÃ©ÂÂÃ¥Â¤Â´Ã¯Â¼Â
+ *   Ã¥ÂÂÃ¥Â¼Â§ = ellipse Ã¤Â¸ÂÃ¥ÂÂÃ¥ÂÂÃ¯Â¼Ây-Ã¦ÂÂ¹Ã¥ÂÂÃ¯Â¼ÂÃ§Â©Â¿Ã¨Â¿ÂÃ¨ÂºÂ«Ã¤Â½ÂÃ¥ÂÂÃ©ÂÂ¢Ã¯Â¼Â
  */
 export function drawEllipse(
   ctx: Ctx,
@@ -86,40 +86,44 @@ export function drawEllipse(
 ) {
   const pcx = cx * W, pcy = cy * H;
   const prx = rx * W;
-  const pry = ry * W;   // 用 W 作基准，保持旋转盘横向比例
+  const pry = ry * W;
   const angle = angleDeg * Math.PI / 180;
 
   ctx.save();
   ctx.translate(pcx, pcy);
   ctx.rotate(angle);
 
-  // 1. 外层超大发光 halo（blur=28，样板图霓虹感）
-  ctx.globalAlpha = opacity * 0.28;
-  ctx.shadowColor = color;
-  ctx.shadowBlur  = 28;
-  ctx.strokeStyle = color;
-  ctx.lineWidth   = strokeWidth * 3.2;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // 2. 清晰主描边
-  ctx.globalAlpha = opacity;
-  ctx.shadowColor = color;
-  ctx.shadowBlur  = 10;
-  ctx.strokeStyle = color;
-  ctx.lineWidth   = strokeWidth;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // 3. 半透明填充（22%，样板图有明显盘面感）
-  ctx.shadowBlur  = 0;
-  ctx.globalAlpha = opacity * 0.22;
-  ctx.fillStyle   = color;
+  // ── 1. 整盘半透明填充（身体透过来显示）──
+  ctx.globalAlpha = opacity * 0.20;
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // ── 2. 前弧（下半弧 0→π，朝向镜头）：粗实线 + 强发光 ──
+  // 这是观众能看到的部分（圆盘朝向镜头的那一侧）
+  // 外层 halo
+  ctx.globalAlpha = opacity * 0.32;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 26;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = strokeWidth * 3.0;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI);
+  ctx.stroke();
+
+  // 内层清晰主线
+  ctx.globalAlpha = opacity;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = strokeWidth;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, prx, pry, 0, 0, Math.PI);
+  ctx.stroke();
+
+  // ── 3. 后弧（上半弧 π→2π，被身体遮挡）：完全不画 ──
+  // 不渲染后弧，视觉上像圆盘穿过身体后消失在背后
 
   ctx.restore();
 }
