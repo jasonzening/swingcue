@@ -19,7 +19,7 @@ import type { BodyPointName, Pt } from '@/lib/golf/bodyPointSpec';
 import type { ViewType } from '@/lib/golf/overlayLineSpec';
 
 const _prevAngle: Record<string, number> = {};
-const _refWidth:  Record<string, number> = {};
+const _refWidth:  Record<string, number> = {}; const _prevZAsym: Record<string, number> = {};
 
 let _uid = 0;
 const uid   = (p: string) => `${p}-${++_uid}`;
@@ -36,8 +36,8 @@ const mkDot   = (x:number,y:number,c:AC,r=0.009,op=0.90,layer:OverlayElement['la
 const mkLabel = (x:number,y:number,text:string,c:AC='white',size=10,op=0.80): LabelElement =>
   ({type:'label',id:uid('t'),x,y,text,color:c,size,opacity:op});
 
-function mkEllipse(cx:number,cy:number,rx:number,ry:number,angleDeg:number,color:AC,sw=5.0,op=0.92,layer:OverlayElement['layer']='body',bhr=0.27,vr=1.0):OverlayElement{
-  return{type:'ellipse'as OverlayElement['type'],id:uid('e'),cx,cy,rx,ry,angleDeg,color,strokeWidth:sw,opacity:op,layer,bodyHalfRatio:bhr,visRatio:vr}as unknown as OverlayElement;
+function mkEllipse(cx:number,cy:number,rx:number,ry:number,angleDeg:number,color:AC,sw=5.0,op=0.92,layer:OverlayElement['layer']='body',bhr=0.27,vr=1.0,zAsym=0):OverlayElement{
+  return{type:'ellipse'as OverlayElement['type'],id:uid('e'),cx,cy,rx,ry,angleDeg,color,strokeWidth:sw,opacity:op,layer,bodyHalfRatio:bhr,visRatio:vr,zAsym}as unknown as OverlayElement;
 }
 
 function normalizeAngle(deg:number):number{let a=deg;if(a>90)a-=180;if(a<-90)a+=180;return a;}
@@ -47,7 +47,7 @@ function buildDisc(
   opts: {
     rxMult:number; rxMin:number; rxMax:number;
     ryRatio:number; maxAngle:number;
-    refKey:string; angleKey:string;
+    refKey:string; angleKey:string; zAsymKey:string;
     label:string; dotExpand:number;
   },
   color: AC,
@@ -99,8 +99,8 @@ function buildDisc(
   _prevAngle[opts.angleKey] = smoothDeg;
 
   const bhr   = clamp((dist / 2) / rx, 0.05, 0.95);
-  const alpha = 0.50 + visRatio * 0.42;
-  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, alpha, layer, bhr, visRatio));
+  const alpha = 0.50 + visRatio * 0.42; const screenRightPt = leftPt.x >= rightPt.x ? leftPt : rightPt; const screenLeftPt = leftPt.x >= rightPt.x ? rightPt : leftPt; const lz = screenLeftPt.z ?? 0; const rz = screenRightPt.z ?? 0; const Z_NORM = 0.20; const zAsymRaw = clamp((lz - rz) / Z_NORM, -1, 1); const prevZ = _prevZAsym[opts.zAsymKey]; const zAsym = prevZ !== undefined ? prevZ + clamp(zAsymRaw - prevZ, -0.15, 0.15) : zAsymRaw; _prevZAsym[opts.zAsymKey] = zAsym;
+  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, alpha, layer, bhr, visRatio, zAsym));
 
   const ar = smoothDeg * Math.PI / 180;
   const cosA = Math.cos(ar), sinA = Math.sin(ar);
@@ -115,8 +115,8 @@ function buildDisc(
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
   const r: Partial<Record<BodyPointName, Pt>> = {};
-  const toP = (pt?: {x:number;y:number;confidence?:number}|null) =>
-    pt ? {x:pt.x,y:pt.y,confidence:pt.confidence??0.8} : null;
+  const toP = (pt?: {x:number;y:number;z?:number;confidence?:number}|null) =>
+    pt ? {x:pt.x,y:pt.y,z:pt.z,confidence:pt.confidence??0.8} : null;
   if(lm.head)          r.headCenter    = toP(lm.head)!;
   if(lm.leftShoulder)  r.leftShoulder  = toP(lm.leftShoulder)!;
   if(lm.rightShoulder) r.rightShoulder = toP(lm.rightShoulder)!;
@@ -151,13 +151,13 @@ export function generateSpecDrivenOverlayFrame(
   const ls=pts.leftShoulder,rs=pts.rightShoulder;
   if(ls&&rs){els.push(...buildDisc(ls,rs,{
     rxMult:1.85,rxMin:0.20,rxMax:0.50,ryRatio:0.20,maxAngle:maxAng,
-    refKey:'sRef',angleKey:'sAng',label:'SHOULDERS',dotExpand:0,
+    refKey:'sRef',angleKey:'sAng',zAsymKey:'sZ',label:'SHOULDERS',dotExpand:0,
   },'white','body'));}
 
   const lh=pts.leftHip,rh=pts.rightHip;
   if(lh&&rh){els.push(...buildDisc(lh,rh,{
     rxMult:2.10,rxMin:0.16,rxMax:0.50,ryRatio:0.18,maxAngle:maxAng,
-    refKey:'hRef',angleKey:'hAng',label:'HIPS',dotExpand:0.52,
+    refKey:'hRef',angleKey:'hAng',zAsymKey:'hZ',label:'HIPS',dotExpand:0.52,
   },'white','club'));}
 
   return els;
