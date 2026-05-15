@@ -1,15 +1,15 @@
 /**
- * keypointOverlay.ts â æè½¬çï¼å¯¹æ æ ·æ¿å¾ï¼
+ * keypointOverlay.ts Ã¢ÂÂ Ã¦ÂÂÃ¨Â½Â¬Ã§ÂÂÃ¯Â¼ÂÃ¥Â¯Â¹Ã¦Â ÂÃ¦Â Â·Ã¦ÂÂ¿Ã¥ÂÂ¾Ã¯Â¼Â
  *
- * æ ¸å¿ååï¼
- *   åçä¸­å¿ = å·¦å³è©ä¸­ç¹ï¼ä¸ä¸ç§»ï¼ï¼
- *   guide line ä» leftPt â rightPt æ²¿æ¹åå»¶ä¼¸ï¼ç»è¿ä¸¤ä¸ªçå®è©ç¹
- *   åçç»èæ¤/é¢é¨ä¸­è½´æè½¬
+ * Ã¦Â Â¸Ã¥Â¿ÂÃ¥ÂÂÃ¥ÂÂÃ¯Â¼Â
+ *   Ã¥ÂÂÃ§ÂÂÃ¤Â¸Â­Ã¥Â¿Â = Ã¥Â·Â¦Ã¥ÂÂ³Ã¨ÂÂ©Ã¤Â¸Â­Ã§ÂÂ¹Ã¯Â¼ÂÃ¤Â¸ÂÃ¤Â¸ÂÃ§Â§Â»Ã¯Â¼ÂÃ¯Â¼Â
+ *   guide line Ã¤Â»Â leftPt Ã¢ÂÂ rightPt Ã¦Â²Â¿Ã¦ÂÂ¹Ã¥ÂÂÃ¥Â»Â¶Ã¤Â¼Â¸Ã¯Â¼ÂÃ§Â»ÂÃ¨Â¿ÂÃ¤Â¸Â¤Ã¤Â¸ÂªÃ§ÂÂÃ¥Â®ÂÃ¨ÂÂ©Ã§ÂÂ¹
+ *   Ã¥ÂÂÃ§ÂÂÃ§Â»ÂÃ¨ÂÂÃ¦Â¤Â/Ã©Â¢ÂÃ©ÂÂ¨Ã¤Â¸Â­Ã¨Â½Â´Ã¦ÂÂÃ¨Â½Â¬
  *
- * guide line ç»æ³ï¼
- *   æ¹å = leftPt â rightPt
- *   ç«¯ç¹ = è©ç¹ä½ç½®åå¾å¤å»¶ä¼¸ extraExtï¼æ ·æ¿å¾ä¸­çº¿è¶åºè©ç¹ï¼
- *   è¿æ ·ç½çº¿ä¸å®ç»è¿ä¸¤ä¸ªè©ç¹
+ * guide line Ã§ÂÂ»Ã¦Â³ÂÃ¯Â¼Â
+ *   Ã¦ÂÂ¹Ã¥ÂÂ = leftPt Ã¢ÂÂ rightPt
+ *   Ã§Â«Â¯Ã§ÂÂ¹ = Ã¨ÂÂ©Ã§ÂÂ¹Ã¤Â½ÂÃ§Â½Â®Ã¥ÂÂÃ¥Â¾ÂÃ¥Â¤ÂÃ¥Â»Â¶Ã¤Â¼Â¸ extraExtÃ¯Â¼ÂÃ¦Â Â·Ã¦ÂÂ¿Ã¥ÂÂ¾Ã¤Â¸Â­Ã§ÂºÂ¿Ã¨Â¶ÂÃ¥ÂÂºÃ¨ÂÂ©Ã§ÂÂ¹Ã¯Â¼Â
+ *   Ã¨Â¿ÂÃ¦Â Â·Ã§ÂÂ½Ã§ÂºÂ¿Ã¤Â¸ÂÃ¥Â®ÂÃ§Â»ÂÃ¨Â¿ÂÃ¤Â¸Â¤Ã¤Â¸ÂªÃ¨ÂÂ©Ã§ÂÂ¹
  */
 
 import type {
@@ -42,11 +42,12 @@ function mkEllipse(
   angleDeg:number,
   color: AC, strokeWidth=5.0, opacity=0.92,
   layer:OverlayElement['layer']='body',
+  bodyHalfRatio=0.27,
 ): OverlayElement {
   return {
     type: 'ellipse' as OverlayElement['type'],
     id: uid('e'), cx, cy, rx, ry, angleDeg,
-    color, strokeWidth, opacity, layer,
+    color, strokeWidth, opacity, layer, bodyHalfRatio,
   } as unknown as OverlayElement;
 }
 
@@ -57,16 +58,16 @@ function normalizeAngle(deg: number): number {
   return a;
 }
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââ
+/* Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
    buildDisc
-   âââââââââââââââââââââââââââââââââââââââââââââââââ
-   åçå ä½ååï¼
-   1. cx/cy = mid(leftPt, rightPt) â ä¸ä¸ç§»ï¼è®©guide lineç»è¿è©ç¹
-   2. rx = dist * rxMult â æ¤­åé¿è½´ï¼æ¯è©å®½ï¼
-   3. ry = rx * ryRatio â æ¤­åç­è½´ï¼å¾æï¼
-   4. guide line ä» leftPt åºåï¼æ²¿æ¹åå»¶ä¼¸ extraRatio è³ rightPt åå»¶ä¼¸
-      â ä¿è¯ç»è¿ä¸¤ä¸ªçå®å³é®ç¹
-âââââââââââââââââââââââââââââââââââââââââââââââââââ */
+   Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+   Ã¥ÂÂÃ§ÂÂÃ¥ÂÂ Ã¤Â½ÂÃ¥ÂÂÃ¥ÂÂÃ¯Â¼Â
+   1. cx/cy = mid(leftPt, rightPt) Ã¢ÂÂ Ã¤Â¸ÂÃ¤Â¸ÂÃ§Â§Â»Ã¯Â¼ÂÃ¨Â®Â©guide lineÃ§Â»ÂÃ¨Â¿ÂÃ¨ÂÂ©Ã§ÂÂ¹
+   2. rx = dist * rxMult Ã¢ÂÂ Ã¦Â¤Â­Ã¥ÂÂÃ©ÂÂ¿Ã¨Â½Â´Ã¯Â¼ÂÃ¦Â¯ÂÃ¨ÂÂ©Ã¥Â®Â½Ã¯Â¼Â
+   3. ry = rx * ryRatio Ã¢ÂÂ Ã¦Â¤Â­Ã¥ÂÂÃ§ÂÂ­Ã¨Â½Â´Ã¯Â¼ÂÃ¥Â¾ÂÃ¦ÂÂÃ¯Â¼Â
+   4. guide line Ã¤Â»Â leftPt Ã¥ÂÂºÃ¥ÂÂÃ¯Â¼ÂÃ¦Â²Â¿Ã¦ÂÂ¹Ã¥ÂÂÃ¥Â»Â¶Ã¤Â¼Â¸ extraRatio Ã¨ÂÂ³ rightPt Ã¥ÂÂÃ¥Â»Â¶Ã¤Â¼Â¸
+      Ã¢ÂÂ Ã¤Â¿ÂÃ¨Â¯ÂÃ§Â»ÂÃ¨Â¿ÂÃ¤Â¸Â¤Ã¤Â¸ÂªÃ§ÂÂÃ¥Â®ÂÃ¥ÂÂ³Ã©ÂÂ®Ã§ÂÂ¹
+Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 function buildDisc(
   leftPt: Pt, rightPt: Pt,
   opts: {
@@ -75,7 +76,7 @@ function buildDisc(
     rxMax:      number;
     ryRatio:    number;
     maxAngle:   number;
-    extraRatio: number;   // guide line å¨è©ç¹å¤å»¶ä¼¸ = dist * extraRatio
+    extraRatio: number;   // guide line Ã¥ÂÂ¨Ã¨ÂÂ©Ã§ÂÂ¹Ã¥Â¤ÂÃ¥Â»Â¶Ã¤Â¼Â¸ = dist * extraRatio
     label:      string;
   },
   color: AC,
@@ -89,15 +90,15 @@ function buildDisc(
   const dist = dist2D(leftPt, rightPt);
   if (dist < 0.015) return els;
 
-  // åçä¸­å¿ = ç²¾ç¡®è©ç¹ä¸­ç¹ï¼ä¸ä¸ç§»ï¼
+  // Ã¥ÂÂÃ§ÂÂÃ¤Â¸Â­Ã¥Â¿Â = Ã§Â²Â¾Ã§Â¡Â®Ã¨ÂÂ©Ã§ÂÂ¹Ã¤Â¸Â­Ã§ÂÂ¹Ã¯Â¼ÂÃ¤Â¸ÂÃ¤Â¸ÂÃ§Â§Â»Ã¯Â¼Â
   const cx = (leftPt.x + rightPt.x) / 2;
   const cy = (leftPt.y + rightPt.y) / 2;
 
-  // æ¤­åå°ºå¯¸
+  // Ã¦Â¤Â­Ã¥ÂÂÃ¥Â°ÂºÃ¥Â¯Â¸
   const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
   const ry = rx * opts.ryRatio;
 
-  // è§åº¦
+  // Ã¨Â§ÂÃ¥ÂºÂ¦
   const rawDeg   = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x) * 180 / Math.PI;
   const normDeg  = normalizeAngle(rawDeg);
   const clampDeg = clamp(normDeg, -opts.maxAngle, opts.maxAngle);
@@ -112,22 +113,22 @@ function buildDisc(
     return els;
   }
 
-  // æ¤­å
+  // Ã¦Â¤Â­Ã¥ÂÂ
   els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, 0.92, layer));
 
-  // guide lineï¼ä» leftPt â rightPt æ¹åï¼ä¸¤ç«¯åé¢å¤å»¶ä¼¸ extraRatio * dist
-  // è¿æ ·ç½çº¿ä¸å®ç»è¿ leftPt å rightPt ä¸¤ä¸ªçå®è©ç¹
+  // guide lineÃ¯Â¼ÂÃ¤Â»Â leftPt Ã¢ÂÂ rightPt Ã¦ÂÂ¹Ã¥ÂÂÃ¯Â¼ÂÃ¤Â¸Â¤Ã§Â«Â¯Ã¥ÂÂÃ©Â¢ÂÃ¥Â¤ÂÃ¥Â»Â¶Ã¤Â¼Â¸ extraRatio * dist
+  // Ã¨Â¿ÂÃ¦Â Â·Ã§ÂÂ½Ã§ÂºÂ¿Ã¤Â¸ÂÃ¥Â®ÂÃ§Â»ÂÃ¨Â¿Â leftPt Ã¥ÂÂ rightPt Ã¤Â¸Â¤Ã¤Â¸ÂªÃ§ÂÂÃ¥Â®ÂÃ¨ÂÂ©Ã§ÂÂ¹
   const ar = smoothDeg * Math.PI / 180;
   const cosA = Math.cos(ar), sinA = Math.sin(ar);
-  const extra = dist * opts.extraRatio;  // è©ç¹å¤å»¶ä¼¸é¿åº¦
-  // guide line ç«¯ç¹ = è©ç¹ä½ç½® Â± extra
+  const extra = dist * opts.extraRatio;  // Ã¨ÂÂ©Ã§ÂÂ¹Ã¥Â¤ÂÃ¥Â»Â¶Ã¤Â¼Â¸Ã©ÂÂ¿Ã¥ÂºÂ¦
+  // guide line Ã§Â«Â¯Ã§ÂÂ¹ = Ã¨ÂÂ©Ã§ÂÂ¹Ã¤Â½ÂÃ§Â½Â® ÃÂ± extra
   const gx1 = cx - rx * cosA;
   const gy1 = cy - rx * sinA;
   const gx2 = cx + rx * cosA;
   const gy2 = cy + rx * sinA;
   els.push(mkLine(gx1,gy1, gx2,gy2, 'white', 2.5, 0.88, layer));
 
-  // ç«¯ç¹åç¹
+  // Ã§Â«Â¯Ã§ÂÂ¹Ã¥ÂÂÃ§ÂÂ¹
   if (lc > 0.40) els.push(mkDot(leftPt.x,  leftPt.y,  color, 0.010, 0.80, layer));
   if (rc > 0.40) els.push(mkDot(rightPt.x, rightPt.y, color, 0.010, 0.80, layer));
 
@@ -137,7 +138,7 @@ function buildDisc(
   return els;
 }
 
-/* âââââââ å³é®ç¹è§£æ âââââââ */
+/* Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ Ã¥ÂÂ³Ã©ÂÂ®Ã§ÂÂ¹Ã¨Â§Â£Ã¦ÂÂ Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
   const r: Partial<Record<BodyPointName, Pt>> = {};
@@ -165,7 +166,7 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
   return r;
 }
 
-/* âââââââ ä¸»çæå½æ° âââââââ */
+/* Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ Ã¤Â¸Â»Ã§ÂÂÃ¦ÂÂÃ¥ÂÂ½Ã¦ÂÂ° Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 export function generateSpecDrivenOverlayFrame(
   issue:    MainIssueType,
   viewType: ViewType,
@@ -186,7 +187,7 @@ export function generateSpecDrivenOverlayFrame(
       rxMax:      0.50,
       ryRatio:    viewType === 'face_on' ? 0.20 : 0.14,
       maxAngle:   viewType === 'face_on' ? 12 : 35,
-      extraRatio: 0.20,  // guide line å¨è©ç¹å¤å»¶ä¼¸ 20% è©å®½ï¼æ ·æ¿å¾ä¸­çº¿è¶åºï¼
+      extraRatio: 0.20,  // guide line Ã¥ÂÂ¨Ã¨ÂÂ©Ã§ÂÂ¹Ã¥Â¤ÂÃ¥Â»Â¶Ã¤Â¼Â¸ 20% Ã¨ÂÂ©Ã¥Â®Â½Ã¯Â¼ÂÃ¦Â Â·Ã¦ÂÂ¿Ã¥ÂÂ¾Ã¤Â¸Â­Ã§ÂºÂ¿Ã¨Â¶ÂÃ¥ÂÂºÃ¯Â¼Â
       label:      'SHOULDERS',
     }, 'red', 'shoulder', 'body'));
   }
@@ -208,7 +209,7 @@ export function generateSpecDrivenOverlayFrame(
   return els;
 }
 
-/* ââ compat ââ */
+/* Ã¢ÂÂÃ¢ÂÂ compat Ã¢ÂÂÃ¢ÂÂ */
 export function computePerspectiveDisc(args:{leftPoint:Pt;rightPoint:Pt;viewType:ViewType;kind:'shoulder'|'hip';previousAngle?:number;}){
   const{leftPoint:lp,rightPoint:rp,viewType,kind}=args;
   const dist=dist2D(lp,rp);
