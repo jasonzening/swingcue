@@ -1,12 +1,15 @@
 /**
- * keypointOverlay.ts â æ ·æ¿å¾é£æ ¼æè½¬ç
+ * keypointOverlay.ts — 旋转盘（对标样板图）
  *
- * å³é®åæ°ï¼å¯¹æ æ ·æ¿å¾ï¼ï¼
- *   è©é¨çï¼rx = shoulderDist Ã 1.20ï¼ry = rx Ã 0.20ï¼éå¸¸æå¹³ï¼é«å®½æ¯ 1:5ï¼
- *   é«é¨ç¯ï¼rx = hipDist     Ã 1.00ï¼ry = rx Ã 0.18ï¼æ´æï¼
- *   guide lineï¼ç½è²ï¼é¿åº¦ = rx Ã 1.60ï¼ä¸¥æ ¼å¨æ¤­åå
- *   centerï¼shoulderCenter ä¸ç§» dist Ã 0.08ï¼è½»å¾®ä¸ç§»ï¼ä¸è¦å¤ªå¤ï¼
- *   angleï¼clamp Â±12Â° face_onï¼å½ä¸åé² Â±180Â°
+ * 核心原则：
+ *   圆盘中心 = 左右肩中点（不下移！）
+ *   guide line 从 leftPt → rightPt 沿方向延伸，经过两个真实肩点
+ *   圆盘绕脊椎/颈部中轴旋转
+ *
+ * guide line 画法：
+ *   方向 = leftPt → rightPt
+ *   端点 = 肩点位置再往外延伸 extraExt（样板图中线超出肩点）
+ *   这样白线一定经过两个肩点
  */
 
 import type {
@@ -26,33 +29,27 @@ const mid2D  = (a: Pt, b: Pt): Pt => ({ x:(a.x+b.x)/2, y:(a.y+b.y)/2, confidence
 
 type AC = 'red' | 'green' | 'yellow' | 'white';
 
-const mkLine  = (x1:number,y1:number,x2:number,y2:number,c:AC,w=2.5,op=0.88,layer:OverlayElement['layer']='body'): LineElement =>
+const mkLine  = (x1:number,y1:number,x2:number,y2:number,c:AC,w=2.5,op=0.90,layer:OverlayElement['layer']='body'): LineElement =>
   ({type:'line',id:uid('l'),x1,y1,x2,y2,color:c,strokeWidth:w,opacity:op,layer});
-const mkDot   = (x:number,y:number,c:AC,r=0.008,op=0.70,layer:OverlayElement['layer']='body'): DotElement =>
+const mkDot   = (x:number,y:number,c:AC,r=0.009,op=0.72,layer:OverlayElement['layer']='body'): DotElement =>
   ({type:'dot',id:uid('d'),x,y,color:c,radius:r,opacity:op,layer});
 const mkLabel = (x:number,y:number,text:string,c:AC='white',size=10,op=0.80): LabelElement =>
   ({type:'label',id:uid('t'),x,y,text,color:c,size,opacity:op});
 
-/** mkEllipse â type:'ellipse' ç± renderer.drawEllipse å¤çï¼ä¸å±éè¹ååï¼*/
 function mkEllipse(
   cx:number, cy:number,
   rx:number, ry:number,
   angleDeg:number,
-  color: AC,
-  strokeWidth=5.0,
-  opacity=0.92,
+  color: AC, strokeWidth=5.0, opacity=0.92,
   layer:OverlayElement['layer']='body',
 ): OverlayElement {
   return {
     type: 'ellipse' as OverlayElement['type'],
-    id: uid('e'),
-    cx, cy, rx, ry,
-    angleDeg,
+    id: uid('e'), cx, cy, rx, ry, angleDeg,
     color, strokeWidth, opacity, layer,
   } as unknown as OverlayElement;
 }
 
-/** è§åº¦å½ä¸åå° [-90, +90]ï¼é²æ­¢ atan2 è¿å Â±180Â° */
 function normalizeAngle(deg: number): number {
   let a = deg;
   if (a >  90) a -= 180;
@@ -60,25 +57,25 @@ function normalizeAngle(deg: number): number {
   return a;
 }
 
-/* âââââââââââââââââââââââââââââââââââââââââââââââââââ
-   buildDisc â æè½¬çæ ¸å¿
-   âââââââââââââââââââââââââââââââââââââââââââââââââ
-   å¯¹æ æ ·æ¿å¾ï¼
-   - æ¤­åæåº¦æå¹³ï¼ryRatio 0.20ï¼é«å®½æ¯ 1:5ï¼
-   - æ¤­åè¦æ¯è©å®½å¤§ï¼rxMult 1.20ï¼
-   - guide line ç½è²ç©¿è¶çé¢
-   - ä¸­å¿è½»å¾®ä¸ç§»ï¼dropRatio 0.08ï¼
-âââââââââââââââââââââââââââââââââââââââââââââââââââ */
+/* ═══════════════════════════════════════════════════
+   buildDisc
+   ─────────────────────────────────────────────────
+   圆盘几何原则：
+   1. cx/cy = mid(leftPt, rightPt) — 不下移，让guide line经过肩点
+   2. rx = dist * rxMult — 椭圆长轴（比肩宽）
+   3. ry = rx * ryRatio — 椭圆短轴（很扁）
+   4. guide line 从 leftPt 出发，沿方向延伸 extraRatio 至 rightPt 再延伸
+      → 保证经过两个真实关键点
+═══════════════════════════════════════════════════ */
 function buildDisc(
   leftPt: Pt, rightPt: Pt,
   opts: {
-    dropRatio:  number;
     rxMult:     number;
     rxMin:      number;
     rxMax:      number;
-    ryRatio:    number;   // â å³é®ï¼æ ·æ¿å¾çº¦ 0.20
+    ryRatio:    number;
     maxAngle:   number;
-    guideRatio: number;
+    extraRatio: number;   // guide line 在肩点外延伸 = dist * extraRatio
     label:      string;
   },
   color: AC,
@@ -92,13 +89,15 @@ function buildDisc(
   const dist = dist2D(leftPt, rightPt);
   if (dist < 0.015) return els;
 
-  /* åçå ä½ */
+  // 圆盘中心 = 精确肩点中点（不下移）
   const cx = (leftPt.x + rightPt.x) / 2;
-  const cy = (leftPt.y + rightPt.y) / 2 + dist * opts.dropRatio;
-  const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
-  const ry = rx * opts.ryRatio;   // â éå¸¸æå¹³
+  const cy = (leftPt.y + rightPt.y) / 2;
 
-  /* è§åº¦å½ä¸å + clamp + å¸§é´å¹³æ» */
+  // 椭圆尺寸
+  const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
+  const ry = rx * opts.ryRatio;
+
+  // 角度
   const rawDeg   = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x) * 180 / Math.PI;
   const normDeg  = normalizeAngle(rawDeg);
   const clampDeg = clamp(normDeg, -opts.maxAngle, opts.maxAngle);
@@ -108,36 +107,37 @@ function buildDisc(
     : clampDeg;
   _prevAngle[prevKey] = smoothDeg;
 
-  /* ä½ confidence â åªç»è©çº¿ */
   if (lc < 0.38 || rc < 0.38) {
     els.push(mkLine(leftPt.x,leftPt.y,rightPt.x,rightPt.y,color,1.5,0.50,layer));
     return els;
   }
 
-  /* â  éè¹æ¤­åçï¼type:'ellipse'ï¼ä¸å±ååï¼*/
+  // 椭圆
   els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, 0.92, layer));
 
-  /* â¡ ç½è² guide lineï¼ç©¿è¶çé¢ï¼é¿ rx * guideRatio */
-  const guideLen = rx * opts.guideRatio;
+  // guide line：从 leftPt → rightPt 方向，两端各额外延伸 extraRatio * dist
+  // 这样白线一定经过 leftPt 和 rightPt 两个真实肩点
   const ar = smoothDeg * Math.PI / 180;
   const cosA = Math.cos(ar), sinA = Math.sin(ar);
-  els.push(mkLine(
-    cx - guideLen*cosA, cy - guideLen*sinA,
-    cx + guideLen*cosA, cy + guideLen*sinA,
-    'white', 2.5, 0.85, layer,
-  ));
+  const extra = dist * opts.extraRatio;  // 肩点外延伸长度
+  // guide line 端点 = 肩点位置 ± extra
+  const gx1 = leftPt.x  - extra * cosA;
+  const gy1 = leftPt.y  - extra * sinA;
+  const gx2 = rightPt.x + extra * cosA;
+  const gy2 = rightPt.y + extra * sinA;
+  els.push(mkLine(gx1,gy1, gx2,gy2, 'white', 2.5, 0.88, layer));
 
-  /* â¢ ç«¯ç¹åç¹ï¼å°ï¼éå®çå®å³èï¼*/
-  if (lc > 0.40) els.push(mkDot(leftPt.x,  leftPt.y,  color, 0.008, 0.65, layer));
-  if (rc > 0.40) els.push(mkDot(rightPt.x, rightPt.y, color, 0.008, 0.65, layer));
+  // 端点圆点
+  if (lc > 0.40) els.push(mkDot(leftPt.x,  leftPt.y,  color, 0.010, 0.80, layer));
+  if (rc > 0.40) els.push(mkDot(rightPt.x, rightPt.y, color, 0.010, 0.80, layer));
 
-  /* â£ æ ç­¾ */
-  els.push(mkLabel(cx, cy - ry * 2.0, opts.label, 'white', 10, 0.78));
+  // label
+  els.push(mkLabel(cx, cy - ry * 2.2, opts.label, 'white', 10, 0.78));
 
   return els;
 }
 
-/* âââââââ å³é®ç¹è§£æ âââââââ */
+/* ═══════ 关键点解析 ═══════ */
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
   const r: Partial<Record<BodyPointName, Pt>> = {};
@@ -165,7 +165,7 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
   return r;
 }
 
-/* âââââââ ä¸»çæå½æ° âââââââ */
+/* ═══════ 主生成函数 ═══════ */
 export function generateSpecDrivenOverlayFrame(
   issue:    MainIssueType,
   viewType: ViewType,
@@ -177,32 +177,30 @@ export function generateSpecDrivenOverlayFrame(
   const pts = getKeypoints(kpFrame);
   const els: OverlayElement[] = [];
 
-  /* Shoulder Disc â æåº¦æå¹³ï¼å¯¹æ æ ·æ¿å¾ */
+  /* Shoulder Disc */
   const ls = pts.leftShoulder, rs = pts.rightShoulder;
   if (ls && rs) {
     els.push(...buildDisc(ls, rs, {
-      dropRatio:  0.08,   // è½»å¾®ä¸ç§»ï¼ä¸è¦å¤ªå¤
-      rxMult:     1.20,   // æ¯è©å®½å¤§ 20%
-      rxMin:      0.15,
-      rxMax:      0.40,
-      ryRatio:    viewType === 'face_on' ? 0.20 : 0.14, // â æ ¸å¿ï¼éå¸¸æå¹³
+      rxMult:     1.85,
+      rxMin:      0.20,
+      rxMax:      0.50,
+      ryRatio:    viewType === 'face_on' ? 0.20 : 0.14,
       maxAngle:   viewType === 'face_on' ? 12 : 35,
-      guideRatio: 1.50,   // guide line é¿åº¦ï¼å¨æ¤­ååï¼
+      extraRatio: 0.20,  // guide line 在肩点外延伸 20% 肩宽（样板图中线超出）
       label:      'SHOULDERS',
     }, 'red', 'shoulder', 'body'));
   }
 
-  /* Hip Ring â æ´æ */
+  /* Hip Ring */
   const lh = pts.leftHip, rh = pts.rightHip;
   if (lh && rh) {
     els.push(...buildDisc(lh, rh, {
-      dropRatio:  0,
       rxMult:     1.50,
       rxMin:      0.12,
       rxMax:      0.38,
       ryRatio:    viewType === 'face_on' ? 0.18 : 0.12,
       maxAngle:   viewType === 'face_on' ? 10 : 30,
-      guideRatio: 1.40,
+      extraRatio: 0.15,
       label:      'HIPS',
     }, 'red', 'hip', 'club'));
   }
@@ -210,13 +208,13 @@ export function generateSpecDrivenOverlayFrame(
   return els;
 }
 
-/* ââ compat ââ */
+/* ── compat ── */
 export function computePerspectiveDisc(args:{leftPoint:Pt;rightPoint:Pt;viewType:ViewType;kind:'shoulder'|'hip';previousAngle?:number;}){
   const{leftPoint:lp,rightPoint:rp,viewType,kind}=args;
   const dist=dist2D(lp,rp);
   const cx=(lp.x+rp.x)/2,cy=(lp.y+rp.y)/2;
-  const rxM=kind==='shoulder'?1.20:1.00;
-  const rx=clamp(dist*rxM,kind==='shoulder'?0.15:0.08,kind==='shoulder'?0.40:0.26);
+  const rxM=kind==='shoulder'?1.85:1.50;
+  const rx=clamp(dist*rxM,kind==='shoulder'?0.20:0.12,kind==='shoulder'?0.50:0.38);
   const ryR=viewType==='face_on'?(kind==='shoulder'?0.20:0.18):(kind==='shoulder'?0.14:0.12);
   const ry=rx*ryR;
   const rawDeg=Math.atan2(rp.y-lp.y,rp.x-lp.x)*180/Math.PI;
@@ -224,10 +222,10 @@ export function computePerspectiveDisc(args:{leftPoint:Pt;rightPoint:Pt;viewType
   const maxA=viewType==='face_on'?(kind==='shoulder'?12:10):(kind==='shoulder'?35:30);
   const smoothDeg=clamp(normDeg,-maxA,maxA);
   const ar=smoothDeg*Math.PI/180,cosA=Math.cos(ar),sinA=Math.sin(ar);
-  const gl=rx*1.50,drop=kind==='shoulder'?dist*0.08:0;
-  return{cx,cy:cy+drop,rx,ry,rotationDeg:smoothDeg,
-    guideStart:{x:cx-gl*cosA,y:cy+drop-gl*sinA},
-    guideEnd:{x:cx+gl*cosA,y:cy+drop+gl*sinA},
+  const ext=dist*0.20;
+  return{cx,cy,rx,ry,rotationDeg:smoothDeg,
+    guideStart:{x:lp.x-ext*cosA,y:lp.y-ext*sinA},
+    guideEnd:{x:rp.x+ext*cosA,y:rp.y+ext*sinA},
     alpha:0.92,visible:dist>0.015};
 }
 
