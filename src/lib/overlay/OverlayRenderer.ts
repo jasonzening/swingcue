@@ -98,6 +98,7 @@ export function drawEllipse(
   opacity = 0.92,
   bodyHalfRatio = 0.27,
   visRatio = 1.0,          // 新增：转身可见度（由 element 传入）
+  zAsym = 0,               // Level 2: z 轴不对称（-1..1，负值=屏幕右侧远端，正值=屏幕左侧远端）
 ) {
   const pcx = cx * W, pcy = cy * H;
   const prx = rx * W;
@@ -137,16 +138,27 @@ export function drawEllipse(
   drawArc(0, Math.PI, strokeWidth * 3.0, 24, opacity * 0.32);  // halo
   drawArc(0, Math.PI, strokeWidth,        8, opacity);           // 主线
 
-  // 3. 后弧翅膀：动态宽度（随转身缩小）
-  if (wingAngle > 0.05) {
-    // 左翅：π → π+wingAngle
-    drawArc(Math.PI, Math.PI + wingAngle, strokeWidth * 2.0, 16, opacity * 0.25);
-    drawArc(Math.PI, Math.PI + wingAngle, strokeWidth * 0.7,  4, opacity * 0.55);
-    // 右翅：2π-wingAngle → 2π
-    drawArc(2 * Math.PI - wingAngle, 2 * Math.PI, strokeWidth * 2.0, 16, opacity * 0.25);
-    drawArc(2 * Math.PI - wingAngle, 2 * Math.PI, strokeWidth * 0.7,  4, opacity * 0.55);
+  // 3. 后弧翅膀：Level 2 — 由 zAsym 决定左右非对称（phase shift）
+  //    zAsym = 0   → 对称（face-on），等价于 Level 1 行为
+  //    zAsym > 0  → 屏幕左点更靠后 → 左翅延长、右翅缩短
+  //    zAsym < 0  → 屏幕右点更靠后 → 左翅缩短、右翅延长
+  //    cap=0.85 留 15% 防某一侧完全消失
+  const phaseShiftCap = wingAngle * 0.85;
+  const phaseShift    = zAsym * phaseShiftCap;
+  const wingA_left    = Math.max(0, wingAngle + phaseShift);
+  const wingA_right   = Math.max(0, wingAngle - phaseShift);
+
+  if (wingA_left > 0.05) {
+    // 左翅：π → π + wingA_left
+    drawArc(Math.PI, Math.PI + wingA_left, strokeWidth * 2.0, 16, opacity * 0.25);
+    drawArc(Math.PI, Math.PI + wingA_left, strokeWidth * 0.7,  4, opacity * 0.55);
   }
-  // 4. 隐藏段：π+wingAngle → 2π-wingAngle（身体后方，不画）
+  if (wingA_right > 0.05) {
+    // 右翅：2π - wingA_right → 2π
+    drawArc(2 * Math.PI - wingA_right, 2 * Math.PI, strokeWidth * 2.0, 16, opacity * 0.25);
+    drawArc(2 * Math.PI - wingA_right, 2 * Math.PI, strokeWidth * 0.7,  4, opacity * 0.55);
+  }
+  // 4. 隐藏段：π + wingA_left → 2π - wingA_right（身体后方，不画）
 
   ctx.restore();
 }
@@ -249,6 +261,7 @@ export function renderElement(
       opacity,
       (elAny['bodyHalfRatio'] as number) ?? 0.27,
       (elAny['visRatio'] as number) ?? 1.0,
+      (elAny['zAsym'] as number) ?? 0,
     );
     return;
   }
