@@ -36,8 +36,8 @@ const mkDot   = (x:number,y:number,c:AC,r=0.009,op=0.90,layer:OverlayElement['la
 const mkLabel = (x:number,y:number,text:string,c:AC='white',size=10,op=0.80): LabelElement =>
   ({type:'label',id:uid('t'),x,y,text,color:c,size,opacity:op});
 
-function mkEllipse(cx:number,cy:number,rx:number,ry:number,angleDeg:number,color:AC,sw=5.0,op=0.92,layer:OverlayElement['layer']='body',bhr=0.27):OverlayElement{
-  return{type:'ellipse'as OverlayElement['type'],id:uid('e'),cx,cy,rx,ry,angleDeg,color,strokeWidth:sw,opacity:op,layer,bodyHalfRatio:bhr}as unknown as OverlayElement;
+function mkEllipse(cx:number,cy:number,rx:number,ry:number,angleDeg:number,color:AC,sw=5.0,op=0.92,layer:OverlayElement['layer']='body',bhr=0.27,vr=1.0):OverlayElement{
+  return{type:'ellipse'as OverlayElement['type'],id:uid('e'),cx,cy,rx,ry,angleDeg,color,strokeWidth:sw,opacity:op,layer,bodyHalfRatio:bhr,visRatio:vr}as unknown as OverlayElement;
 }
 
 function normalizeAngle(deg:number):number{let a=deg;if(a>90)a-=180;if(a<-90)a+=180;return a;}
@@ -100,7 +100,7 @@ function buildDisc(
 
   const bhr   = clamp((dist / 2) / rx, 0.05, 0.95);
   const alpha = 0.50 + visRatio * 0.42;
-  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, alpha, layer, bhr));
+  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, alpha, layer, bhr, visRatio));
 
   const ar = smoothDeg * Math.PI / 180;
   const cosA = Math.cos(ar), sinA = Math.sin(ar);
