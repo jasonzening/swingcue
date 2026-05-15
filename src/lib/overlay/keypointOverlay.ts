@@ -152,13 +152,13 @@ export function generateSpecDrivenOverlayFrame(
   if(ls&&rs){els.push(...buildDisc(ls,rs,{
     rxMult:1.85,rxMin:0.20,rxMax:0.50,ryRatio:0.20,maxAngle:maxAng,
     refKey:'sRef',angleKey:'sAng',label:'SHOULDERS',dotExpand:0,
-  },'red','body'));}
+  },'white','body'));}
 
   const lh=pts.leftHip,rh=pts.rightHip;
   if(lh&&rh){els.push(...buildDisc(lh,rh,{
     rxMult:2.10,rxMin:0.16,rxMax:0.50,ryRatio:0.18,maxAngle:maxAng,
     refKey:'hRef',angleKey:'hAng',label:'HIPS',dotExpand:0.52,
-  },'red','club'));}
+  },'white','club'));}
 
   return els;
 }
