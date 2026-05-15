@@ -1,15 +1,15 @@
 /**
- * keypointOverlay.ts — 旋转盘（对标样板图）
+ * keypointOverlay.ts â æè½¬çï¼å¯¹æ æ ·æ¿å¾ï¼
  *
- * 核心原则：
- *   圆盘中心 = 左右肩中点（不下移！）
- *   guide line 从 leftPt → rightPt 沿方向延伸，经过两个真实肩点
- *   圆盘绕脊椎/颈部中轴旋转
+ * æ ¸å¿ååï¼
+ *   åçä¸­å¿ = å·¦å³è©ä¸­ç¹ï¼ä¸ä¸ç§»ï¼ï¼
+ *   guide line ä» leftPt â rightPt æ²¿æ¹åå»¶ä¼¸ï¼ç»è¿ä¸¤ä¸ªçå®è©ç¹
+ *   åçç»èæ¤/é¢é¨ä¸­è½´æè½¬
  *
- * guide line 画法：
- *   方向 = leftPt → rightPt
- *   端点 = 肩点位置再往外延伸 extraExt（样板图中线超出肩点）
- *   这样白线一定经过两个肩点
+ * guide line ç»æ³ï¼
+ *   æ¹å = leftPt â rightPt
+ *   ç«¯ç¹ = è©ç¹ä½ç½®åå¾å¤å»¶ä¼¸ extraExtï¼æ ·æ¿å¾ä¸­çº¿è¶åºè©ç¹ï¼
+ *   è¿æ ·ç½çº¿ä¸å®ç»è¿ä¸¤ä¸ªè©ç¹
  */
 
 import type {
@@ -57,16 +57,16 @@ function normalizeAngle(deg: number): number {
   return a;
 }
 
-/* ═══════════════════════════════════════════════════
+/* âââââââââââââââââââââââââââââââââââââââââââââââââââ
    buildDisc
-   ─────────────────────────────────────────────────
-   圆盘几何原则：
-   1. cx/cy = mid(leftPt, rightPt) — 不下移，让guide line经过肩点
-   2. rx = dist * rxMult — 椭圆长轴（比肩宽）
-   3. ry = rx * ryRatio — 椭圆短轴（很扁）
-   4. guide line 从 leftPt 出发，沿方向延伸 extraRatio 至 rightPt 再延伸
-      → 保证经过两个真实关键点
-═══════════════════════════════════════════════════ */
+   âââââââââââââââââââââââââââââââââââââââââââââââââ
+   åçå ä½ååï¼
+   1. cx/cy = mid(leftPt, rightPt) â ä¸ä¸ç§»ï¼è®©guide lineç»è¿è©ç¹
+   2. rx = dist * rxMult â æ¤­åé¿è½´ï¼æ¯è©å®½ï¼
+   3. ry = rx * ryRatio â æ¤­åç­è½´ï¼å¾æï¼
+   4. guide line ä» leftPt åºåï¼æ²¿æ¹åå»¶ä¼¸ extraRatio è³ rightPt åå»¶ä¼¸
+      â ä¿è¯ç»è¿ä¸¤ä¸ªçå®å³é®ç¹
+âââââââââââââââââââââââââââââââââââââââââââââââââââ */
 function buildDisc(
   leftPt: Pt, rightPt: Pt,
   opts: {
@@ -75,7 +75,7 @@ function buildDisc(
     rxMax:      number;
     ryRatio:    number;
     maxAngle:   number;
-    extraRatio: number;   // guide line 在肩点外延伸 = dist * extraRatio
+    extraRatio: number;   // guide line å¨è©ç¹å¤å»¶ä¼¸ = dist * extraRatio
     label:      string;
   },
   color: AC,
@@ -89,15 +89,15 @@ function buildDisc(
   const dist = dist2D(leftPt, rightPt);
   if (dist < 0.015) return els;
 
-  // 圆盘中心 = 精确肩点中点（不下移）
+  // åçä¸­å¿ = ç²¾ç¡®è©ç¹ä¸­ç¹ï¼ä¸ä¸ç§»ï¼
   const cx = (leftPt.x + rightPt.x) / 2;
   const cy = (leftPt.y + rightPt.y) / 2;
 
-  // 椭圆尺寸
+  // æ¤­åå°ºå¯¸
   const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
   const ry = rx * opts.ryRatio;
 
-  // 角度
+  // è§åº¦
   const rawDeg   = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x) * 180 / Math.PI;
   const normDeg  = normalizeAngle(rawDeg);
   const clampDeg = clamp(normDeg, -opts.maxAngle, opts.maxAngle);
@@ -112,22 +112,22 @@ function buildDisc(
     return els;
   }
 
-  // 椭圆
+  // æ¤­å
   els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, 0.92, layer));
 
-  // guide line：从 leftPt → rightPt 方向，两端各额外延伸 extraRatio * dist
-  // 这样白线一定经过 leftPt 和 rightPt 两个真实肩点
+  // guide lineï¼ä» leftPt â rightPt æ¹åï¼ä¸¤ç«¯åé¢å¤å»¶ä¼¸ extraRatio * dist
+  // è¿æ ·ç½çº¿ä¸å®ç»è¿ leftPt å rightPt ä¸¤ä¸ªçå®è©ç¹
   const ar = smoothDeg * Math.PI / 180;
   const cosA = Math.cos(ar), sinA = Math.sin(ar);
-  const extra = dist * opts.extraRatio;  // 肩点外延伸长度
-  // guide line 端点 = 肩点位置 ± extra
-  const gx1 = leftPt.x  - extra * cosA;
-  const gy1 = leftPt.y  - extra * sinA;
-  const gx2 = rightPt.x + extra * cosA;
-  const gy2 = rightPt.y + extra * sinA;
+  const extra = dist * opts.extraRatio;  // è©ç¹å¤å»¶ä¼¸é¿åº¦
+  // guide line ç«¯ç¹ = è©ç¹ä½ç½® Â± extra
+  const gx1 = cx - rx * cosA;
+  const gy1 = cy - rx * sinA;
+  const gx2 = cx + rx * cosA;
+  const gy2 = cy + rx * sinA;
   els.push(mkLine(gx1,gy1, gx2,gy2, 'white', 2.5, 0.88, layer));
 
-  // 端点圆点
+  // ç«¯ç¹åç¹
   if (lc > 0.40) els.push(mkDot(leftPt.x,  leftPt.y,  color, 0.010, 0.80, layer));
   if (rc > 0.40) els.push(mkDot(rightPt.x, rightPt.y, color, 0.010, 0.80, layer));
 
@@ -137,7 +137,7 @@ function buildDisc(
   return els;
 }
 
-/* ═══════ 关键点解析 ═══════ */
+/* âââââââ å³é®ç¹è§£æ âââââââ */
 export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointName, Pt>> {
   const lm = kpFrame.landmarks;
   const r: Partial<Record<BodyPointName, Pt>> = {};
@@ -165,7 +165,7 @@ export function getKeypoints(kpFrame: KeypointFrame): Partial<Record<BodyPointNa
   return r;
 }
 
-/* ═══════ 主生成函数 ═══════ */
+/* âââââââ ä¸»çæå½æ° âââââââ */
 export function generateSpecDrivenOverlayFrame(
   issue:    MainIssueType,
   viewType: ViewType,
@@ -186,7 +186,7 @@ export function generateSpecDrivenOverlayFrame(
       rxMax:      0.50,
       ryRatio:    viewType === 'face_on' ? 0.20 : 0.14,
       maxAngle:   viewType === 'face_on' ? 12 : 35,
-      extraRatio: 0.20,  // guide line 在肩点外延伸 20% 肩宽（样板图中线超出）
+      extraRatio: 0.20,  // guide line å¨è©ç¹å¤å»¶ä¼¸ 20% è©å®½ï¼æ ·æ¿å¾ä¸­çº¿è¶åºï¼
       label:      'SHOULDERS',
     }, 'red', 'shoulder', 'body'));
   }
@@ -195,9 +195,9 @@ export function generateSpecDrivenOverlayFrame(
   const lh = pts.leftHip, rh = pts.rightHip;
   if (lh && rh) {
     els.push(...buildDisc(lh, rh, {
-      rxMult:     1.50,
-      rxMin:      0.12,
-      rxMax:      0.38,
+      rxMult:     2.10,
+      rxMin:      0.16,
+      rxMax:      0.50,
       ryRatio:    viewType === 'face_on' ? 0.18 : 0.12,
       maxAngle:   viewType === 'face_on' ? 10 : 30,
       extraRatio: 0.15,
@@ -208,7 +208,7 @@ export function generateSpecDrivenOverlayFrame(
   return els;
 }
 
-/* ── compat ── */
+/* ââ compat ââ */
 export function computePerspectiveDisc(args:{leftPoint:Pt;rightPoint:Pt;viewType:ViewType;kind:'shoulder'|'hip';previousAngle?:number;}){
   const{leftPoint:lp,rightPoint:rp,viewType,kind}=args;
   const dist=dist2D(lp,rp);
