@@ -22,6 +22,7 @@ from yolo.keypoints import (
     RIGHT_HIP,
     RIGHT_SHOULDER,
 )
+from yolo.supabase_writer import write_yolo_phase
 
 __all__ = [
     # constants
@@ -34,4 +35,6 @@ __all__ = [
     "MODEL_NAME",
     # inference
     "infer_pose",
+    # writer
+    "write_yolo_phase",
 ]
