@@ -19,6 +19,10 @@ import type {
   KeypointTimeline, KeypointFrame
 } from '@/types/analysis';
 
+// PR-2B: pose3d step in Python /analyze adds ~10-15s of fal inference on top
+// of MediaPipe + extraction. Vercel route handlers default to 10s; bump to 90s.
+export const maxDuration = 90;
+
 const PYTHON_ANALYZER_URL = process.env.PYTHON_ANALYZER_URL ?? '';
 
 /* ââ Stub data fallback ââ */
@@ -52,7 +56,12 @@ function proportionalPhases(dur: number): PhaseMarkers {
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
 /* ââ Call Python analysis service ââ */
-async function callPythonAnalyzer(videoUrl: string, viewType: string = 'face_on'): Promise<{
+async function callPythonAnalyzer(
+  videoUrl: string,
+  viewType: string,
+  videoId: string,
+  userId: string,
+): Promise<{
   videoMetadata: VideoMetadata;
   phaseMarkers: PhaseMarkers;
   keypointTimeline: KeypointFrame[];
@@ -72,8 +81,11 @@ async function callPythonAnalyzer(videoUrl: string, viewType: string = 'face_on'
         video_url: videoUrl,
         view_type: viewType,
         sample_fps: 10.0,
+        // PR-2B: analyzer needs these to write pose_3d_phases with service-role
+        video_id: videoId,
+        user_id: userId,
       }),
-      signal: AbortSignal.timeout(30_000), // 30 sec timeout
+      signal: AbortSignal.timeout(90_000), // 90 sec — covers fal 5x parallel
     });
 
     if (!res.ok) {
@@ -184,7 +196,12 @@ export async function POST(
       .createSignedUrl(video.storage_path, 300); // 5 min expiry for analysis
 
     if (signedData?.signedUrl) {
-      const pythonResult = await callPythonAnalyzer(signedData.signedUrl, viewType);
+      const pythonResult = await callPythonAnalyzer(
+        signedData.signedUrl,
+        viewType,
+        videoId,
+        user.id,
+      );
 
       if (pythonResult) {
         videoMetadata    = pythonResult.videoMetadata;
