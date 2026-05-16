@@ -49,7 +49,6 @@ function buildDisc(
     ryRatio:number; maxAngle:number;
     refKey:string; angleKey:string; zAsymKey:string;
     label:string; dotExpand:number;
-    cyShiftFactor?: number;
   },
   color: AC,
   layer: OverlayElement['layer'] = 'body',
@@ -61,7 +60,7 @@ function buildDisc(
   if (dist < 0.01) return els;
 
   const cx = (leftPt.x + rightPt.x) / 2;
-  const cy = (leftPt.y + rightPt.y) / 2 - dist * (opts.cyShiftFactor ?? 0);
+  const cy = (leftPt.y + rightPt.y) / 2;
 
   const apparentW = Math.abs(rightPt.x - leftPt.x);
   const prevRef   = _refWidth[opts.refKey] ?? 0;
@@ -89,7 +88,7 @@ function buildDisc(
   els.push(mkDot(lDotX, lDotY, 'yellow', 0.006, 0.30, layer));
   els.push(mkDot(rDotX, rDotY, 'white',  0.006, 0.30, layer));
 
-  const rx = clamp(refW * opts.rxMult, opts.rxMin, opts.rxMax);
+  const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
   const isUltraFlat = visRatio < 0.18;
   const ry = isUltraFlat ? rx * 0.12 : rx * opts.ryRatio * visRatio;
   const haloStrokeWidth = isUltraFlat ? 4.0 : 5.0;
@@ -163,7 +162,7 @@ export function generateSpecDrivenOverlayFrame(
   const ls=pts.leftShoulder,rs=pts.rightShoulder;
   if(ls&&rs){els.push(...buildDisc(ls,rs,{
     rxMult:1.85,rxMin:0.20,rxMax:0.50,ryRatio:0.20,maxAngle:maxAng,
-    refKey:'sRef',angleKey:'sAng',zAsymKey:'sZ',label:'SHOULDERS',dotExpand:0,cyShiftFactor:0.15,
+    refKey:'sRef',angleKey:'sAng',zAsymKey:'sZ',label:'SHOULDERS',dotExpand:0,
   },'white','body'));}
 
   const lh=pts.leftHip,rh=pts.rightHip;
