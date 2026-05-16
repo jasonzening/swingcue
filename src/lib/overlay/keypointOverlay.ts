@@ -50,19 +50,32 @@ function buildDisc(
     ryRatio:number; maxAngle:number;
     refKey:string; angleKey:string; zAsymKey:string;
     label:string; dotExpand:number;
+    cyShiftFactor?: number;
   },
   color: AC,
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
-  // EMA smoothing on keypoints — kills per-frame MediaPipe noise without breaking strict anchoring.
-  // Discontinuity snap: when keypoint jumps > 10% of normalized space (e.g., phase click), skip smoothing.
+  const els: OverlayElement[] = [];
+  const lc = leftPt.confidence  ?? 0.8;
+  const rc = rightPt.confidence ?? 0.8;
+  const dist = dist2D(leftPt, rightPt);
+  if (dist < 0.01) return els;
+
+  // === EMA smoothing + low-conf fallback ============================
   const SMOOTH_ALPHA = 0.5;
   const SNAP_THRESHOLD = 0.10;
+  const LC_THRESHOLD = 0.35;
   const _lKey = opts.angleKey + ':L';
   const _rKey = opts.angleKey + ':R';
   const _prevL = _prevPt[_lKey];
   const _prevR = _prevPt[_rKey];
-  if (_prevL && Math.hypot(leftPt.x - _prevL.x, leftPt.y - _prevL.y) <= SNAP_THRESHOLD) {
+  const _lowL = lc < LC_THRESHOLD;
+  const _lowR = rc < LC_THRESHOLD;
+  // Use last known good keypoint when current is unreliable (prevents disc from disappearing at the end of the swing when MediaPipe loses tracking).
+  if (_lowL && _prevL) leftPt = { ..._prevL };
+  if (_lowR && _prevR) rightPt = { ..._prevR };
+  // EMA smooth normal-confidence keypoints. Snap on large jumps (phase clicks).
+  if (!_lowL && _prevL && Math.hypot(leftPt.x - _prevL.x, leftPt.y - _prevL.y) <= SNAP_THRESHOLD) {
     leftPt = {
       x: _prevL.x + (leftPt.x - _prevL.x) * SMOOTH_ALPHA,
       y: _prevL.y + (leftPt.y - _prevL.y) * SMOOTH_ALPHA,
@@ -70,7 +83,7 @@ function buildDisc(
       confidence: leftPt.confidence,
     };
   }
-  if (_prevR && Math.hypot(rightPt.x - _prevR.x, rightPt.y - _prevR.y) <= SNAP_THRESHOLD) {
+  if (!_lowR && _prevR && Math.hypot(rightPt.x - _prevR.x, rightPt.y - _prevR.y) <= SNAP_THRESHOLD) {
     rightPt = {
       x: _prevR.x + (rightPt.x - _prevR.x) * SMOOTH_ALPHA,
       y: _prevR.y + (rightPt.y - _prevR.y) * SMOOTH_ALPHA,
@@ -78,17 +91,13 @@ function buildDisc(
       confidence: rightPt.confidence,
     };
   }
-  _prevPt[_lKey] = leftPt;
-  _prevPt[_rKey] = rightPt;
-
-  const els: OverlayElement[] = [];
-  const lc = leftPt.confidence  ?? 0.8;
-  const rc = rightPt.confidence ?? 0.8;
-  const dist = dist2D(leftPt, rightPt);
-  if (dist < 0.01) return els;
+  // Persist (only when at least one keypoint was high-confidence — avoids poisoning prev with stale-confidence loop)
+  if (!_lowL) _prevPt[_lKey] = { x: leftPt.x, y: leftPt.y, z: leftPt.z, confidence: leftPt.confidence };
+  if (!_lowR) _prevPt[_rKey] = { x: rightPt.x, y: rightPt.y, z: rightPt.z, confidence: rightPt.confidence };
+  // ==================================================================
 
   const cx = (leftPt.x + rightPt.x) / 2;
-  const cy = (leftPt.y + rightPt.y) / 2;
+  const cy = (leftPt.y + rightPt.y) / 2 - dist * (opts.cyShiftFactor ?? 0);
 
   const apparentW = Math.abs(rightPt.x - leftPt.x);
   const prevRef   = _refWidth[opts.refKey] ?? 0;
@@ -108,7 +117,7 @@ function buildDisc(
   const rDotX = rightPt.x + ux * expand;
   const rDotY = rightPt.y + uy * expand;
 
-  if (lc < 0.35 || rc < 0.35) {
+  if ((lc < 0.35 || rc < 0.35) && !_prevPt[_lKey] && !_prevPt[_rKey]) {
     els.push(mkDot(cx, cy, color, 0.010, 0.35, layer));
     return els;
   }
@@ -190,7 +199,7 @@ export function generateSpecDrivenOverlayFrame(
   const ls=pts.leftShoulder,rs=pts.rightShoulder;
   if(ls&&rs){els.push(...buildDisc(ls,rs,{
     rxMult:1.85,rxMin:0.20,rxMax:0.50,ryRatio:0.20,maxAngle:maxAng,
-    refKey:'sRef',angleKey:'sAng',zAsymKey:'sZ',label:'SHOULDERS',dotExpand:0,
+    refKey:'sRef',angleKey:'sAng',zAsymKey:'sZ',label:'SHOULDERS',dotExpand:0,cyShiftFactor:0.10,
   },'white','body'));}
 
   const lh=pts.leftHip,rh=pts.rightHip;
