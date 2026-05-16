@@ -6,6 +6,8 @@ pydantic==2.9.2
 mediapipe==0.10.14
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
-# PR-2B: fal-ai/sam-3/3d-body + Supabase service-role writes
+# PR-2B: fal-ai/sam-3/3d-body
 fal-client==0.5.6
-supabase==2.7.4
+# PR-2B fix: removed supabase SDK (v2.7.4 rejects sb_secret_* key format,
+# and the project has migrated off legacy JWT keys). We call PostgREST +
+# Storage REST directly with httpx (already pinned above).

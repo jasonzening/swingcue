@@ -5,7 +5,7 @@ Per-phase pipeline (one task):
     1. ffmpeg extract frame at phase timestamp
     2. upload PNG to swing-frames bucket
     3. fal sam-3/3d-body (with retries)
-    4. parse + upsert into pose_3d_phases
+    4. parse fal response and upsert into pose_3d_phases
 
 Failure isolation is two-layered:
   - Each task has its own try/except that records a `fal_status='failed'`
@@ -17,16 +17,13 @@ Failure isolation is two-layered:
 
 import asyncio
 import logging
-from typing import Any
+from typing import Optional
 
 from sam3d.fal_client_wrap import call_fal
 from sam3d.frame_extract import extract_frame
+from sam3d.keypoints import LEFT_HIP, LEFT_SHOULDER, RIGHT_HIP, RIGHT_SHOULDER
 from sam3d.storage import ensure_bucket, upload_phase_frame
-from sam3d.supabase_writer import (
-    get_admin_client,
-    write_pose_phase,
-    write_pose_phase_failed,
-)
+from sam3d.supabase_writer import write_pose_phase, write_pose_phase_failed
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +36,64 @@ PHASES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _xy(kp2d: list, idx: int) -> tuple[Optional[float], Optional[float]]:
+    """Safely pull (x, y) from a keypoints_2d entry; tolerate short arrays."""
+    if idx >= len(kp2d):
+        return None, None
+    pt = kp2d[idx]
+    if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+        return None, None
+    return float(pt[0]), float(pt[1])
+
+
+def _parse_fal_result(fal_result: dict, phase_name: str) -> dict:
+    """
+    Pull the fields the writer needs out of the fal sam-3/3d-body response.
+
+    Returns a dict ready to spread into write_pose_phase as kwargs. Raises
+    ValueError if the response is missing or under-populated (caught upstream
+    and turned into a failed row).
+    """
+    people = (fal_result.get("metadata") or {}).get("people") or []
+    if not people:
+        raise ValueError(
+            f"fal response for phase {phase_name!r} contained no people"
+        )
+    person = people[0]
+
+    kp2d: list = person.get("keypoints_2d") or []
+    kp3d: list = person.get("keypoints_3d") or []
+    if len(kp2d) < 11 or len(kp3d) < 11:
+        raise ValueError(
+            f"fal response for phase {phase_name!r} returned only "
+            f"{len(kp2d)} 2D / {len(kp3d)} 3D keypoints (need >= 11)"
+        )
+
+    ls_x, ls_y = _xy(kp2d, LEFT_SHOULDER)
+    rs_x, rs_y = _xy(kp2d, RIGHT_SHOULDER)
+    lh_x, lh_y = _xy(kp2d, LEFT_HIP)
+    rh_x, rh_y = _xy(kp2d, RIGHT_HIP)
+
+    return {
+        "keypoints_2d": kp2d,
+        "keypoints_3d": kp3d,
+        "focal_length": float(person.get("focal_length") or 0.0),
+        "bbox": person.get("bbox"),
+        "mhr_params": person.get("mhr_model_params"),
+        "glb_url": ((fal_result.get("model_glb") or {}).get("url")),
+        "shoulder_left_x": ls_x,
+        "shoulder_left_y": ls_y,
+        "shoulder_right_x": rs_x,
+        "shoulder_right_y": rs_y,
+        "hip_left_x": lh_x,
+        "hip_left_y": lh_y,
+        "hip_right_x": rh_x,
+        "hip_right_y": rh_y,
+    }
+
+
 async def _process_one_phase(
     *,
-    client: Any,
     video_path: str,
     video_id: str,
     user_id: str,
@@ -61,29 +113,26 @@ async def _process_one_phase(
 
     try:
         png_bytes = await extract_frame(video_path, timestamp_s)
-        public_url = await upload_phase_frame(
-            client, video_id, phase_name, png_bytes
-        )
+        public_url = await upload_phase_frame(video_id, phase_name, png_bytes)
         logger.info(
             f"phase {phase_name}: extracted+uploaded "
             f"({len(png_bytes)} bytes, t={timestamp_s:.3f}s)"
         )
 
         fal_result = await call_fal(public_url)
-        fal_request_id = fal_result.get("request_id")
+        parsed = _parse_fal_result(fal_result, phase_name)
 
+        # write_pose_phase is sync httpx; offload so siblings keep running
         await asyncio.to_thread(
             write_pose_phase,
-            client,
             video_id=video_id,
             user_id=user_id,
             phase_name=phase_name,
             frame_idx=frame_idx,
             frame_timestamp_ms=frame_timestamp_ms,
-            fal_result=fal_result,
             image_width=image_width,
             image_height=image_height,
-            fal_request_id=fal_request_id,
+            **parsed,
         )
         logger.info(f"phase {phase_name}: completed")
         return {"phase": phase_name, "status": "completed"}
@@ -95,7 +144,6 @@ async def _process_one_phase(
         try:
             await asyncio.to_thread(
                 write_pose_phase_failed,
-                client,
                 video_id=video_id,
                 user_id=user_id,
                 phase_name=phase_name,
@@ -139,15 +187,13 @@ async def pose3d_for_all_phases(
     The function never raises for per-phase failure — it always returns a
     summary. Only catastrophic setup (e.g. missing env vars) propagates.
     """
-    client = get_admin_client()
-    ensure_bucket(client)
+    ensure_bucket()
 
     tasks = []
     for phase_name, time_key in PHASES:
         timestamp_s = float(phases.get(time_key) or 0.0)
         tasks.append(
             _process_one_phase(
-                client=client,
                 video_path=video_path,
                 video_id=video_id,
                 user_id=user_id,

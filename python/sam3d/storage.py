@@ -1,84 +1,106 @@
 """
-Supabase Storage uploader for phase frames.
+Supabase Storage uploader for phase frames (raw httpx).
 
-Uploads PNG bytes to bucket `swing-frames` at path `{video_id}/{phase}.png`
-and returns the public URL (consumed by fal-ai/sam-3/3d-body).
-
-The bucket itself is created by migration
-`supabase/migrations/{TS}_swing_frames_bucket.sql`; `ensure_bucket()` is a
-defensive check that logs a warning and best-effort-creates the bucket if it
-is missing (e.g. fresh local Supabase without migrations applied).
+We bypass supabase-py because v2.7.4's create_client() rejects the
+sb_secret_* key format the project has migrated to. PostgREST + Storage
+REST endpoints accept the new keys directly via the apikey + Authorization
+headers, so the SDK gives us nothing we need here.
 """
 
-import asyncio
 import logging
-from typing import Optional
+import os
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
-BUCKET_ID = "swing-frames"
+BUCKET = "swing-frames"
 
 
-def ensure_bucket(client) -> None:
+def _get_config() -> tuple[str, str]:
+    """Read SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from env."""
+    url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not url or not key:
+        raise RuntimeError(
+            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars are required"
+        )
+    return url, key
+
+
+def _headers(key: str) -> dict:
     """
-    Defensive check: confirm `swing-frames` bucket exists. If missing, log
-    a WARNING and attempt to create it (public read). Migrations should
-    normally have created it already.
+    Build headers for sb_secret_* keys.
+
+    Per Supabase docs: new secret keys are not JWTs. We send the key in both
+    `apikey` and `Authorization: Bearer` — Supabase explicitly permits this
+    case and identifies the caller as service_role.
+    """
+    return {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+    }
+
+
+def ensure_bucket() -> None:
+    """
+    Best-effort check that the swing-frames bucket exists.
+
+    The migration `{TS}_swing_frames_bucket.sql` already creates it; this is
+    a defensive log-only probe. Any failure to check is non-fatal and the
+    pipeline proceeds.
     """
     try:
-        buckets = client.storage.list_buckets()
-    except Exception as e:
-        logger.warning(
-            f"ensure_bucket: could not list buckets ({e}); "
-            "assuming it exists and continuing"
+        url, key = _get_config()
+        r = httpx.get(
+            f"{url}/storage/v1/bucket/{BUCKET}",
+            headers=_headers(key),
+            timeout=5.0,
         )
-        return
-
-    existing = {getattr(b, "id", None) or getattr(b, "name", None) for b in buckets}
-    if BUCKET_ID in existing:
-        return
-
-    logger.warning(
-        f"ensure_bucket: bucket {BUCKET_ID!r} missing — creating it now. "
-        "Run swing_frames_bucket migration to make this idempotent."
-    )
-    try:
-        client.storage.create_bucket(
-            BUCKET_ID,
-            options={"public": True, "file_size_limit": 5242880},
-        )
+        if r.status_code == 200:
+            logger.info("swing-frames bucket exists")
+        else:
+            logger.warning(
+                f"swing-frames bucket check returned {r.status_code}: "
+                f"{r.text[:200]}. Make sure the migration has been run."
+            )
     except Exception as e:
-        logger.error(f"ensure_bucket: create_bucket failed: {e}")
+        logger.warning(f"bucket check failed (non-fatal): {e!r}")
 
 
 async def upload_phase_frame(
-    client,
     video_id: str,
     phase_name: str,
     png_bytes: bytes,
 ) -> str:
     """
-    Upload one phase frame and return its public URL.
+    Upload a phase frame and return its public URL.
 
-    Path: `{video_id}/{phase_name}.png`. Uses upsert=True so a re-run for the
-    same (video, phase) overwrites the existing object instead of erroring.
-
-    The supabase-py SDK is sync; we offload to a thread so the orchestrator's
-    asyncio.gather can run all 5 uploads concurrently.
+    Path: `{video_id}/{phase_name}.png` in bucket `swing-frames` (public).
+    Uses `x-upsert: true` so re-running a phase overwrites instead of erroring.
     """
+    url, key = _get_config()
     path = f"{video_id}/{phase_name}.png"
 
-    def _do_upload() -> str:
-        client.storage.from_(BUCKET_ID).upload(
-            path=path,
-            file=png_bytes,
-            file_options={
-                "content-type": "image/png",
-                "upsert": "true",
-            },
-        )
-        return client.storage.from_(BUCKET_ID).get_public_url(path)
+    headers = _headers(key)
+    headers["Content-Type"] = "image/png"
+    headers["x-upsert"] = "true"
 
-    public_url: str = await asyncio.to_thread(_do_upload)
-    # supabase-py sometimes returns the URL with a trailing '?' — strip it
-    return public_url.rstrip("?")
+    upload_url = f"{url}/storage/v1/object/{BUCKET}/{path}"
+
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            upload_url,
+            headers=headers,
+            content=png_bytes,
+            timeout=30.0,
+        )
+
+    if r.status_code not in (200, 201):
+        raise RuntimeError(
+            f"storage upload failed {r.status_code}: {r.text[:300]}"
+        )
+
+    public_url = f"{url}/storage/v1/object/public/{BUCKET}/{path}"
+    logger.info(f"uploaded {path} -> {public_url}")
+    return public_url
