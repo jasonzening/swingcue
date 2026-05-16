@@ -15,6 +15,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py .
+# PR-2B: sam3d/ subpackage (fal sam-3/3d-body integration). The `COPY *.py`
+# glob above only matches root-level .py files, so this line is required.
+COPY sam3d/ ./sam3d/
 
 # Python handles PORT env var directly — no shell interpolation issues
 CMD ["python", "main.py"]
