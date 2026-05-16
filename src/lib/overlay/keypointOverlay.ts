@@ -68,20 +68,25 @@ function buildDisc(
   const refW     = _refWidth[opts.refKey] ?? Math.max(apparentW, 0.10);
   const visRatio = clamp(apparentW / refW, 0, 1.0);
 
-  // 关节点向远离中心方向扩展
+  // 关节点沿 disc 主轴方向外扩 (修复倾斜时 dot 漂移)
   const expand = dist * opts.dotExpand;
-  const lDir   = leftPt.x  >= cx ? 1 : -1;
-  const rDir   = rightPt.x >= cx ? 1 : -1;
-  const lDotX  = leftPt.x  + lDir * expand;
-  const rDotX  = rightPt.x + rDir * expand;
+  const lineDx = rightPt.x - leftPt.x;
+  const lineDy = rightPt.y - leftPt.y;
+  const lineLen = Math.hypot(lineDx, lineDy);
+  const ux = lineLen > 0 ? lineDx / lineLen : 1;
+  const uy = lineLen > 0 ? lineDy / lineLen : 0;
+  const lDotX = leftPt.x  - ux * expand;
+  const lDotY = leftPt.y  - uy * expand;
+  const rDotX = rightPt.x + ux * expand;
+  const rDotY = rightPt.y + uy * expand;
 
   if (lc < 0.35 || rc < 0.35) {
     els.push(mkDot(cx, cy, color, 0.012, 0.55, layer));
     return els;
   }
 
-  els.push(mkDot(lDotX, leftPt.y,  'yellow', 0.011, 0.90, layer));
-  els.push(mkDot(rDotX, rightPt.y, 'white',  0.011, 0.90, layer));
+  els.push(mkDot(lDotX, lDotY, 'yellow', 0.011, 0.90, layer));
+  els.push(mkDot(rDotX, rDotY, 'white',  0.011, 0.90, layer));
 
   if (visRatio < 0.18) {
     els.push(mkLine(leftPt.x,leftPt.y,rightPt.x,rightPt.y,color,1.5,0.45,layer));
