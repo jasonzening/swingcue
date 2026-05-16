@@ -21,6 +21,12 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
     torch torchvision
 
+# ── Layer 2.5: pin numpy<2.0 — torch's default numpy 2.x breaks the
+# mediapipe/opencv binaries which were compiled against numpy 1.x ABI.
+# Must come AFTER torch install (so torch's numpy 2.x gets downgraded)
+# and BEFORE the rest of requirements (so ultralytics resolves against it).
+RUN pip install --no-cache-dir --upgrade "numpy<2.0"
+
 # ── Layer 3: requirements (ultralytics + everything else) + preload weights ─
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
