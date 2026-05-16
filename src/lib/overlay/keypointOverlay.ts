@@ -20,6 +20,7 @@ import type { ViewType } from '@/lib/golf/overlayLineSpec';
 
 const _prevAngle: Record<string, number> = {};
 const _refWidth:  Record<string, number> = {}; const _prevZAsym: Record<string, number> = {};
+const _prevPt: Record<string, {x:number; y:number; z?:number; confidence?:number}> = {};
 
 let _uid = 0;
 const uid   = (p: string) => `${p}-${++_uid}`;
@@ -53,6 +54,33 @@ function buildDisc(
   color: AC,
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
+  // EMA smoothing on keypoints — kills per-frame MediaPipe noise without breaking strict anchoring.
+  // Discontinuity snap: when keypoint jumps > 10% of normalized space (e.g., phase click), skip smoothing.
+  const SMOOTH_ALPHA = 0.5;
+  const SNAP_THRESHOLD = 0.10;
+  const _lKey = opts.angleKey + ':L';
+  const _rKey = opts.angleKey + ':R';
+  const _prevL = _prevPt[_lKey];
+  const _prevR = _prevPt[_rKey];
+  if (_prevL && Math.hypot(leftPt.x - _prevL.x, leftPt.y - _prevL.y) <= SNAP_THRESHOLD) {
+    leftPt = {
+      x: _prevL.x + (leftPt.x - _prevL.x) * SMOOTH_ALPHA,
+      y: _prevL.y + (leftPt.y - _prevL.y) * SMOOTH_ALPHA,
+      z: leftPt.z !== undefined ? (_prevL.z ?? 0) + ((leftPt.z ?? 0) - (_prevL.z ?? 0)) * SMOOTH_ALPHA : leftPt.z,
+      confidence: leftPt.confidence,
+    };
+  }
+  if (_prevR && Math.hypot(rightPt.x - _prevR.x, rightPt.y - _prevR.y) <= SNAP_THRESHOLD) {
+    rightPt = {
+      x: _prevR.x + (rightPt.x - _prevR.x) * SMOOTH_ALPHA,
+      y: _prevR.y + (rightPt.y - _prevR.y) * SMOOTH_ALPHA,
+      z: rightPt.z !== undefined ? (_prevR.z ?? 0) + ((rightPt.z ?? 0) - (_prevR.z ?? 0)) * SMOOTH_ALPHA : rightPt.z,
+      confidence: rightPt.confidence,
+    };
+  }
+  _prevPt[_lKey] = leftPt;
+  _prevPt[_rKey] = rightPt;
+
   const els: OverlayElement[] = [];
   const lc = leftPt.confidence  ?? 0.8;
   const rc = rightPt.confidence ?? 0.8;
