@@ -6,3 +6,6 @@ pydantic==2.9.2
 mediapipe==0.10.14
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
+# PR-2B: fal-ai/sam-3/3d-body + Supabase service-role writes
+fal-client==0.5.6
+supabase==2.7.4

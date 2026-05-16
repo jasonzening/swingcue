@@ -1,3 +1,6 @@
+# NOTE: DEPRECATED 2026-05-16. SwingCue switched from Modal-hosted
+# SAM 3D Body to fal.ai hosted (fal-ai/sam-3/3d-body). This file is
+# kept for historical reference of the abandoned Modal deployment path.
 """
 SwingCue PR-2A: SAM-Body4D on Modal (verification harness)
 
