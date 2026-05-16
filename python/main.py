@@ -36,6 +36,11 @@ class AnalyzeRequest(BaseModel):
     view_type: str = "face_on"
     club_type: str = "unknown"
     sample_fps: float = 4.0
+    # PR-2B: required for pose_3d_phases service-role writes. The Next.js
+    # API route enforces auth + ownership before calling us, so we trust
+    # these values here.
+    video_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 @app.get("/health")
@@ -72,16 +77,47 @@ async def analyze(req: AnalyzeRequest):
         # 3. Phase detection
         phases = detect_phases(keypoint_frames, metadata.durationSec)
 
-        # 4. Issue detection
+        # 4. SAM 3D Body via fal — 5 phases in parallel.
+        # Failure of this step is non-fatal: the MediaPipe-based response
+        # below is still useful even without 3D pose rows.
+        pose3d_summary = None
+        if req.video_id and req.user_id:
+            try:
+                from sam3d.orchestrator import pose3d_for_all_phases
+                pose3d_summary = await pose3d_for_all_phases(
+                    video_path=tmp_path,
+                    video_id=req.video_id,
+                    user_id=req.user_id,
+                    phases=phases,
+                    image_width=metadata.width,
+                    image_height=metadata.height,
+                    fps=metadata.fps,
+                )
+            except Exception as e:
+                logger.error(
+                    f"pose3d step failed (non-fatal): {e}", exc_info=True
+                )
+                pose3d_summary = {
+                    "completed": 0,
+                    "failed": 5,
+                    "error": str(e),
+                }
+        else:
+            logger.warning(
+                "video_id/user_id missing in request — skipping pose3d step"
+            )
+
+        # 5. Issue detection
         issue_result = score_issue_from_keypoints(keypoint_frames)
 
-        # 5. Serialize
+        # 6. Serialize
         kp_timeline = [f.to_dict() for f in keypoint_frames]
 
         logger.info(
             f"Done: {len(kp_timeline)} frames, "
             f"{metadata.durationSec:.2f}s, "
-            f"issue={issue_result['issue']}"
+            f"issue={issue_result['issue']}, "
+            f"pose3d={pose3d_summary}"
         )
 
         return {
@@ -95,6 +131,7 @@ async def analyze(req: AnalyzeRequest):
             "phaseMarkers": phases,
             "keypointTimeline": kp_timeline,
             "issueDetection": issue_result,
+            "pose3dSummary": pose3d_summary,
         }
 
     except Exception as e:
