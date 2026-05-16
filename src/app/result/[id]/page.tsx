@@ -85,22 +85,30 @@ export default function ResultPage() {
 
       const viewType = (vid.view_type as 'face_on' | 'down_the_line') ?? 'face_on';
 
-      // ── PATH 0: SAM 3D Body pose_3d_phases → sparse 5-frame timeline ──
+      // ── PATH 0: pose_3d_phases → sparse 5-frame timeline (YOLO ▶ SAM) ──
       //   Preferred path for any video analyzed after PR-2B. RLS scopes
       //   the query to this user; failure / empty / RLS-reject all collapse
       //   to [] so the cascade below proceeds.
+      //   The per-row disc builder prefers YOLO11-pose anchors over SAM
+      //   materialised columns; the badge reflects whichever source has
+      //   data on any row.
       const poseRows = await fetchPoseRows(videoId);
-      const hasSparseData = poseRows.some(
-        r => r.fal_status === 'completed' && r.image_width > 0 && r.image_height > 0,
+      const hasYolo = poseRows.some(
+        r => r.yolo_keypoints_2d !== null &&
+             r.image_width > 0 && r.image_height > 0,
       );
-      if (hasSparseData) {
+      const hasSam = poseRows.some(
+        r => r.fal_status === 'completed' &&
+             r.image_width > 0 && r.image_height > 0,
+      );
+      if (hasYolo || hasSam) {
         const sparseOlt = generateSparsePhaseOverlayTimeline({
           poseRows,
           phaseMarkers: pm,
         });
         if (sparseOlt.frames.length > 0) {
           setOverlayTimeline(sparseOlt);
-          setDataSource('sam3d');
+          setDataSource(hasYolo ? 'yolo' : 'sam3d');
           setState('ready');
           return;
         }

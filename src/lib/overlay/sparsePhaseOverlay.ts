@@ -26,7 +26,13 @@ import type {
   LineElement,
   DotElement,
 } from '@/types/analysis';
-import { PHASE_ORDER, type PhaseName, type PoseRow } from '@/lib/sam3d/keypoints';
+import {
+  COCO_KP,
+  MIN_CONFIDENCE,
+  PHASE_ORDER,
+  type PhaseName,
+  type PoseRow,
+} from '@/lib/sam3d/keypoints';
 
 type AC = 'red' | 'green' | 'yellow' | 'white';
 type Layer = OverlayElement['layer'];
@@ -167,21 +173,83 @@ function buildDisc(
   return els;
 }
 
-/** Public: shoulder disc from a PoseRow. Returns [] if anchors missing. */
+type AnchorPair = {
+  leftX: number; leftY: number;
+  rightX: number; rightY: number;
+};
+
+/**
+ * Read a confident keypoint from a YOLO row. Returns null when YOLO did
+ * not run, the array shape is unexpected, or the confidence is below
+ * MIN_CONFIDENCE. Caller then falls back to SAM materialised columns.
+ */
+function readYoloPair(
+  row: PoseRow,
+  leftIdx: number,
+  rightIdx: number,
+): AnchorPair | null {
+  const kps = row.yolo_keypoints_2d;
+  if (kps === null || kps.length < 17) return null;
+  const l = kps[leftIdx];
+  const r = kps[rightIdx];
+  if (!l || l.length < 3 || !r || r.length < 3) return null;
+  if (l[2] < MIN_CONFIDENCE || r[2] < MIN_CONFIDENCE) return null;
+  return { leftX: l[0], leftY: l[1], rightX: r[0], rightY: r[1] };
+}
+
+/**
+ * Read the SAM materialised anchors (PR-2 fallback path). Returns null
+ * if either side is missing.
+ */
+function readSamPair(
+  leftX: number | null, leftY: number | null,
+  rightX: number | null, rightY: number | null,
+): AnchorPair | null {
+  if (leftX === null || leftY === null || rightX === null || rightY === null) {
+    return null;
+  }
+  return { leftX, leftY, rightX, rightY };
+}
+
+/** YOLO preferred, SAM fallback. Returns null if neither source has data. */
+function getShoulderPair(row: PoseRow): AnchorPair | null {
+  return (
+    readYoloPair(row, COCO_KP.LEFT_SHOULDER, COCO_KP.RIGHT_SHOULDER) ??
+    readSamPair(
+      row.shoulder_left_x, row.shoulder_left_y,
+      row.shoulder_right_x, row.shoulder_right_y,
+    )
+  );
+}
+
+/** YOLO preferred, SAM fallback. Returns null if neither source has data. */
+function getHipPair(row: PoseRow): AnchorPair | null {
+  return (
+    readYoloPair(row, COCO_KP.LEFT_HIP, COCO_KP.RIGHT_HIP) ??
+    readSamPair(
+      row.hip_left_x, row.hip_left_y,
+      row.hip_right_x, row.hip_right_y,
+    )
+  );
+}
+
+/** Public: shoulder disc from a PoseRow. Returns [] if no source has anchors. */
 export function buildShoulderDisc(row: PoseRow): OverlayElement[] {
+  const pair = getShoulderPair(row);
+  if (pair === null) return [];
   return buildDisc(
-    row.shoulder_left_x, row.shoulder_left_y,
-    row.shoulder_right_x, row.shoulder_right_y,
+    pair.leftX, pair.leftY, pair.rightX, pair.rightY,
     row.image_width, row.image_height,
     SHOULDER_OPTS,
   );
 }
 
-/** Public: hip disc from a PoseRow. Returns [] if anchors missing. */
+/** Public: hip disc from a PoseRow. Returns [] if no source has anchors. */
 export function buildHipDisc(row: PoseRow): OverlayElement[] {
+  const pair = getHipPair(row);
+  if (pair === null) return [];
   return buildDisc(
-    row.hip_left_x, row.hip_left_y,
-    row.hip_right_x, row.hip_right_y,
+    pair.leftX, pair.leftY, pair.rightX, pair.rightY,
     row.image_width, row.image_height,
     HIP_OPTS,
   );

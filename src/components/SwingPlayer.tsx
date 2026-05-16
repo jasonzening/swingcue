@@ -171,10 +171,15 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         <div className="sp-badges">
           <span className="sp-phase-badge">{phase.toUpperCase()}</span>
           {dataSource && (() => {
-            const isReal = dataSource === 'mediapipe' || dataSource === 'sam3d';
-            const label = dataSource === 'sam3d'
-              ? 'SAM 3D'
-              : dataSource === 'mediapipe' ? 'Real keypoints' : 'Demo overlay';
+            const isReal =
+              dataSource === 'mediapipe' ||
+              dataSource === 'sam3d' ||
+              dataSource === 'yolo';
+            const label =
+              dataSource === 'yolo'      ? 'YOLO 11m' :
+              dataSource === 'sam3d'     ? 'SAM 3D' :
+              dataSource === 'mediapipe' ? 'Real keypoints' :
+                                           'Demo overlay';
             return (
               <span className={`sp-src-badge ${isReal ? 'sp-src-real' : 'sp-src-demo'}`}>
                 {label}
