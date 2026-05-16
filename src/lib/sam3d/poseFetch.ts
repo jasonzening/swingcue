@@ -1,36 +1,63 @@
 /**
  * Browser-side fetch for pose_3d_phases.
  *
- * Uses the anon SSR client (cookie-bound). The pose_3d_phases_user_select
- * RLS policy enforces `auth.uid() = user_id`, so a user only sees rows for
- * their own videos. Returns rows sorted by canonical phase order.
+ * Bypasses @supabase/ssr createBrowserClient because its session
+ * hydration was observed (via Chrome DevTools) to fail attaching the user
+ * access_token as Bearer on this code path — RLS sees auth.uid()=null and
+ * returns 200 + [] silently. We read the session token from the cookie
+ * directly and craft the PostgREST request with both apikey (anon) and
+ * Authorization (Bearer access_token) headers.
  *
- * Returns `[]` on any error path (not authenticated, RLS reject, network
- * fail) — the result page treats empty as "no sparse data, fall back to
- * dense MediaPipe path".
+ * Returns [] on any error path; result page falls back to dense MediaPipe.
  */
-
-import { createClient } from '@/lib/supabase/client';
 import { PHASE_ORDER, type PhaseName, type PoseRow } from '@/lib/sam3d/keypoints';
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+function readSessionFromCookie(): { access_token?: string } | null {
+  if (typeof document === 'undefined') return null;
+  const all = document.cookie.split(';').map(c => c.trim());
+  const auth = all.filter(c => c.startsWith('sb-') && c.includes('auth-token'));
+  if (auth.length === 0) return null;
+
+  const named: Record<string, string> = {};
+  for (const c of auth) {
+    const [k, ...v] = c.split('=');
+    named[k] = decodeURIComponent(v.join('='));
+  }
+  // Reassemble chunked cookies in sorted key order (sb-...-auth-token.0, .1, ...)
+  const raw = Object.keys(named).sort().map(k => named[k]).join('');
+
+  let payload = raw;
+  if (payload.startsWith('base64-')) {
+    try { payload = atob(payload.slice(7)); } catch { return null; }
+  }
+  try { return JSON.parse(payload); } catch { return null; }
+}
 
 export async function fetchPoseRows(videoId: string): Promise<PoseRow[]> {
   try {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from('pose_3d_phases')
-      .select('*')
-      .eq('video_id', videoId);
-
-    if (error) {
-      console.warn('[pose-fetch] query error:', error.message);
+    const session = readSessionFromCookie();
+    if (!session?.access_token) {
+      console.warn('[pose-fetch] no access_token in cookie; user not authenticated');
       return [];
     }
 
-    const rows = (data ?? []) as PoseRow[];
+    const url = `${SUPABASE_URL}/rest/v1/pose_3d_phases?video_id=eq.${encodeURIComponent(videoId)}&select=*`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: ANON_KEY,
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
 
-    // Canonical phase ordering (PostgREST returns insertion order by default,
-    // which is fine but not guaranteed); explicit sort makes downstream code
-    // simpler.
+    if (!res.ok) {
+      console.warn(`[pose-fetch] HTTP ${res.status}:`, await res.text().catch(() => ''));
+      return [];
+    }
+
+    const rows = (await res.json()) as PoseRow[];
     const rank = (p: PhaseName) => PHASE_ORDER.indexOf(p);
     return rows.sort((a, b) => rank(a.phase_name) - rank(b.phase_name));
   } catch (e) {
