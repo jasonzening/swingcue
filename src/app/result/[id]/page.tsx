@@ -13,6 +13,8 @@ import { useRouter, useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { SwingPlayer } from '@/components/SwingPlayer';
 import { generateDenseOverlayTimeline } from '@/lib/overlay/templates';
+import { generateSparsePhaseOverlayTimeline } from '@/lib/overlay/sparsePhaseOverlay';
+import { fetchPoseRows } from '@/lib/sam3d/poseFetch';
 import type { MainIssueType, PhaseMarkers, VideoMetadata, OverlayTimeline, KeypointFrame } from '@/types/analysis';
 import { ISSUE_LABELS } from '@/types/analysis';
 
@@ -82,6 +84,27 @@ export default function ResultPage() {
       setMeta(vm);
 
       const viewType = (vid.view_type as 'face_on' | 'down_the_line') ?? 'face_on';
+
+      // ── PATH 0: SAM 3D Body pose_3d_phases → sparse 5-frame timeline ──
+      //   Preferred path for any video analyzed after PR-2B. RLS scopes
+      //   the query to this user; failure / empty / RLS-reject all collapse
+      //   to [] so the cascade below proceeds.
+      const poseRows = await fetchPoseRows(videoId);
+      const hasSparseData = poseRows.some(
+        r => r.fal_status === 'completed' && r.image_width > 0 && r.image_height > 0,
+      );
+      if (hasSparseData) {
+        const sparseOlt = generateSparsePhaseOverlayTimeline({
+          poseRows,
+          phaseMarkers: pm,
+        });
+        if (sparseOlt.frames.length > 0) {
+          setOverlayTimeline(sparseOlt);
+          setDataSource('sam3d');
+          setState('ready');
+          return;
+        }
+      }
 
       // ── PATH A: keypoint 数据存在 → dense overlay（连续追踪）──
       const kpJson = ana.keypoint_timeline_json as { frames?: KeypointFrame[] } | null;
