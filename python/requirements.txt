@@ -11,3 +11,10 @@ fal-client==0.5.6
 # PR-2B fix: removed supabase SDK (v2.7.4 rejects sb_secret_* key format,
 # and the project has migrated off legacy JWT keys). We call PostgREST +
 # Storage REST directly with httpx (already pinned above).
+# PR-3: YOLO11m-pose via Ultralytics.
+# NOTE: torch is intentionally NOT listed here. The Dockerfile installs the
+# CPU-only torch wheel from pytorch.org/whl/cpu BEFORE this requirements
+# file is processed, so when pip resolves `ultralytics` it sees torch is
+# already satisfied and does not upgrade to the default (GPU) wheel.
+# License: Ultralytics is AGPL-3.0. See docs/decisions/POSE_MODEL_LICENSE.md.
+ultralytics>=8.3.0
