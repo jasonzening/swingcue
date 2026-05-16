@@ -7,9 +7,11 @@ main.py — SwingCue 分析服务 (FastAPI)
 - MediaPipe 只在真正分析视频时才懒加载
 """
 
-import os
+import asyncio
 import logging
+import os
 from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -77,34 +79,79 @@ async def analyze(req: AnalyzeRequest):
         # 3. Phase detection
         phases = detect_phases(keypoint_frames, metadata.durationSec)
 
-        # 4. SAM 3D Body via fal — 5 phases in parallel.
-        # Failure of this step is non-fatal: the MediaPipe-based response
-        # below is still useful even without 3D pose rows.
-        pose3d_summary = None
+        # 4a. Frame extraction — once per phase, shared between SAM + YOLO.
+        png_bytes_per_phase: dict[str, bytes] = {}
+        phase_timestamps: dict[str, float] = {}
         if req.video_id and req.user_id:
-            try:
-                from sam3d.orchestrator import pose3d_for_all_phases
-                pose3d_summary = await pose3d_for_all_phases(
-                    video_path=tmp_path,
+            from sam3d.frame_extract import extract_frame
+            phase_pairs = [
+                ("setup", "setupTime"),
+                ("top", "topTime"),
+                ("transition", "transitionTime"),
+                ("impact", "impactTime"),
+                ("finish", "finishTime"),
+            ]
+            phase_timestamps = {
+                name: float(phases.get(time_key) or 0.0)
+                for name, time_key in phase_pairs
+            }
+            extracted = await asyncio.gather(
+                *[extract_frame(tmp_path, ts) for ts in phase_timestamps.values()],
+                return_exceptions=True,
+            )
+            for name, result in zip(phase_timestamps.keys(), extracted):
+                if isinstance(result, BaseException):
+                    logger.error(
+                        f"[frame] phase {name} extract failed: {result!r}"
+                    )
+                    continue
+                png_bytes_per_phase[name] = result
+            logger.info(
+                f"[frame] extracted {len(png_bytes_per_phase)}/5 phase frames"
+            )
+
+        # 4b. SAM 3D Body + YOLO11-pose — parallel fire on shared PNG bytes.
+        # Both inference paths are non-fatal: MediaPipe response below is
+        # still useful even if both fail.
+        pose3d_summary = None
+        yolo_summary = None
+        if png_bytes_per_phase and req.video_id and req.user_id:
+            from sam3d.orchestrator import pose3d_for_all_phases
+            from yolo.orchestrator import yolo_for_all_phases
+            sam_result, yolo_result = await asyncio.gather(
+                pose3d_for_all_phases(
+                    png_bytes_per_phase=png_bytes_per_phase,
+                    phase_timestamps=phase_timestamps,
                     video_id=req.video_id,
                     user_id=req.user_id,
-                    phases=phases,
                     image_width=metadata.width,
                     image_height=metadata.height,
                     fps=metadata.fps,
-                )
-            except Exception as e:
-                logger.error(
-                    f"pose3d step failed (non-fatal): {e}", exc_info=True
-                )
-                pose3d_summary = {
-                    "completed": 0,
-                    "failed": 5,
-                    "error": str(e),
-                }
-        else:
+                ),
+                yolo_for_all_phases(
+                    png_bytes_per_phase=png_bytes_per_phase,
+                    phase_timestamps=phase_timestamps,
+                    video_id=req.video_id,
+                    user_id=req.user_id,
+                    image_width=metadata.width,
+                    image_height=metadata.height,
+                    fps=metadata.fps,
+                ),
+                return_exceptions=True,
+            )
+            if isinstance(sam_result, BaseException):
+                logger.error(f"pose3d step raised: {sam_result!r}", exc_info=sam_result)
+                pose3d_summary = {"completed": 0, "failed": 5, "error": str(sam_result)}
+            else:
+                pose3d_summary = sam_result
+            if isinstance(yolo_result, BaseException):
+                logger.error(f"yolo step raised: {yolo_result!r}", exc_info=yolo_result)
+                yolo_summary = {"completed": 0, "failed": 5, "error": str(yolo_result)}
+            else:
+                yolo_summary = yolo_result
+        elif not req.video_id or not req.user_id:
             logger.warning(
-                "video_id/user_id missing in request — skipping pose3d step"
+                "video_id/user_id missing in request — skipping pose3d+yolo"
             )
 
         # 5. Issue detection
@@ -117,7 +164,8 @@ async def analyze(req: AnalyzeRequest):
             f"Done: {len(kp_timeline)} frames, "
             f"{metadata.durationSec:.2f}s, "
             f"issue={issue_result['issue']}, "
-            f"pose3d={pose3d_summary}"
+            f"pose3d={pose3d_summary}, "
+            f"yolo={yolo_summary}"
         )
 
         return {
@@ -132,6 +180,7 @@ async def analyze(req: AnalyzeRequest):
             "keypointTimeline": kp_timeline,
             "issueDetection": issue_result,
             "pose3dSummary": pose3d_summary,
+            "yoloSummary": yolo_summary,
         }
 
     except Exception as e:
