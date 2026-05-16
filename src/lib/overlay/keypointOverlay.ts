@@ -81,20 +81,18 @@ function buildDisc(
   const rDotY = rightPt.y + uy * expand;
 
   if (lc < 0.35 || rc < 0.35) {
-    els.push(mkDot(cx, cy, color, 0.012, 0.55, layer));
+    els.push(mkDot(cx, cy, color, 0.010, 0.35, layer));
     return els;
   }
 
-  els.push(mkDot(lDotX, lDotY, 'yellow', 0.011, 0.90, layer));
-  els.push(mkDot(rDotX, rDotY, 'white',  0.011, 0.90, layer));
-
-  if (visRatio < 0.18) {
-    els.push(mkLine(leftPt.x,leftPt.y,rightPt.x,rightPt.y,color,1.5,0.45,layer));
-    return els;
-  }
+  els.push(mkDot(lDotX, lDotY, 'yellow', 0.006, 0.30, layer));
+  els.push(mkDot(rDotX, rDotY, 'white',  0.006, 0.30, layer));
 
   const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
-  const ry = rx * opts.ryRatio * visRatio;
+  const isUltraFlat = visRatio < 0.18;
+  const ry = isUltraFlat ? rx * 0.12 : rx * opts.ryRatio * visRatio;
+  const haloStrokeWidth = isUltraFlat ? 4.0 : 5.0;
+  const haloOpacity = isUltraFlat ? 0.85 : (0.50 + visRatio * 0.42);
 
   const rawDeg   = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x) * 180 / Math.PI;
   const normDeg  = normalizeAngle(rawDeg);
@@ -104,12 +102,14 @@ function buildDisc(
   _prevAngle[opts.angleKey] = smoothDeg;
 
   const bhr   = clamp((dist / 2) / rx, 0.05, 0.95);
-  const alpha = 0.50 + visRatio * 0.42; const screenRightPt = leftPt.x >= rightPt.x ? leftPt : rightPt; const screenLeftPt = leftPt.x >= rightPt.x ? rightPt : leftPt; const lz = screenLeftPt.z ?? 0; const rz = screenRightPt.z ?? 0; const Z_NORM = 0.20; const zAsymRaw = clamp((lz - rz) / Z_NORM, -1, 1); const prevZ = _prevZAsym[opts.zAsymKey]; const zAsym = prevZ !== undefined ? prevZ + clamp(zAsymRaw - prevZ, -0.15, 0.15) : zAsymRaw; _prevZAsym[opts.zAsymKey] = zAsym;
-  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, 5.0, alpha, layer, bhr, visRatio, zAsym));
+  const alpha = haloOpacity; const screenRightPt = leftPt.x >= rightPt.x ? leftPt : rightPt; const screenLeftPt = leftPt.x >= rightPt.x ? rightPt : leftPt; const lz = screenLeftPt.z ?? 0; const rz = screenRightPt.z ?? 0; const Z_NORM = 0.20; const zAsymRaw = clamp((lz - rz) / Z_NORM, -1, 1); const prevZ = _prevZAsym[opts.zAsymKey]; const zAsym = prevZ !== undefined ? prevZ + clamp(zAsymRaw - prevZ, -0.15, 0.15) : zAsymRaw; _prevZAsym[opts.zAsymKey] = zAsym;
+  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, haloStrokeWidth, alpha, layer, bhr, visRatio, zAsym));
 
   const ar = smoothDeg * Math.PI / 180;
   const cosA = Math.cos(ar), sinA = Math.sin(ar);
-  els.push(mkLine(cx - rx*cosA, cy - rx*sinA, cx + rx*cosA, cy + rx*sinA, 'white', 2.2, alpha * 0.90, layer));
+  const guideHalfLen = rx * 0.65;
+  const guideOpacity = clamp(alpha * 0.90, 0.65, 0.75);
+  els.push(mkLine(cx - guideHalfLen*cosA, cy - guideHalfLen*sinA, cx + guideHalfLen*cosA, cy + guideHalfLen*sinA, 'white', 2.2, guideOpacity, layer));
 
   if (visRatio > 0.50) {
     els.push(mkLabel(cx, cy - ry * 2.2, opts.label, 'white', 10, 0.78));
