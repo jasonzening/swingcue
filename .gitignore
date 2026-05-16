@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# fal API testing outputs (one-shot, sensitive)
+fal_result.json
+inspected.png
+mesh.glb
+test_finish.png
+test_swing.mp4*
+*.glb
+
+# Claude Code local config
+.claude/
+
+# python
+__pycache__/
+*.pyc
