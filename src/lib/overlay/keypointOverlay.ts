@@ -1,13 +1,11 @@
 /**
- * keypointOverlay.ts — 旋转盘（透视版）
+ * keypointOverlay.ts — dense MediaPipe-driven disc rendering (fallback path).
  *
- * 关键修复：
- * 1. 关节点向"远离圆盘中心"方向扩展（不依赖 MediaPipe 的 left/right X 顺序）
- *    face_on: leftShoulder.x > rightShoulder.x（左肩在画面右边）
- *    所以必须用 sign(pt.x - cx) 决定扩展方向
- * 2. 透视压缩：ry *= visRatio，侧身时圆盘变细
- * 3. 左点=黄色，右点=白色
- * 4. 髋部外扩量 = dist * 0.52
+ * PR-2C: stripped Phase 7.x stateful post-processing (EMA smoothing, refW
+ * lock, cy shift, zAsym phase shift, slew-rate limit, isUltraFlat, low-conf
+ * last-known-good). New videos go through sparsePhaseOverlay.ts; this path
+ * stays for legacy videos that only have keypoint_timeline_json. UX impact:
+ * 4fps samples no longer EMA-smoothed (see commit message for trade-off).
  */
 
 import type {
@@ -18,13 +16,9 @@ import type { MainIssueType } from '@/types/analysis';
 import type { BodyPointName, Pt } from '@/lib/golf/bodyPointSpec';
 import type { ViewType } from '@/lib/golf/overlayLineSpec';
 
-const _prevAngle: Record<string, number> = {};
-const _refWidth:  Record<string, number> = {}; const _prevZAsym: Record<string, number> = {};
-const _prevPt: Record<string, {x:number; y:number; z?:number; confidence?:number}> = {};
-
 let _uid = 0;
-const uid   = (p: string) => `${p}-${++_uid}`;
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const uid    = (p: string) => `${p}-${++_uid}`;
+const clamp  = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const dist2D = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
 const mid2D  = (a: Pt, b: Pt): Pt => ({ x:(a.x+b.x)/2, y:(a.y+b.y)/2, confidence:1 });
 
@@ -37,126 +31,47 @@ const mkDot   = (x:number,y:number,c:AC,r=0.009,op=0.90,layer:OverlayElement['la
 const mkLabel = (x:number,y:number,text:string,c:AC='white',size=10,op=0.80): LabelElement =>
   ({type:'label',id:uid('t'),x,y,text,color:c,size,opacity:op});
 
-function mkEllipse(cx:number,cy:number,rx:number,ry:number,angleDeg:number,color:AC,sw=5.0,op=0.92,layer:OverlayElement['layer']='body',bhr=0.27,vr=1.0,zAsym=0):OverlayElement{
-  return{type:'ellipse'as OverlayElement['type'],id:uid('e'),cx,cy,rx,ry,angleDeg,color,strokeWidth:sw,opacity:op,layer,bodyHalfRatio:bhr,visRatio:vr,zAsym}as unknown as OverlayElement;
+// Basic ellipse — no visRatio/zAsym/bodyHalfRatio; renderer applies defaults.
+function mkEllipse(cx:number,cy:number,rx:number,ry:number,angleDeg:number,color:AC,sw=5.0,op=0.92,layer:OverlayElement['layer']='body'):OverlayElement{
+  return{type:'ellipse'as OverlayElement['type'],id:uid('e'),cx,cy,rx,ry,angleDeg,color,strokeWidth:sw,opacity:op,layer}as unknown as OverlayElement;
 }
 
 function normalizeAngle(deg:number):number{let a=deg;if(a>90)a-=180;if(a<-90)a+=180;return a;}
 
+/** Stateless disc builder: 2 endpoint dots + ellipse + center guide + label. */
 function buildDisc(
   leftPt: Pt, rightPt: Pt,
-  opts: {
-    rxMult:number; rxMin:number; rxMax:number;
-    ryRatio:number; maxAngle:number;
-    refKey:string; angleKey:string; zAsymKey:string;
-    label:string; dotExpand:number;
-    cyShiftFactor?: number;
-  },
+  opts: { rxMult:number; rxMin:number; rxMax:number; ryRatio:number; maxAngle:number; label:string; dotExpand:number; },
   color: AC,
   layer: OverlayElement['layer'] = 'body',
 ): OverlayElement[] {
-  const els: OverlayElement[] = [];
-  const lc = leftPt.confidence  ?? 0.8;
-  const rc = rightPt.confidence ?? 0.8;
   const dist = dist2D(leftPt, rightPt);
-  if (dist < 0.01) return els;
-
-  // === EMA smoothing + low-conf fallback ============================
-  const SMOOTH_ALPHA = 0.5;
-  const SNAP_THRESHOLD = 0.10;
-  const LC_THRESHOLD = 0.35;
-  const _lKey = opts.angleKey + ':L';
-  const _rKey = opts.angleKey + ':R';
-  const _prevL = _prevPt[_lKey];
-  const _prevR = _prevPt[_rKey];
-  const _lowL = lc < LC_THRESHOLD;
-  const _lowR = rc < LC_THRESHOLD;
-  // Use last known good keypoint when current is unreliable (prevents disc from disappearing at the end of the swing when MediaPipe loses tracking).
-  if (_lowL && _prevL) leftPt = { ..._prevL };
-  if (_lowR && _prevR) rightPt = { ..._prevR };
-  // EMA smooth normal-confidence keypoints. Snap on large jumps (phase clicks).
-  if (!_lowL && _prevL && Math.hypot(leftPt.x - _prevL.x, leftPt.y - _prevL.y) <= SNAP_THRESHOLD) {
-    leftPt = {
-      x: _prevL.x + (leftPt.x - _prevL.x) * SMOOTH_ALPHA,
-      y: _prevL.y + (leftPt.y - _prevL.y) * SMOOTH_ALPHA,
-      z: leftPt.z !== undefined ? (_prevL.z ?? 0) + ((leftPt.z ?? 0) - (_prevL.z ?? 0)) * SMOOTH_ALPHA : leftPt.z,
-      confidence: leftPt.confidence,
-    };
-  }
-  if (!_lowR && _prevR && Math.hypot(rightPt.x - _prevR.x, rightPt.y - _prevR.y) <= SNAP_THRESHOLD) {
-    rightPt = {
-      x: _prevR.x + (rightPt.x - _prevR.x) * SMOOTH_ALPHA,
-      y: _prevR.y + (rightPt.y - _prevR.y) * SMOOTH_ALPHA,
-      z: rightPt.z !== undefined ? (_prevR.z ?? 0) + ((rightPt.z ?? 0) - (_prevR.z ?? 0)) * SMOOTH_ALPHA : rightPt.z,
-      confidence: rightPt.confidence,
-    };
-  }
-  // Persist (only when at least one keypoint was high-confidence — avoids poisoning prev with stale-confidence loop)
-  if (!_lowL) _prevPt[_lKey] = { x: leftPt.x, y: leftPt.y, z: leftPt.z, confidence: leftPt.confidence };
-  if (!_lowR) _prevPt[_rKey] = { x: rightPt.x, y: rightPt.y, z: rightPt.z, confidence: rightPt.confidence };
-  // ==================================================================
+  if (dist < 0.01) return [];
 
   const cx = (leftPt.x + rightPt.x) / 2;
-  const cy = (leftPt.y + rightPt.y) / 2 - dist * (opts.cyShiftFactor ?? 0);
-
-  const apparentW = Math.abs(rightPt.x - leftPt.x);
-  const prevRef   = _refWidth[opts.refKey] ?? 0;
-  if (apparentW > prevRef) _refWidth[opts.refKey] = apparentW;
-  const refW     = _refWidth[opts.refKey] ?? Math.max(apparentW, 0.10);
-  const visRatio = clamp(apparentW / refW, 0, 1.0);
-
-  // 关节点沿 disc 主轴方向外扩 (修复倾斜时 dot 漂移)
-  const expand = dist * opts.dotExpand;
-  const lineDx = rightPt.x - leftPt.x;
-  const lineDy = rightPt.y - leftPt.y;
-  const lineLen = Math.hypot(lineDx, lineDy);
-  const ux = lineLen > 0 ? lineDx / lineLen : 1;
-  const uy = lineLen > 0 ? lineDy / lineLen : 0;
-  const lDotX = leftPt.x  - ux * expand;
-  const lDotY = leftPt.y  - uy * expand;
-  const rDotX = rightPt.x + ux * expand;
-  const rDotY = rightPt.y + uy * expand;
-
-  if ((lc < 0.35 || rc < 0.35) && !_prevPt[_lKey] && !_prevPt[_rKey]) {
-    els.push(mkDot(cx, cy, color, 0.010, 0.35, layer));
-    return els;
-  }
-
-  els.push(mkDot(lDotX, lDotY, 'yellow', 0.006, 0.30, layer));
-  els.push(mkDot(rDotX, rDotY, 'white',  0.006, 0.30, layer));
+  const cy = (leftPt.y + rightPt.y) / 2;
+  const dx = rightPt.x - leftPt.x;
+  const dy = rightPt.y - leftPt.y;
 
   const rx = clamp(dist * opts.rxMult, opts.rxMin, opts.rxMax);
-  const isUltraFlat = visRatio < 0.18;
-  const ry = isUltraFlat ? rx * 0.12 : rx * opts.ryRatio * visRatio;
-  const haloStrokeWidth = isUltraFlat ? 4.0 : 5.0;
-  const haloOpacity = isUltraFlat ? 0.85 : (0.50 + visRatio * 0.42);
+  const ry = rx * opts.ryRatio;
+  const angleDeg = clamp(normalizeAngle(Math.atan2(dy, dx) * 180 / Math.PI), -opts.maxAngle, opts.maxAngle);
 
-  const rawDeg   = Math.atan2(rightPt.y - leftPt.y, rightPt.x - leftPt.x) * 180 / Math.PI;
-  const normDeg  = normalizeAngle(rawDeg);
-  const prev     = _prevAngle[opts.angleKey];
-  // 180°-mod alignment: ellipse rendering is invariant under 180° rotation, so allow normDeg to live outside [-90,90] when it's closer to prev that way (avoids spurious flips at the ±90 boundary).
-  let alignedDeg = normDeg;
-  if (prev !== undefined) {
-    if (alignedDeg - prev > 90) alignedDeg -= 180;
-    else if (alignedDeg - prev < -90) alignedDeg += 180;
-  }
-  const clampDeg  = clamp(alignedDeg, -opts.maxAngle, opts.maxAngle);
-  const smoothDeg = prev !== undefined ? prev + clamp(clampDeg - prev, -45, 45) : clampDeg;
-  _prevAngle[opts.angleKey] = smoothDeg;
+  const expand = dist * opts.dotExpand;
+  const ux = dx / dist, uy = dy / dist;
+  const lDotX = leftPt.x  - ux * expand, lDotY = leftPt.y  - uy * expand;
+  const rDotX = rightPt.x + ux * expand, rDotY = rightPt.y + uy * expand;
 
-  const bhr   = clamp((dist / 2) / rx, 0.05, 0.95);
-  const alpha = haloOpacity; const screenRightPt = leftPt.x >= rightPt.x ? leftPt : rightPt; const screenLeftPt = leftPt.x >= rightPt.x ? rightPt : leftPt; const lz = screenLeftPt.z ?? 0; const rz = screenRightPt.z ?? 0; const Z_NORM = 0.20; const zAsymRaw = clamp((lz - rz) / Z_NORM, -1, 1); const prevZ = _prevZAsym[opts.zAsymKey]; const zAsym = prevZ !== undefined ? prevZ + clamp(zAsymRaw - prevZ, -0.15, 0.15) : zAsymRaw; _prevZAsym[opts.zAsymKey] = zAsym;
-  els.push(mkEllipse(cx, cy, rx, ry, smoothDeg, color, haloStrokeWidth, alpha, layer, bhr, visRatio, zAsym));
+  const els: OverlayElement[] = [];
+  els.push(mkDot(lDotX, lDotY, 'yellow', 0.006, 0.30, layer));
+  els.push(mkDot(rDotX, rDotY, 'white',  0.006, 0.30, layer));
+  els.push(mkEllipse(cx, cy, rx, ry, angleDeg, color, 5.0, 0.92, layer));
 
-  const ar = smoothDeg * Math.PI / 180;
+  const ar = angleDeg * Math.PI / 180;
   const cosA = Math.cos(ar), sinA = Math.sin(ar);
   const guideHalfLen = rx * 0.65;
-  const guideOpacity = clamp(alpha * 0.90, 0.65, 0.75);
-  els.push(mkLine(cx - guideHalfLen*cosA, cy - guideHalfLen*sinA, cx + guideHalfLen*cosA, cy + guideHalfLen*sinA, 'white', 2.2, guideOpacity, layer));
-
-  if (visRatio > 0.50) {
-    els.push(mkLabel(cx, cy - ry * 2.2, opts.label, 'white', 10, 0.78));
-  }
+  els.push(mkLine(cx - guideHalfLen*cosA, cy - guideHalfLen*sinA, cx + guideHalfLen*cosA, cy + guideHalfLen*sinA, 'white', 2.2, 0.70, layer));
+  els.push(mkLabel(cx, cy - ry * 2.2, opts.label, 'white', 10, 0.78));
   return els;
 }
 
@@ -199,15 +114,16 @@ export function generateSpecDrivenOverlayFrame(
   const ls=pts.leftShoulder,rs=pts.rightShoulder;
   if(ls&&rs){els.push(...buildDisc(ls,rs,{
     rxMult:1.85,rxMin:0.20,rxMax:0.50,ryRatio:0.20,maxAngle:maxAng,
-    refKey:'sRef',angleKey:'sAng',zAsymKey:'sZ',label:'SHOULDERS',dotExpand:0,cyShiftFactor:0.10,
+    label:'SHOULDERS',dotExpand:0,
   },'white','body'));}
 
   const lh=pts.leftHip,rh=pts.rightHip;
   if(lh&&rh){els.push(...buildDisc(lh,rh,{
     rxMult:2.10,rxMin:0.16,rxMax:0.50,ryRatio:0.18,maxAngle:maxAng,
-    refKey:'hRef',angleKey:'hAng',zAsymKey:'hZ',label:'HIPS',dotExpand:0.52,
+    label:'HIPS',dotExpand:0.52,
   },'white','club'));}
 
+  void issue; void phase;
   return els;
 }
 
