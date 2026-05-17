@@ -11,7 +11,8 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { renderFrame } from '@/lib/overlay/OverlayRenderer';
 import { getOverlayAtTime, getCurrentPhase, formatTime } from '@/lib/overlay/playerSync';
-import type { OverlayTimeline, PhaseMarkers } from '@/types/analysis';
+import type { OverlayTimeline, PhaseMarkers, PoseTimeline } from '@/types/analysis';
+import { SkeletonOverlay } from '@/components/SkeletonOverlay';
 
 interface Props {
   videoUrl: string;
@@ -19,6 +20,10 @@ interface Props {
   phases: PhaseMarkers;        // in seconds
   duration: number;            // video duration in seconds
   dataSource?: string;         // 'mediapipe' | 'stub' — dev indicator
+  // PR-4: 17-COCO frame-level timeline. When present, enables the
+  // skeleton overlay toggle. NULL when pose_timeline_2d failed
+  // validation or the video predates PR-4.
+  poseTimeline?: PoseTimeline | null;
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
@@ -40,7 +45,7 @@ const PHASE_BTNS: { key: keyof PhaseMarkers; label: string }[] = [
   { key: 'finishTime',     label: 'Finish' },
 ];
 
-export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dataSource }: Props) {
+export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dataSource, poseTimeline }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef    = useRef<number>(0);
@@ -54,6 +59,10 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
   const [dur,      setDur]      = useState(propDur || 1);
   const [phase,    setPhase]    = useState<string>('setup');
   const [dragging, setDragging] = useState(false);
+  // PR-4: skeleton overlay toggle. Default OFF per design (extreme
+  // simplicity philosophy — debug + demo tool, not core UX). Button
+  // disabled when poseTimeline is null.
+  const [skeletonOn, setSkeletonOn] = useState(false);
 
   /* ── Canvas sync ── */
   const syncCanvas = useCallback(() => {
@@ -167,6 +176,11 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         />
         <canvas ref={canvasRef} className="sp-cvs" />
 
+        {/* PR-4: skeleton overlay (toggle, default off) */}
+        {skeletonOn && poseTimeline && (
+          <SkeletonOverlay timeline={poseTimeline} videoEl={videoRef.current} />
+        )}
+
         {/* Badges */}
         <div className="sp-badges">
           <span className="sp-phase-badge">{phase.toUpperCase()}</span>
@@ -188,6 +202,19 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
           })()}
         </div>
         <div className="sp-layer-badge">{layerBadgeText()}</div>
+
+        {/* PR-4: skeleton toggle. Disabled when no timeline data — older
+            videos predate PR-4 (re-analyze to enable). */}
+        <button
+          type="button"
+          className={`sp-skel-toggle ${skeletonOn ? 'sp-skel-on' : ''} ${!poseTimeline ? 'sp-skel-disabled' : ''}`}
+          onClick={() => poseTimeline && setSkeletonOn(o => !o)}
+          disabled={!poseTimeline}
+          title={poseTimeline ? 'Toggle skeleton overlay' : 'Re-analyze this swing to enable skeleton view'}
+          aria-label="Toggle skeleton overlay"
+        >
+          🦴
+        </button>
 
         {/* Legend */}
         <div className="sp-legend">
@@ -290,6 +317,12 @@ const css = `
   .sp-src-real { background:rgba(60,238,60,0.18); color:#3cee3c; }
   .sp-src-demo { background:rgba(255,180,40,0.18); color:#ffb428; }
   .sp-layer-badge { position:absolute; top:9px; right:10px; display:inline-block; background:rgba(0,0,0,0.65); color:rgba(255,255,255,0.60); font-size:9px; font-weight:700; letter-spacing:.08em; padding:3px 9px; border-radius:100px; font-family:'DM Sans',system-ui; pointer-events:none; z-index:3; }
+
+  /* PR-4 skeleton toggle */
+  .sp-skel-toggle { position:absolute; top:36px; right:10px; z-index:4; width:30px; height:30px; padding:0; font-size:16px; line-height:1; border-radius:50%; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.10); color:#a8f040; cursor:pointer; display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent; transition:transform 0.12s, background 0.12s; }
+  .sp-skel-toggle:active { transform:scale(0.88); }
+  .sp-skel-on { background:rgba(168,240,64,0.18) !important; border-color:rgba(168,240,64,0.45) !important; }
+  .sp-skel-disabled { opacity:0.35; cursor:not-allowed; color:rgba(255,255,255,0.40); }
 
   /* ── Legend ── */
   .sp-legend { position:absolute; bottom:8px; right:10px; background:rgba(0,0,0,0.70); display:flex; gap:8px; padding:5px 10px; border-radius:100px; z-index:3; pointer-events:none; }

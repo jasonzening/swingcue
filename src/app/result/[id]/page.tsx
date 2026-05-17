@@ -15,7 +15,7 @@ import { SwingPlayer } from '@/components/SwingPlayer';
 import { generateDenseOverlayTimeline } from '@/lib/overlay/templates';
 import { generateSparsePhaseOverlayTimeline } from '@/lib/overlay/sparsePhaseOverlay';
 import { fetchPoseRows } from '@/lib/sam3d/poseFetch';
-import type { MainIssueType, PhaseMarkers, VideoMetadata, OverlayTimeline, KeypointFrame } from '@/types/analysis';
+import type { MainIssueType, PhaseMarkers, VideoMetadata, OverlayTimeline, KeypointFrame, PoseTimeline } from '@/types/analysis';
 import { ISSUE_LABELS } from '@/types/analysis';
 
 export default function ResultPage() {
@@ -33,6 +33,9 @@ export default function ResultPage() {
   const [meta, setMeta] = useState<VideoMetadata>({ durationSec: 3, fps: 30, width: 640, height: 360 });
   const [overlayTimeline, setOverlayTimeline] = useState<OverlayTimeline | null>(null);
   const [dataSource, setDataSource] = useState<string>('unknown');
+  // PR-4: 17-COCO frame-level timeline (null when video predates PR-4
+  // or the analyzer's validate_timeline gate rejected the data).
+  const [poseTimeline, setPoseTimeline] = useState<PoseTimeline | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -53,6 +56,14 @@ export default function ResultPage() {
         .from('swing-videos')
         .createSignedUrl(vid.storage_path, 3600);
       if (signed?.signedUrl) setVideoUrl(signed.signedUrl);
+
+      // PR-4: hydrate the 17-COCO pose timeline if present on the row.
+      // Inline cast pattern matches the rest of this file (no canonical
+      // SwingVideoRow type yet — see PR-4_DESIGN.md §D).
+      const pt = (vid as { pose_timeline_2d?: PoseTimeline | null }).pose_timeline_2d ?? null;
+      if (pt && Array.isArray(pt.frames) && pt.frames.length > 0) {
+        setPoseTimeline(pt);
+      }
 
       const { data: ana } = await supabase
         .from('swing_analysis')
@@ -179,6 +190,7 @@ export default function ResultPage() {
           phases={phases}
           duration={meta.durationSec}
           dataSource={dataSource}
+          poseTimeline={poseTimeline}
         />
       ) : (
         <div className="no-vid"><p>Video loading…</p></div>
