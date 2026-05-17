@@ -2,30 +2,26 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 httpx==0.27.2
 pydantic==2.9.2
-# Heavy deps — only installed once in Docker layer.
-# PR-3 hotfix v8: opencv-python 4.10.0.84 wheel metadata constrains
-# numpy<2.0 (the wheel was built April 2024 before numpy 2.0 stable in
-# June 2024). That metadata constraint forced pip to resolve numpy 1.x
-# even though we'd cleared every explicit pin in v7. Upgrade all three
-# opencv variants to 4.11.0.86 (March 2025) which has numpy 2.x in its
-# metadata AND in its compiled ABI. Add an explicit numpy>=2.0,<3.0 pin
-# so any future dep that still constrains numpy<2 surfaces as a clean
-# pip ResolutionImpossible at install time (and names itself), instead
-# of as a cryptic numpy._core import crash at runtime.
-mediapipe==0.10.21
-opencv-python-headless==4.11.0.86
-opencv-python==4.11.0.86
-opencv-contrib-python==4.11.0.86
-numpy>=2.0,<3.0
+
+# Heavy deps — back to the pre-PR-3 production state (proven to work
+# in PR-2B/PR-2C). All three opencv distros are pinned to the same
+# version because mediapipe transitively pulls opencv-contrib-python;
+# without three matching pins, the last-installed cv2 binary wins.
+mediapipe==0.10.14
+opencv-python-headless==4.10.0.84
+opencv-python==4.10.0.84
+opencv-contrib-python==4.10.0.84
+numpy==1.26.4
+
 # PR-2B: fal-ai/sam-3/3d-body
 fal-client==0.5.6
-# PR-2B fix: removed supabase SDK (v2.7.4 rejects sb_secret_* key format,
-# and the project has migrated off legacy JWT keys). We call PostgREST +
-# Storage REST directly with httpx (already pinned above).
-# PR-3: YOLO11m-pose via Ultralytics.
-# NOTE: torch is intentionally NOT listed here. The Dockerfile installs the
-# CPU-only torch wheel from pytorch.org/whl/cpu BEFORE this requirements
-# file is processed, so when pip resolves `ultralytics` it sees torch is
-# already satisfied and does not upgrade to the default (GPU) wheel.
-# License: Ultralytics is AGPL-3.0. See docs/decisions/POSE_MODEL_LICENSE.md.
-ultralytics>=8.3.0
+
+# PR-3 Option C: YOLO11-pose runtime via onnxruntime. The ultralytics
+# + torch toolchain that produces yolo11m-pose.onnx lives in the
+# Dockerfile yolo-builder stage and is NOT installed at runtime —
+# see docs/decisions/PR-3_C_ONNX_DESIGN.md.
+#
+# onnxruntime 1.18.x is the last release line built against numpy 1.x;
+# 1.19+ added numpy 2.x support. We stay on the 1.x-compatible line so
+# the resolver agrees with our mediapipe pin (which requires numpy 1.x).
+onnxruntime>=1.18,<2.0

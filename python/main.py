@@ -7,11 +7,11 @@ main.py — SwingCue 分析服务 (FastAPI)
 - MediaPipe 只在真正分析视频时才懒加载
 """
 
-# PR-3 hotfix v4: log runtime package versions BEFORE any heavy imports.
-# Helps diagnose any future numpy/cv2/mediapipe ABI mismatch by surfacing
-# the exact versions the live container sees at startup, not at build time.
-# Uses a subprocess to get a fresh interpreter so module caching cannot mask
-# a broken binary ABI.
+# PR-3 Option C: runtime is back to numpy 1.x + opencv-python-headless
+# 4.10.0.84 + mediapipe 0.10.14 (proven pre-PR-3 production state),
+# plus onnxruntime. Startup-verify subprocess uses a fresh interpreter
+# so module caching cannot mask a broken binary ABI. Surfaces the exact
+# package versions in Railway runtime logs at every container boot.
 import subprocess
 import sys
 
@@ -19,25 +19,25 @@ try:
     _v = subprocess.check_output(
         [
             sys.executable, "-c",
-            "import numpy, cv2, mediapipe; "
-            "assert numpy.__version__.startswith('2.'), "
-            "f'expected numpy 2.x, got {numpy.__version__}'; "
-            "print(f'numpy={numpy.__version__} cv2={cv2.__version__} mediapipe={mediapipe.__version__}')",
+            "import numpy, cv2, mediapipe, onnxruntime; "
+            "assert numpy.__version__.startswith('1.'), "
+            "f'expected numpy 1.x, got {numpy.__version__}'; "
+            "print(f'numpy={numpy.__version__} cv2={cv2.__version__} "
+            "mediapipe={mediapipe.__version__} "
+            "onnxruntime={onnxruntime.__version__}')",
         ],
         stderr=subprocess.STDOUT,
     ).decode().strip()
     print(f"[startup-verify] {_v}", flush=True)
 except subprocess.CalledProcessError as _e:
-    # CalledProcessError.__str__ doesn't show captured output — fetch it
-    # explicitly so we see the real Python traceback from the subprocess.
     _out = _e.output.decode(errors="replace") if _e.output else "(no captured output)"
     print(f"[startup-verify-FAIL] exit={_e.returncode}", flush=True)
     print(f"[startup-verify-FAIL] subprocess stdout+stderr:\n{_out}", flush=True)
 except Exception as _e:
     print(f"[startup-verify-FAIL] {_e!r}", flush=True)
 
-# Also dump runtime package versions via pip freeze so we know what's
-# actually installed in the live container.
+# pip freeze dump (relevant packages only) — proves what's installed in
+# the live container, independent of any module's __version__ attribute.
 try:
     _f = subprocess.check_output(
         [sys.executable, "-m", "pip", "freeze"],
@@ -45,7 +45,7 @@ try:
     ).decode()
     _relevant = [
         line.strip() for line in _f.split("\n")
-        if any(p in line.lower() for p in ["numpy", "opencv", "mediapipe", "ultralytics", "torch"])
+        if any(p in line.lower() for p in ["numpy", "opencv", "mediapipe", "onnxruntime", "torch", "ultralytics"])
     ]
     for line in _relevant:
         print(f"[runtime-pkg] {line}", flush=True)

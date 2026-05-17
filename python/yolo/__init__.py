@@ -1,16 +1,21 @@
 """
-yolo — YOLO11-pose (Ultralytics) integration toolkit.
+yolo — YOLO11-pose integration toolkit.
 
 Public surface used by main.py / orchestrator.py:
 
     from yolo.orchestrator import yolo_for_all_phases
 
-The submodules are imported here for testing convenience but should not be
-reached from outside the package in production code.
+The submodules are imported here for testing convenience but should not
+be reached from outside the package in production code.
 
-License note: Ultralytics YOLO is AGPL-3.0. See
-docs/decisions/POSE_MODEL_LICENSE.md for the replacement plan
-(RTMPose / YOLO-NAS / MoveNet) prior to commercial deployment.
+PR-3 Option C: runtime inference uses `onnxruntime` against a
+yolo11m-pose.onnx file exported at Docker build time. The `ultralytics`
+package is NOT installed in the runtime image — see
+docs/decisions/PR-3_C_ONNX_DESIGN.md.
+
+License note: the .onnx file is a derived work of Ultralytics' AGPL-3.0
+weights. The replacement plan (RTMPose / YOLO-NAS / MoveNet) is recorded
+in docs/decisions/POSE_MODEL_LICENSE.md.
 """
 
 from yolo.inference import MODEL_NAME, infer_pose
