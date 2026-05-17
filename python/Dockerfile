@@ -27,22 +27,38 @@ RUN pip install --no-cache-dir \
 # and BEFORE the rest of requirements (so ultralytics resolves against it).
 RUN pip install --no-cache-dir --upgrade "numpy<2.0"
 
-# ── Layer 3: requirements (ultralytics + everything else) + preload weights ─
+# ── Layer 3: requirements (ultralytics + everything else) ──────────────────
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Layer 3.5: build-time ABI verification ──────────────────────────────────
-# Fail the build if numpy / cv2 / mediapipe imports are broken, instead of
-# silently producing an image that 500s at first request. Catches the case
-# where layer 3 transitively upgrades numpy past 2.0 and breaks the
-# mediapipe/opencv 1.x-ABI binaries.
-RUN python -c "import numpy; assert numpy.__version__.startswith('1.'), f'numpy must be 1.x, got {numpy.__version__}'; print(f'[verify] numpy {numpy.__version__} OK')"
-RUN python -c "import cv2; print(f'[verify] cv2 {cv2.__version__} OK')"
-RUN python -c "import mediapipe; print(f'[verify] mediapipe {mediapipe.__version__} OK')"
+# ── Layer 3.4: disable Ultralytics auto-install ─────────────────────────────
+# ultralytics.checks.check_requirements() will silently `pip install -U <pkg>`
+# at first YOLO() call for any dep it considers out-of-date. That auto-upgrade
+# was the actual cause of numpy being reverted to 2.x at build time (during
+# preload below) and at runtime. Killing it here is the load-bearing fix.
+ENV YOLO_AUTOINSTALL=False
+ENV ULTRALYTICS_OFFLINE=True
 
-# Pre-download yolo11m-pose.pt (~44 MB) into the image so the first request
-# after a redeploy is not penalised by a 30s download from GitHub.
+# ── Layer 3.5: pre-download yolo11m-pose.pt (~44 MB) ───────────────────────
+# Bakes the weights into the image so the first request after a redeploy is
+# not penalised by a 30s download from GitHub.
 RUN python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt')"
+
+# ── Layer 3.6: belt-and-suspenders re-pin AFTER preload ────────────────────
+# Even with AUTOINSTALL off, any pip resolver hiccup could shift numpy.
+# --force-reinstall --no-deps restores the version we want without touching
+# the rest of the resolved graph.
+RUN pip install --no-cache-dir --force-reinstall --no-deps "numpy<2.0"
+
+# ── Layer 3.7: FINAL ABI verify — image's true runtime state ───────────────
+# Runs AFTER preload + numpy re-pin so the build fails if anything in the
+# preload chain shifted numpy past 2.0. Also prints versions of every
+# relevant package to the build log for visibility.
+RUN pip freeze | grep -iE "^(numpy|opencv|mediapipe|ultralytics|torch)"
+RUN python -c "import numpy; v=numpy.__version__; print(f'[final] numpy {v}'); assert v.startswith('1.'), f'numpy must be 1.x, got {v}'"
+RUN python -c "import cv2; print(f'[final] cv2 {cv2.__version__} OK')"
+RUN python -c "import mediapipe; print(f'[final] mediapipe {mediapipe.__version__} OK')"
+RUN python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); print('[final] YOLO loaded OK')"
 
 # ── Layer 4: app code ──────────────────────────────────────────────────────
 COPY *.py .
