@@ -60,6 +60,14 @@ RUN python -c "import cv2; print(f'[final] cv2 {cv2.__version__} OK')"
 RUN python -c "import mediapipe; print(f'[final] mediapipe {mediapipe.__version__} OK')"
 RUN python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); print('[final] YOLO loaded OK')"
 
+# ── Layer 3.8: fresh-subprocess cv2 cold import ────────────────────────────
+# Hotfix v4: same-process imports above can pass due to module caching when
+# cv2 was loaded earlier in the build (e.g. by Ultralytics during preload)
+# while numpy was transiently 2.x. The runtime container always starts with
+# a fresh interpreter — replicate that here so an ABI mismatch crashes the
+# BUILD, not the first /analyze request.
+RUN python -c "import subprocess, sys; out = subprocess.check_output([sys.executable, '-c', 'import cv2; print(f\"cv2 cold import OK in fresh process: {cv2.__version__}\")'], stderr=subprocess.STDOUT).decode(); print(out)"
+
 # ── Layer 4: app code ──────────────────────────────────────────────────────
 COPY *.py .
 # Subpackages — the `COPY *.py` glob above only matches root-level files.

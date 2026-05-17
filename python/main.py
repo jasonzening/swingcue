@@ -7,6 +7,27 @@ main.py — SwingCue 分析服务 (FastAPI)
 - MediaPipe 只在真正分析视频时才懒加载
 """
 
+# PR-3 hotfix v4: log runtime package versions BEFORE any heavy imports.
+# Helps diagnose any future numpy/cv2/mediapipe ABI mismatch by surfacing
+# the exact versions the live container sees at startup, not at build time.
+# Uses a subprocess to get a fresh interpreter so module caching cannot mask
+# a broken binary ABI.
+import subprocess
+import sys
+
+try:
+    _v = subprocess.check_output(
+        [
+            sys.executable, "-c",
+            "import numpy, cv2, mediapipe; "
+            "print(f'numpy={numpy.__version__} cv2={cv2.__version__} mediapipe={mediapipe.__version__}')",
+        ],
+        stderr=subprocess.STDOUT,
+    ).decode().strip()
+    print(f"[startup-verify] {_v}", flush=True)
+except Exception as _e:
+    print(f"[startup-verify-FAIL] {_e}", flush=True)
+
 import asyncio
 import logging
 import os
