@@ -16,6 +16,7 @@ import { SkeletonOverlay } from '@/components/SkeletonOverlay';
 // PR-5: frame-level disc geometry from PR-4 pose_timeline_2d.
 import { frameAt } from '@/lib/disc/frameAt';
 import { computeShoulderDisc, computeHipDisc } from '@/lib/disc/computeDiscParams';
+import { unwrapAngle } from '@/lib/disc/unwrap';
 import type { DiscParams } from '@/lib/disc/types';
 
 interface Props {
@@ -102,6 +103,12 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
   // disabled when poseTimeline is null.
   const [skeletonOn, setSkeletonOn] = useState(false);
 
+  // PR-5 hotfix: per-disc rolling state so atan2 wrap-around (±π
+  // boundary crossings between adjacent frames) doesn't make the
+  // disc visually flip 360° between rAF ticks. See unwrap.ts.
+  const lastShoulderRef = useRef<{ angleRad: number; ts: number } | null>(null);
+  const lastHipRef      = useRef<{ angleRad: number; ts: number } | null>(null);
+
   /* ── Canvas sync ── */
   const syncCanvas = useCallback(() => {
     const v = videoRef.current;
@@ -137,16 +144,37 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
     const ch = c.height || 240;
     renderFrame(ctx, elements, cw, ch, layer);
 
-    // PR-5: frame-level discs from pose_timeline_2d.
+    // PR-5: frame-level discs from pose_timeline_2d, with PR-5 hotfix
+    // atan2 unwrap so finish-phase rotation past ±π doesn't snap 360°.
     if (poseTimeline) {
       const poseFrame = frameAt(t, poseTimeline);
       if (poseFrame) {
         const scaleX = cw / poseTimeline.video_width;
         const scaleY = ch / poseTimeline.video_height;
+
         const shoulder = computeShoulderDisc(poseFrame);
+        if (shoulder) {
+          const unwrapped = unwrapAngle(
+            shoulder.angleRad,
+            lastShoulderRef.current?.angleRad ?? null,
+            lastShoulderRef.current?.ts ?? null,
+            t,
+          );
+          lastShoulderRef.current = { angleRad: unwrapped, ts: t };
+          drawDisc(ctx, { ...shoulder, angleRad: unwrapped }, '#FFFFFF', scaleX, scaleY);
+        }
+
         const hip = computeHipDisc(poseFrame);
-        if (shoulder) drawDisc(ctx, shoulder, '#FFFFFF', scaleX, scaleY);
-        if (hip)      drawDisc(ctx, hip,      '#FFFFFF', scaleX, scaleY);
+        if (hip) {
+          const unwrapped = unwrapAngle(
+            hip.angleRad,
+            lastHipRef.current?.angleRad ?? null,
+            lastHipRef.current?.ts ?? null,
+            t,
+          );
+          lastHipRef.current = { angleRad: unwrapped, ts: t };
+          drawDisc(ctx, { ...hip, angleRad: unwrapped }, '#FFFFFF', scaleX, scaleY);
+        }
       }
     }
   }, [timeline, phases, layer, dur, poseTimeline]);
