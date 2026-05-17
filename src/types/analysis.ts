@@ -232,3 +232,53 @@ export interface TemplateInput {
   viewType?: 'face_on' | 'down_the_line';
   keypointTimeline?: KeypointTimeline;
 }
+
+/* ══════════════════════════════════════
+   PR-4: pose_timeline_2d — 17-COCO frame-level timeline.
+   Stored on swing_videos.pose_timeline_2d (JSONB). See
+   docs/decisions/PR-4_DESIGN.md for the full design.
+
+   This is the canonical data substrate for ALL future overlay PRs
+   (PR-5 rotation, PR-6 sway, PR-7 view detect, etc.). Coordinate
+   convention: video native pixels, NOT normalised 0-1.
+══════════════════════════════════════ */
+
+export type CocoKeypointName =
+  | 'nose'
+  | 'left_eye' | 'right_eye'
+  | 'left_ear' | 'right_ear'
+  | 'left_shoulder' | 'right_shoulder'
+  | 'left_elbow'    | 'right_elbow'
+  | 'left_wrist'    | 'right_wrist'
+  | 'left_hip'      | 'right_hip'
+  | 'left_knee'     | 'right_knee'
+  | 'left_ankle'    | 'right_ankle';
+
+/**
+ * One keypoint: [x_px, y_px, confidence].
+ * x and y are null when MediaPipe visibility < 0.3 or the keypoint was
+ * outlier-rejected. Confidence is preserved in the third slot for
+ * diagnostics.
+ */
+export type Keypoint = readonly [number | null, number | null, number];
+
+export interface PoseFrame {
+  ts: number;                                       // seconds from video start
+  frame_idx: number;                                // original video frame index
+  interpolated: boolean;                            // true = gap-filled, false = direct
+  keypoints: Record<CocoKeypointName, Keypoint>;
+}
+
+export interface PoseTimeline {
+  version: 1;
+  fps_sampled: number;
+  video_width: number;
+  video_height: number;
+  keypoint_source: 'mediapipe_pose' | 'yolo' | 'hybrid';
+  yolo_anchor_correction: {
+    applied: boolean;
+    anchor_phases?: string[];
+    method?: string;
+  };
+  frames: PoseFrame[];
+}
