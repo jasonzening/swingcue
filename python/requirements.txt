@@ -3,19 +3,20 @@ uvicorn[standard]==0.32.0
 httpx==0.27.2
 pydantic==2.9.2
 # Heavy deps — only installed once in Docker layer.
-# PR-3 hotfix v7: upgrade to numpy 2.x ecosystem. mediapipe 0.10.21 is
-# the first stable version with full numpy 2.x support, with no API
-# breakage from 0.10.14 (pose/face/hands solutions unchanged). opencv
-# 4.10+ is already numpy-2.x-compiled, so we let pip resolve to latest.
-# ultralytics 8.x is numpy-2.x native — this aligns everything.
-# All three opencv variants are still pinned to the same version so that
-# the trio that writes to site-packages/cv2/ produces identical bytes
-# regardless of install order.
+# PR-3 hotfix v8: opencv-python 4.10.0.84 wheel metadata constrains
+# numpy<2.0 (the wheel was built April 2024 before numpy 2.0 stable in
+# June 2024). That metadata constraint forced pip to resolve numpy 1.x
+# even though we'd cleared every explicit pin in v7. Upgrade all three
+# opencv variants to 4.11.0.86 (March 2025) which has numpy 2.x in its
+# metadata AND in its compiled ABI. Add an explicit numpy>=2.0,<3.0 pin
+# so any future dep that still constrains numpy<2 surfaces as a clean
+# pip ResolutionImpossible at install time (and names itself), instead
+# of as a cryptic numpy._core import crash at runtime.
 mediapipe==0.10.21
-opencv-python-headless==4.10.0.84
-opencv-python==4.10.0.84
-opencv-contrib-python==4.10.0.84
-# numpy not pinned — let mediapipe + opencv + ultralytics agree on a version
+opencv-python-headless==4.11.0.86
+opencv-python==4.11.0.86
+opencv-contrib-python==4.11.0.86
+numpy>=2.0,<3.0
 # PR-2B: fal-ai/sam-3/3d-body
 fal-client==0.5.6
 # PR-2B fix: removed supabase SDK (v2.7.4 rejects sb_secret_* key format,

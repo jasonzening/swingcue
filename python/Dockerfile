@@ -21,6 +21,14 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
     torch torchvision
 
+# ── Layer 2.9: dry-run dependency dump (diagnostic) ────────────────────────
+# Hotfix v8: show which deps pull numpy/opencv/mediapipe and what versions
+# pip would pick before the real install. Useful if a future dep constrains
+# numpy back to <2 — the dry-run will name it explicitly in the build log.
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --dry-run -r /tmp/requirements.txt 2>&1 \
+    | grep -iE "numpy|opencv|mediapipe" || true
+
 # ── Layer 3: requirements (ultralytics + everything else) ──────────────────
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -48,19 +56,14 @@ RUN python -c "import cv2; print(f'[final] cv2 {cv2.__version__} OK')"
 RUN python -c "import mediapipe; print(f'[final] mediapipe {mediapipe.__version__} OK')"
 RUN python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); print('[final] YOLO loaded OK')"
 
-# Hotfix v5: assert opencv-python (the full version, separate from
-# opencv-python-headless) is either absent or pinned to 4.10.0.84. Both
-# packages install to the same site-packages/cv2/ dir; if ultralytics
-# pulled in opencv-python at a later 4.11.x version it overwrote our
-# headless binaries with numpy-2.x-compiled ones.
-RUN python -c "import importlib.metadata as m; names = [d.metadata['Name'] for d in m.distributions()]; ver = m.version('opencv-python') if 'opencv-python' in names else None; print(f'[final] opencv-python={ver}'); assert ver is None or ver == '4.10.0.84', f'opencv-python must be 4.10.0.84 or absent, got {ver}'"
+# Hotfix v8: assert opencv-python (full version) is absent or 4.11.0.86.
+# All three opencv variants (python, headless, contrib-python) install to
+# the SAME site-packages/cv2/ dir, so if any transitive dep pulls a
+# different version it overwrites the others' .so files. We pin them all
+# at the same numpy-2.x-compatible release and verify post-install.
+RUN python -c "import importlib.metadata as m; names = [d.metadata['Name'] for d in m.distributions()]; ver = m.version('opencv-python') if 'opencv-python' in names else None; print(f'[final] opencv-python={ver}'); assert ver is None or ver == '4.11.0.86', f'opencv-python must be 4.11.0.86 or absent, got {ver}'"
 
-# Hotfix v6: assert opencv-contrib-python is either absent or 4.10.0.84.
-# This is the THIRD opencv variant — ultralytics-thop transitively pulls
-# it, and like its siblings it writes to the same cv2/ dir. Last write
-# wins, so an unpinned 4.11.x here will overwrite both opencv-python and
-# opencv-python-headless 4.10.0.84 with numpy-2.x-compiled binaries.
-RUN python -c "import importlib.metadata as m; names = [d.metadata['Name'] for d in m.distributions()]; ver = m.version('opencv-contrib-python') if 'opencv-contrib-python' in names else None; print(f'[final] opencv-contrib-python={ver}'); assert ver is None or ver == '4.10.0.84', f'opencv-contrib-python must be 4.10.0.84 or absent, got {ver}'"
+RUN python -c "import importlib.metadata as m; names = [d.metadata['Name'] for d in m.distributions()]; ver = m.version('opencv-contrib-python') if 'opencv-contrib-python' in names else None; print(f'[final] opencv-contrib-python={ver}'); assert ver is None or ver == '4.11.0.86', f'opencv-contrib-python must be 4.11.0.86 or absent, got {ver}'"
 
 # ── Layer 3.8: fresh-subprocess cv2 cold import ────────────────────────────
 # Hotfix v4: same-process imports above can pass due to module caching when
