@@ -17,4 +17,10 @@ fal-client==0.5.6
 # file is processed, so when pip resolves `ultralytics` it sees torch is
 # already satisfied and does not upgrade to the default (GPU) wheel.
 # License: Ultralytics is AGPL-3.0. See docs/decisions/POSE_MODEL_LICENSE.md.
+#
+# PR-3 hotfix: pin numpy<2.0 explicitly so pip resolver respects this
+# constraint when installing ultralytics and its transitive deps.
+# mediapipe + opencv-python-headless are compiled against numpy 1.x ABI;
+# if any transitive dep pulls numpy 2.x in, cv2 import fails at runtime.
+numpy<2.0
 ultralytics>=8.3.0
