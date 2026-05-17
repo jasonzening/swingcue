@@ -20,8 +20,18 @@
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim AS yolo-builder
 
+# Same X11 + multimedia libs as Stage 2 — Stage 1 installs ultralytics
+# which pulls opencv-python (full, not headless), and cv2 .so dlopens
+# libxcb / libsm / libxext / libxrender / libgl at import time.
+# Stage 1 image is discarded after ONNX export, so size is not a concern.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libgomp1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libxcb1 \
+    libgomp1 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
