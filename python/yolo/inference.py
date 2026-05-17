@@ -1,83 +1,77 @@
 """
-YOLO11-pose inference wrapper.
+YOLO11-pose runtime inference via onnxruntime.
 
-Loads the model once (module-level singleton) and exposes an async
-`infer_pose(png_bytes)` that runs the synchronous Ultralytics call inside
-`asyncio.to_thread` so the 5 phase tasks can overlap their CPU work.
+PR-3 Option C: ultralytics + torch are no longer in the runtime image
+(they live in Dockerfile's `yolo-builder` stage which exports the .onnx
+file). At runtime we load the exported model with `onnxruntime` and use
+the manual decoder in `yolo/decoder.py`.
 
-The model file (~44 MB for yolo11m-pose.pt) is pre-downloaded at Docker
-build time so the first request after a redeploy is not penalised by a
-~30s download from GitHub.
+Public surface is intentionally identical to the previous ultralytics-
+based version:
+
+    MODEL_NAME: str
+    async def infer_pose(png_bytes: bytes) -> Optional[dict]
+
+`yolo/orchestrator.py` and `python/main.py` do not change.
 """
 
+from __future__ import annotations
 import asyncio
-import io
 import logging
+import os
 import time
 from typing import Optional
 
 import cv2
 import numpy as np
-from ultralytics import YOLO
+import onnxruntime as ort
+
+from yolo.decoder import postprocess, preprocess
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "yolo11m-pose.pt"
+# Public model identifier written to pose_3d_phases.yolo_model column.
+# Keeping the "-pose" suffix matches the ultralytics naming convention
+# so the frontend label stays stable; "-onnx" suffix flags the runtime.
+MODEL_NAME = "yolo11m-pose-onnx"
 
-_model: Optional[YOLO] = None
+# Filesystem path where the Docker stage 2 COPYs the model.
+MODEL_PATH = "/app/yolo11m-pose.onnx"
+
+# Module-level singleton — InferenceSession construction is ~200ms on CPU,
+# so we cache it after first use. Subsequent infer_pose() calls are hot.
+_session: Optional[ort.InferenceSession] = None
+_input_name: Optional[str] = None
 
 
-def _get_model() -> YOLO:
-    """Lazy singleton — first call pays the ~1–3s torch load, rest are hot."""
-    global _model
-    if _model is None:
-        logger.info(f"[yolo] loading model {MODEL_NAME}...")
+def _get_session() -> tuple[ort.InferenceSession, str]:
+    """Lazy singleton — first call pays the load; rest are hot."""
+    global _session, _input_name
+    if _session is None:
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(
+                f"[yolo] ONNX model missing at {MODEL_PATH}; "
+                "expected Dockerfile yolo-builder stage to have produced it"
+            )
+        logger.info(f"[yolo] loading {MODEL_PATH}...")
         t0 = time.time()
-        _model = YOLO(MODEL_NAME)
-        logger.info(f"[yolo] model loaded in {(time.time() - t0) * 1000:.0f}ms")
-    return _model
+        _session = ort.InferenceSession(
+            MODEL_PATH,
+            providers=["CPUExecutionProvider"],
+        )
+        _input_name = _session.get_inputs()[0].name
+        out0 = _session.get_outputs()[0]
+        logger.info(
+            f"[yolo] session loaded in {(time.time() - t0) * 1000:.0f}ms "
+            f"(input={_input_name} {_session.get_inputs()[0].shape}, "
+            f"output={out0.name} {out0.shape})"
+        )
+    assert _input_name is not None
+    return _session, _input_name
 
 
-def _run_sync(model: YOLO, image: np.ndarray) -> Optional[dict]:
+def _run_sync(png_bytes: bytes) -> Optional[dict]:
     """Synchronous inference body — called via asyncio.to_thread."""
-    t0 = time.time()
-    results = model(image, verbose=False)
-    inference_ms = int((time.time() - t0) * 1000)
-
-    if not results:
-        return None
-    r = results[0]
-    if r.keypoints is None or r.keypoints.data is None or len(r.keypoints.data) == 0:
-        return None
-
-    # Single-person swing video — take person 0 (highest-confidence).
-    kpts_tensor = r.keypoints.data[0]  # shape: [17, 3] = (x, y, conf)
-    kpts_list: list[list[float]] = kpts_tensor.cpu().tolist()
-
-    h, w = r.orig_shape  # tensor returns (H, W)
-
-    bbox: Optional[list[float]] = None
-    if r.boxes is not None and r.boxes.xyxy is not None and len(r.boxes.xyxy) > 0:
-        bbox = [float(v) for v in r.boxes.xyxy[0].cpu().tolist()]
-
-    return {
-        "keypoints_2d": kpts_list,       # 17 × [x, y, conf] in source pixels
-        "bbox": bbox,                     # [x1, y1, x2, y2] or None
-        "image_width": int(w),
-        "image_height": int(h),
-        "inference_ms": inference_ms,
-        "model": MODEL_NAME.replace(".pt", ""),  # e.g. "yolo11m-pose"
-    }
-
-
-async def infer_pose(png_bytes: bytes) -> Optional[dict]:
-    """
-    Decode a single PNG frame and run YOLO11-pose. Returns a dict (see
-    `_run_sync`) or None if no person was detected.
-
-    Raises:
-      ValueError — if PNG bytes cannot be decoded (caller treats as failure).
-    """
     arr = np.frombuffer(png_bytes, dtype=np.uint8)
     image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if image is None:
@@ -85,5 +79,41 @@ async def infer_pose(png_bytes: bytes) -> Optional[dict]:
             f"[yolo] cv2.imdecode returned None ({len(png_bytes)} bytes input)"
         )
 
-    model = _get_model()
-    return await asyncio.to_thread(_run_sync, model, image)
+    orig_h, orig_w = image.shape[:2]
+    input_arr, scale, pad_xy = preprocess(image)
+
+    session, input_name = _get_session()
+    t0 = time.time()
+    outputs = session.run(None, {input_name: input_arr})
+    inference_ms = int((time.time() - t0) * 1000)
+
+    keypoints, meta = postprocess(
+        outputs[0], scale, pad_xy, orig_h=orig_h, orig_w=orig_w,
+    )
+    if keypoints is None or meta is None:
+        return None
+
+    return {
+        "keypoints_2d": keypoints.tolist(),  # 17 × [x, y, conf] in source px
+        "bbox": meta["bbox"],                 # [x1, y1, x2, y2]
+        "image_width": int(orig_w),
+        "image_height": int(orig_h),
+        "inference_ms": inference_ms,
+        "model": MODEL_NAME,
+    }
+
+
+async def infer_pose(png_bytes: bytes) -> Optional[dict]:
+    """
+    Decode a single PNG frame and run YOLO11-pose ONNX inference.
+
+    Returns:
+        dict with keypoints_2d / bbox / image_width / image_height /
+        inference_ms / model, or None if no person was detected above
+        the confidence threshold.
+
+    Raises:
+        ValueError — if PNG bytes cannot be decoded.
+        FileNotFoundError — if /app/yolo11m-pose.onnx is missing.
+    """
+    return await asyncio.to_thread(_run_sync, png_bytes)
