@@ -20,6 +20,8 @@ try:
         [
             sys.executable, "-c",
             "import numpy, cv2, mediapipe; "
+            "assert numpy.__version__.startswith('2.'), "
+            "f'expected numpy 2.x, got {numpy.__version__}'; "
             "print(f'numpy={numpy.__version__} cv2={cv2.__version__} mediapipe={mediapipe.__version__}')",
         ],
         stderr=subprocess.STDOUT,

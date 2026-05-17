@@ -2,19 +2,20 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 httpx==0.27.2
 pydantic==2.9.2
-# Heavy deps — only installed once in Docker layer
-mediapipe==0.10.14
-# PR-3 hotfix v6: three opencv variants all install to the SAME
-# site-packages/cv2/ directory — last one written wins. We must pin ALL
-# THREE to the same numpy-1.x-compiled version. ultralytics-thop (a
-# transitive dep of ultralytics) pulls opencv-contrib-python at the latest
-# 4.11.x (numpy 2.x ABI) and silently overwrote our 4.10.0.84 binaries,
-# producing the `numpy._core.multiarray failed to import` runtime crash
-# even after hotfix v5 pinned the first two.
+# Heavy deps — only installed once in Docker layer.
+# PR-3 hotfix v7: upgrade to numpy 2.x ecosystem. mediapipe 0.10.21 is
+# the first stable version with full numpy 2.x support, with no API
+# breakage from 0.10.14 (pose/face/hands solutions unchanged). opencv
+# 4.10+ is already numpy-2.x-compiled, so we let pip resolve to latest.
+# ultralytics 8.x is numpy-2.x native — this aligns everything.
+# All three opencv variants are still pinned to the same version so that
+# the trio that writes to site-packages/cv2/ produces identical bytes
+# regardless of install order.
+mediapipe==0.10.21
 opencv-python-headless==4.10.0.84
 opencv-python==4.10.0.84
 opencv-contrib-python==4.10.0.84
-numpy==1.26.4
+# numpy not pinned — let mediapipe + opencv + ultralytics agree on a version
 # PR-2B: fal-ai/sam-3/3d-body
 fal-client==0.5.6
 # PR-2B fix: removed supabase SDK (v2.7.4 rejects sb_secret_* key format,
@@ -26,10 +27,4 @@ fal-client==0.5.6
 # file is processed, so when pip resolves `ultralytics` it sees torch is
 # already satisfied and does not upgrade to the default (GPU) wheel.
 # License: Ultralytics is AGPL-3.0. See docs/decisions/POSE_MODEL_LICENSE.md.
-#
-# PR-3 hotfix: pin numpy<2.0 explicitly so pip resolver respects this
-# constraint when installing ultralytics and its transitive deps.
-# mediapipe + opencv-python-headless are compiled against numpy 1.x ABI;
-# if any transitive dep pulls numpy 2.x in, cv2 import fails at runtime.
-numpy<2.0
 ultralytics>=8.3.0
