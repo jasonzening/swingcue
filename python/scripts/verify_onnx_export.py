@@ -12,17 +12,21 @@ python/scripts/, which the runtime's `COPY *.py .` glob does not match.
 
 from __future__ import annotations
 import sys
-from pathlib import Path
 
 import cv2
 import numpy as np
 import onnxruntime as ort
 from ultralytics import YOLO
 
-# Ensure python/ is on sys.path so we can import the production decoder.
-PYTHON_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PYTHON_DIR))
-from yolo.decoder import postprocess, preprocess  # noqa: E402
+# Import decoder.py as a standalone module, bypassing yolo/__init__.py.
+# Stage 1 of the Dockerfile only COPYs decoder.py + __init__.py; it does
+# NOT COPY inference.py (that's a runtime-only file). The package init
+# eagerly imports inference.py, so a `from yolo.decoder import ...` would
+# trigger ModuleNotFoundError on yolo.inference. Putting the decoder
+# directory on sys.path lets us import `decoder` directly without
+# touching the package __init__.
+sys.path.insert(0, "/build/yolo")
+from decoder import postprocess, preprocess  # noqa: E402
 
 REF_IMG = "ultralytics/assets/zidane.jpg"  # ships with the ultralytics package
 MAX_PIX_DIVERGENCE = 5.0
