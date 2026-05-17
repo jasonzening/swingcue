@@ -28,7 +28,7 @@ from ultralytics import YOLO
 sys.path.insert(0, "/build/yolo")
 from decoder import postprocess, preprocess  # noqa: E402
 
-REF_IMG = "ultralytics/assets/zidane.jpg"  # ships with the ultralytics package
+REF_IMG = "/build/zidane.jpg"  # pre-downloaded in Stage 1 Dockerfile (was bundled in ultralytics <8.x)
 MAX_PIX_DIVERGENCE = 5.0
 
 

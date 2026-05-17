@@ -49,6 +49,12 @@ RUN pip install --no-cache-dir ultralytics onnxruntime
 COPY yolo/__init__.py /build/yolo/__init__.py
 COPY yolo/decoder.py  /build/yolo/decoder.py
 
+# Pre-download reference image for build-time decoder verification.
+# ultralytics 8.x removed bundled assets — zidane.jpg is fetched on-demand
+# from ultralytics.com. Download it once here to a fixed path so
+# verify_onnx_export.py has a deterministic, offline-safe input.
+RUN python -c "import urllib.request; urllib.request.urlretrieve('https://ultralytics.com/images/zidane.jpg', '/build/zidane.jpg')"
+
 # Export yolo11m-pose.pt → yolo11m-pose.onnx with fixed parameters.
 # - imgsz=640         deterministic input shape (anchors = 8400)
 # - dynamic=False     static input, decoder may rely on 8400 anchors
