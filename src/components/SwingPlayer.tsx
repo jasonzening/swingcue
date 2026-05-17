@@ -11,8 +11,12 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { renderFrame } from '@/lib/overlay/OverlayRenderer';
 import { getOverlayAtTime, getCurrentPhase, formatTime } from '@/lib/overlay/playerSync';
-import type { OverlayTimeline, PhaseMarkers, PoseTimeline } from '@/types/analysis';
+import type { OverlayElement, OverlayTimeline, PhaseMarkers, PoseTimeline } from '@/types/analysis';
 import { SkeletonOverlay } from '@/components/SkeletonOverlay';
+// PR-5: frame-level disc geometry from PR-4 pose_timeline_2d.
+import { frameAt } from '@/lib/disc/frameAt';
+import { computeShoulderDisc, computeHipDisc } from '@/lib/disc/computeDiscParams';
+import type { DiscParams } from '@/lib/disc/types';
 
 interface Props {
   videoUrl: string;
@@ -44,6 +48,40 @@ const PHASE_BTNS: { key: keyof PhaseMarkers; label: string }[] = [
   { key: 'impactTime',     label: 'Impact' },
   { key: 'finishTime',     label: 'Finish' },
 ];
+
+// PR-5: the OverlayElement union has no 'ellipse' variant in its
+// declared `type` field — the PR-3 keypointOverlay shoves ellipse
+// elements through via `as unknown as OverlayElement` cast. Read the
+// runtime `type` via a wider shape so we can filter them out.
+function isEllipseElement(el: OverlayElement): boolean {
+  return (el as unknown as { type?: string }).type === 'ellipse';
+}
+
+/**
+ * PR-5: draw one disc on the canvas in video-native-pixel coordinates,
+ * scaled to the canvas's display dims. `scaleX`/`scaleY` are computed
+ * from `canvas.width / poseTimeline.video_width` (and y analogously).
+ *
+ * Coordinate / angle convention: see PR-5_DESIGN.md §3.
+ */
+function drawDisc(
+  ctx: CanvasRenderingContext2D,
+  p: DiscParams,
+  color: string,
+  scaleX: number,
+  scaleY: number,
+): void {
+  ctx.save();
+  ctx.translate(p.cx * scaleX, p.cy * scaleY);
+  ctx.rotate(p.angleRad);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, p.rx * scaleX, p.ry * scaleY, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.globalAlpha = 0.92;
+  ctx.stroke();
+  ctx.restore();
+}
 
 export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dataSource, poseTimeline }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -90,15 +128,51 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
     setCurTime(t);
     setPhase(getCurrentPhase(phases, t, d));
 
-    const elements = getOverlayAtTime(timeline, t);
-    renderFrame(ctx, elements, c.width || 320, c.height || 240, layer);
-  }, [timeline, phases, layer, dur]);
+    // PR-5: filter PR-3 timeline ellipses; disc geometry is now computed
+    // frame-level from pose_timeline_2d below. Non-ellipse elements
+    // (dots, lines, labels, badges, arrows, curves, zones) still render
+    // via the existing renderFrame path.
+    const elements = getOverlayAtTime(timeline, t).filter(el => !isEllipseElement(el));
+    const cw = c.width || 320;
+    const ch = c.height || 240;
+    renderFrame(ctx, elements, cw, ch, layer);
+
+    // PR-5: frame-level discs from pose_timeline_2d.
+    if (poseTimeline) {
+      const poseFrame = frameAt(t, poseTimeline);
+      if (poseFrame) {
+        const scaleX = cw / poseTimeline.video_width;
+        const scaleY = ch / poseTimeline.video_height;
+        const shoulder = computeShoulderDisc(poseFrame);
+        const hip = computeHipDisc(poseFrame);
+        if (shoulder) drawDisc(ctx, shoulder, '#FFFFFF', scaleX, scaleY);
+        if (hip)      drawDisc(ctx, hip,      '#FFFFFF', scaleX, scaleY);
+      }
+    }
+  }, [timeline, phases, layer, dur, poseTimeline]);
 
   useEffect(() => {
     let id: number;
     const loop = () => { renderTick(); id = requestAnimationFrame(loop); };
     id = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(id);
+  }, [renderTick]);
+
+  // PR-5 §5.5: also force a one-shot draw on mount + loadedmetadata + seeked.
+  // Defense-in-depth against the case where the rAF loop hasn't ticked yet
+  // (or the video is in `ended` state and tab paint has settled), which
+  // previously left the canvas blank / overlays stuck at (0, 0).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const syncOnce = () => { renderTick(); };
+    v.addEventListener('loadedmetadata', syncOnce);
+    v.addEventListener('seeked', syncOnce);
+    syncOnce();
+    return () => {
+      v.removeEventListener('loadedmetadata', syncOnce);
+      v.removeEventListener('seeked', syncOnce);
+    };
   }, [renderTick]);
 
   useEffect(() => {
