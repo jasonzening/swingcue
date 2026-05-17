@@ -70,7 +70,16 @@ async def _process_one_phase(
             f"[yolo] phase {phase_name}: completed "
             f"({result['inference_ms']}ms, model={result['model']})"
         )
-        return {"phase": phase_name, "status": "completed"}
+        # PR-4: include keypoints_2d in the summary so main.py's
+        # pose_timeline anchor-correction step can read them without
+        # re-querying pose_3d_phases from the DB.
+        return {
+            "phase": phase_name,
+            "status": "completed",
+            "keypoints_2d": result["keypoints_2d"],
+            "image_width":  result.get("image_width"),
+            "image_height": result.get("image_height"),
+        }
 
     except Exception as e:
         logger.error(

@@ -235,6 +235,180 @@ def gap_fill_linear(timeline: dict, max_gap: int = 5) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 4b. Build envelope — wrap raw frames into the v1 JSON shape
+# ---------------------------------------------------------------------------
+
+def build_timeline_from_raw_coco_frames(
+    raw_frames: list[dict],
+    video_width: int,
+    video_height: int,
+    sample_fps: float,
+) -> dict:
+    """
+    Wrap a list of per-frame coco dicts into the v1 pose_timeline_2d JSON
+    envelope. Caller is expected to pass the output through the data-
+    quality helpers above + apply_yolo_anchor_correction before writing.
+    """
+    return {
+        "version": 1,
+        "fps_sampled": int(round(sample_fps)),
+        "video_width": video_width,
+        "video_height": video_height,
+        "keypoint_source": "mediapipe_pose",
+        "yolo_anchor_correction": {"applied": False},
+        "frames": raw_frames,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4c. YOLO anchor correction — per-keypoint per-segment linear lerp
+# ---------------------------------------------------------------------------
+
+def apply_yolo_anchor_correction(
+    timeline: dict,
+    yolo_keypoints_per_phase: dict[str, list[list[float]]],
+    phase_markers: dict[str, float],
+    min_conf: float = 0.3,
+) -> dict:
+    """
+    Use the 5-phase YOLO COCO-17 keypoints (from PR-3) as ground-truth
+    anchors and linearly interpolate the MP→YOLO offset across the rest
+    of the timeline.
+
+    Args:
+        timeline:                  envelope from build_timeline_from_raw_coco_frames
+                                   (already passed through outlier / smooth / gap).
+        yolo_keypoints_per_phase:  {phase_name: [17 × [x, y, conf]]}
+                                   — collected from yolo_summary.results in main.py.
+        phase_markers:             {f"{phase}Time": float_seconds} from detect_phases.
+        min_conf:                  drop anchor offsets for kp pairs where
+                                   either MP or YOLO conf < min_conf.
+
+    Mutates timeline.frames in place; updates timeline.yolo_anchor_correction
+    metadata. Returns the timeline.
+
+    Algorithm:
+      1. For each phase in ['setup','top','transition','impact','finish']:
+           a. Find MediaPipe frame closest to phase_markers[f"{phase}Time"].
+           b. For each of the 17 keypoints, compute offset = yolo_kp - mp_kp.
+           c. If either side has conf<min_conf, mark that (phase, kp) None.
+      2. For each timeline frame:
+           a. If ts < first anchor: apply first anchor's offsets.
+           b. If ts > last anchor: apply last anchor's offsets.
+           c. Otherwise: linear lerp between bracketing anchors per kp.
+           d. None anchors are skipped (use neighbouring anchor's offset).
+    """
+    if not yolo_keypoints_per_phase:
+        timeline["yolo_anchor_correction"] = {"applied": False}
+        logger.info("[pose_timeline] apply_yolo_anchor_correction: no YOLO data — skipped")
+        return timeline
+
+    phase_names_order = ("setup", "top", "transition", "impact", "finish")
+    frames = timeline["frames"]
+    if not frames:
+        timeline["yolo_anchor_correction"] = {"applied": False}
+        return timeline
+
+    # ── Step 1: build anchors ───────────────────────────────────────────
+    anchor_ts: list[float] = []
+    anchor_offsets: list[dict[str, Optional[tuple[float, float]]]] = []
+    applied_phases: list[str] = []
+
+    for phase in phase_names_order:
+        if phase not in yolo_keypoints_per_phase:
+            continue
+        time_key = f"{phase}Time"
+        phase_ts = phase_markers.get(time_key)
+        if phase_ts is None:
+            continue
+        yolo_kps = yolo_keypoints_per_phase[phase]
+        if not isinstance(yolo_kps, list) or len(yolo_kps) < 17:
+            continue
+
+        # Find MediaPipe frame closest to phase_ts
+        best_idx = min(
+            range(len(frames)),
+            key=lambda i: abs(frames[i]["ts"] - phase_ts),
+        )
+        mp_frame = frames[best_idx]
+
+        per_kp_offset: dict[str, Optional[tuple[float, float]]] = {}
+        for kp_idx, name in enumerate(COCO_NAMES):
+            mp_kp = mp_frame["keypoints"][name]
+            yolo_kp = yolo_kps[kp_idx]
+            if (mp_kp[0] is None
+                    or not isinstance(yolo_kp, (list, tuple)) or len(yolo_kp) < 3
+                    or yolo_kp[2] < min_conf or mp_kp[2] < min_conf):
+                per_kp_offset[name] = None
+                continue
+            per_kp_offset[name] = (
+                float(yolo_kp[0]) - mp_kp[0],
+                float(yolo_kp[1]) - mp_kp[1],
+            )
+
+        anchor_ts.append(float(phase_ts))
+        anchor_offsets.append(per_kp_offset)
+        applied_phases.append(phase)
+
+    if not anchor_ts:
+        timeline["yolo_anchor_correction"] = {"applied": False}
+        logger.info("[pose_timeline] apply_yolo_anchor_correction: no usable anchors")
+        return timeline
+
+    # ── Step 2: apply per-frame interpolated offsets ───────────────────
+    for f in frames:
+        ts = f["ts"]
+        # Locate bracket
+        if ts <= anchor_ts[0]:
+            seg_a, seg_b = anchor_offsets[0], anchor_offsets[0]
+            t_lerp = 0.0
+        elif ts >= anchor_ts[-1]:
+            seg_a, seg_b = anchor_offsets[-1], anchor_offsets[-1]
+            t_lerp = 0.0
+        else:
+            seg_a = seg_b = anchor_offsets[0]
+            t_lerp = 0.0
+            for i in range(len(anchor_ts) - 1):
+                if anchor_ts[i] <= ts <= anchor_ts[i + 1]:
+                    seg_a = anchor_offsets[i]
+                    seg_b = anchor_offsets[i + 1]
+                    span = anchor_ts[i + 1] - anchor_ts[i]
+                    t_lerp = (ts - anchor_ts[i]) / span if span > 0 else 0.0
+                    break
+
+        for name in COCO_NAMES:
+            kp = f["keypoints"][name]
+            if kp[0] is None:
+                continue
+            off_a = seg_a.get(name)
+            off_b = seg_b.get(name)
+            if off_a is None and off_b is None:
+                continue
+            if off_a is None:
+                off = off_b
+            elif off_b is None:
+                off = off_a
+            else:
+                off = (
+                    off_a[0] + (off_b[0] - off_a[0]) * t_lerp,
+                    off_a[1] + (off_b[1] - off_a[1]) * t_lerp,
+                )
+            kp[0] = round(kp[0] + off[0], 1)
+            kp[1] = round(kp[1] + off[1], 1)
+
+    timeline["yolo_anchor_correction"] = {
+        "applied": True,
+        "anchor_phases": applied_phases,
+        "method": "linear_per_segment",
+    }
+    logger.info(
+        f"[pose_timeline] apply_yolo_anchor_correction: applied "
+        f"phases={applied_phases}"
+    )
+    return timeline
+
+
+# ---------------------------------------------------------------------------
 # 5. Validation — gate before writing to swing_videos.pose_timeline_2d
 # ---------------------------------------------------------------------------
 

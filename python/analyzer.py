@@ -166,13 +166,25 @@ def moving_average(arr: np.ndarray, window: int = 3) -> np.ndarray:
     kernel = np.ones(window) / window
     return np.convolve(arr, kernel, mode='same')
 
-def analyze_video(video_path: str, sample_fps: float = 4.0) -> tuple[VideoMetadata, List[KeypointFrame]]:
+def analyze_video(
+    video_path: str, sample_fps: float = 4.0,
+) -> tuple[VideoMetadata, List[KeypointFrame], list[dict]]:
     """
     Main analysis function.
     Samples the video at sample_fps (default 4 frames/sec),
-    runs MediaPipe Pose on each frame,
-    returns VideoMetadata + List[KeypointFrame].
+    runs MediaPipe Pose on each frame.
+
+    Returns:
+        VideoMetadata,
+        List[KeypointFrame]    — existing BodyLandmarks (NOSE + 12 joints),
+        list[dict]             — PR-4 raw COCO 17 frames {ts, frame_idx,
+                                  interpolated:False, keypoints:{name:[x,y,c]}}
+                                  for input to pose_timeline.py pipeline.
     """
+    # PR-4: COCO 17 extractor — defined here (rather than imported) so the
+    # callers that don't care about pose_timeline still don't pay an import.
+    from pose_timeline import extract_coco_subset_from_mediapipe
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {video_path}")
@@ -193,6 +205,7 @@ def analyze_video(video_path: str, sample_fps: float = 4.0) -> tuple[VideoMetada
     )
 
     keypoint_frames: List[KeypointFrame] = []
+    raw_coco_frames: list[dict] = []
     frame_idx = 0
 
     with pose_config as pose:
@@ -215,8 +228,27 @@ def analyze_video(video_path: str, sample_fps: float = 4.0) -> tuple[VideoMetada
                         landmarks=landmarks,
                     ))
 
+                # PR-4: capture full 17-COCO subset for pose_timeline pipeline.
+                # Independent of the BodyLandmarks/conf_threshold path above
+                # so partial-confidence frames still enter the timeline (the
+                # COCO extractor nulls out individual low-vis keypoints).
+                if result.pose_landmarks:
+                    raw_coco_frames.append({
+                        "ts": round(time_sec, 3),
+                        "frame_idx": frame_idx,
+                        "interpolated": False,
+                        "keypoints": extract_coco_subset_from_mediapipe(
+                            result.pose_landmarks.landmark,
+                            metadata.width,
+                            metadata.height,
+                        ),
+                    })
+
             frame_idx += 1
 
     cap.release()
-    logger.info(f"Extracted {len(keypoint_frames)} keypoint frames")
-    return metadata, keypoint_frames
+    logger.info(
+        f"Extracted {len(keypoint_frames)} keypoint frames; "
+        f"{len(raw_coco_frames)} raw COCO frames"
+    )
+    return metadata, keypoint_frames, raw_coco_frames

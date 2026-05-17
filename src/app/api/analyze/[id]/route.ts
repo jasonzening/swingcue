@@ -67,6 +67,10 @@ async function callPythonAnalyzer(
   keypointTimeline: KeypointFrame[];
   detectedIssue: MainIssueType;
   confidence: number;
+  // PR-4: 17-keypoint COCO frame-level timeline. Typed at the consumer
+  // site (commit 4 lands the PoseTimeline type); kept as unknown here so
+  // commits 3 and 4 are independently buildable.
+  poseTimeline2d: unknown | null;
 } | null> {
   if (!PYTHON_ANALYZER_URL) {
     console.log('[analyze] PYTHON_ANALYZER_URL not set â using stub');
@@ -132,6 +136,7 @@ async function callPythonAnalyzer(
       keypointTimeline: data.keypointTimeline ?? [],
       detectedIssue:    detectedIssue as MainIssueType,
       confidence,
+      poseTimeline2d:   data.poseTimeline2d ?? null,
     };
 
   } catch (err) {
@@ -187,6 +192,7 @@ export async function POST(
   let detectedIssue: MainIssueType;
   let issueConfidence: number;
   let dataSource = 'stub';
+  let poseTimeline2d: unknown | null = null;  // PR-4
 
   /* ââ Try Python service ââ */
   if (PYTHON_ANALYZER_URL && video.storage_path) {
@@ -210,6 +216,7 @@ export async function POST(
         detectedIssue    = pythonResult.detectedIssue;
         issueConfidence  = pythonResult.confidence;
         dataSource       = 'mediapipe';
+        poseTimeline2d   = pythonResult.poseTimeline2d;
         console.log(`[analyze] Using real MediaPipe data: ${detectedIssue} (conf=${issueConfidence.toFixed(2)})`);
       }
     }
@@ -271,6 +278,10 @@ export async function POST(
     await supabase.from('swing_videos').update({
       status: 'completed',
       processing_completed_at: new Date().toISOString(),
+      // PR-4: persist the 17-keypoint COCO frame-level timeline.
+      // NULL when Python returned no usable timeline (e.g., stub path,
+      // or validate_timeline gate failed).
+      pose_timeline_2d: poseTimeline2d,
     }).eq('id', videoId);
 
     return NextResponse.json({ status: 'completed', analysis, dataSource });

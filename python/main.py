@@ -119,7 +119,9 @@ async def analyze(req: AnalyzeRequest):
         tmp_path = download_video(req.video_url)
 
         # 2. Analyze
-        metadata, keypoint_frames = analyze_video(tmp_path, sample_fps=req.sample_fps)
+        metadata, keypoint_frames, raw_coco_frames = analyze_video(
+            tmp_path, sample_fps=req.sample_fps,
+        )
 
         # 3. Phase detection
         phases = detect_phases(keypoint_frames, metadata.durationSec)
@@ -199,6 +201,56 @@ async def analyze(req: AnalyzeRequest):
                 "video_id/user_id missing in request — skipping pose3d+yolo"
             )
 
+        # 4c. PR-4: pose_timeline_2d pipeline.
+        # Independent of pose3d / yolo paths above; runs on the MediaPipe-
+        # derived raw_coco_frames. YOLO 5-phase keypoints (if available)
+        # are used as anchor corrections. Non-fatal on failure.
+        pose_timeline_2d: Optional[dict] = None
+        try:
+            if raw_coco_frames:
+                from pose_timeline import (
+                    apply_yolo_anchor_correction,
+                    build_timeline_from_raw_coco_frames,
+                    detect_outliers_and_reject,
+                    gap_fill_linear,
+                    smooth_ema,
+                    validate_timeline,
+                )
+                tl = build_timeline_from_raw_coco_frames(
+                    raw_frames=raw_coco_frames,
+                    video_width=metadata.width,
+                    video_height=metadata.height,
+                    sample_fps=req.sample_fps,
+                )
+                tl = detect_outliers_and_reject(tl)
+                tl = smooth_ema(tl, alpha=0.4)
+                tl = gap_fill_linear(tl)
+                # Collect YOLO keypoints per phase from the orchestrator
+                # summary (PR-4 patched yolo/orchestrator.py to include
+                # keypoints_2d on completed-status entries).
+                yolo_kps_per_phase: dict[str, list] = {}
+                if isinstance(yolo_summary, dict):
+                    for r in yolo_summary.get("results", []) or []:
+                        if (isinstance(r, dict)
+                                and r.get("status") == "completed"
+                                and r.get("keypoints_2d") is not None):
+                            yolo_kps_per_phase[r["phase"]] = r["keypoints_2d"]
+                if yolo_kps_per_phase:
+                    tl = apply_yolo_anchor_correction(
+                        tl, yolo_kps_per_phase, phases,
+                    )
+                if validate_timeline(tl):
+                    pose_timeline_2d = tl
+                else:
+                    logger.warning(
+                        "[pose_timeline] validation failed; writing NULL"
+                    )
+        except Exception as e:
+            logger.error(
+                f"[pose_timeline] pipeline failed (non-fatal): {e}",
+                exc_info=True,
+            )
+
         # 5. Issue detection
         issue_result = score_issue_from_keypoints(keypoint_frames)
 
@@ -210,7 +262,8 @@ async def analyze(req: AnalyzeRequest):
             f"{metadata.durationSec:.2f}s, "
             f"issue={issue_result['issue']}, "
             f"pose3d={pose3d_summary}, "
-            f"yolo={yolo_summary}"
+            f"yolo={yolo_summary}, "
+            f"pose_timeline_2d={'OK' if pose_timeline_2d else 'NULL'}"
         )
 
         return {
@@ -226,6 +279,7 @@ async def analyze(req: AnalyzeRequest):
             "issueDetection": issue_result,
             "pose3dSummary": pose3d_summary,
             "yoloSummary": yolo_summary,
+            "poseTimeline2d": pose_timeline_2d,
         }
 
     except Exception as e:
