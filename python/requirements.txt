@@ -4,13 +4,16 @@ httpx==0.27.2
 pydantic==2.9.2
 # Heavy deps — only installed once in Docker layer
 mediapipe==0.10.14
-# PR-3 hotfix v5: pin BOTH opencv-python and opencv-python-headless to the
-# same numpy-1.x-compatible version. Ultralytics declares opencv-python as
-# a dependency; if we don't pin it, pip resolves to the latest (4.11.x,
-# numpy 2.x ABI) and overwrites our pinned headless cv2/ binaries (both
-# packages install to the same site-packages/cv2/ directory).
+# PR-3 hotfix v6: three opencv variants all install to the SAME
+# site-packages/cv2/ directory — last one written wins. We must pin ALL
+# THREE to the same numpy-1.x-compiled version. ultralytics-thop (a
+# transitive dep of ultralytics) pulls opencv-contrib-python at the latest
+# 4.11.x (numpy 2.x ABI) and silently overwrote our 4.10.0.84 binaries,
+# producing the `numpy._core.multiarray failed to import` runtime crash
+# even after hotfix v5 pinned the first two.
 opencv-python-headless==4.10.0.84
 opencv-python==4.10.0.84
+opencv-contrib-python==4.10.0.84
 numpy==1.26.4
 # PR-2B: fal-ai/sam-3/3d-body
 fal-client==0.5.6

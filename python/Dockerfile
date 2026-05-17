@@ -67,6 +67,13 @@ RUN python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); print('[fi
 # headless binaries with numpy-2.x-compiled ones.
 RUN python -c "import importlib.metadata as m; names = [d.metadata['Name'] for d in m.distributions()]; ver = m.version('opencv-python') if 'opencv-python' in names else None; print(f'[final] opencv-python={ver}'); assert ver is None or ver == '4.10.0.84', f'opencv-python must be 4.10.0.84 or absent, got {ver}'"
 
+# Hotfix v6: assert opencv-contrib-python is either absent or 4.10.0.84.
+# This is the THIRD opencv variant — ultralytics-thop transitively pulls
+# it, and like its siblings it writes to the same cv2/ dir. Last write
+# wins, so an unpinned 4.11.x here will overwrite both opencv-python and
+# opencv-python-headless 4.10.0.84 with numpy-2.x-compiled binaries.
+RUN python -c "import importlib.metadata as m; names = [d.metadata['Name'] for d in m.distributions()]; ver = m.version('opencv-contrib-python') if 'opencv-contrib-python' in names else None; print(f'[final] opencv-contrib-python={ver}'); assert ver is None or ver == '4.10.0.84', f'opencv-contrib-python must be 4.10.0.84 or absent, got {ver}'"
+
 # ── Layer 3.8: fresh-subprocess cv2 cold import ────────────────────────────
 # Hotfix v4: same-process imports above can pass due to module caching when
 # cv2 was loaded earlier in the build (e.g. by Ultralytics during preload)
