@@ -48,53 +48,74 @@ export function SkeletonOverlay({ timeline, videoEl }: Props) {
 
   useEffect(() => {
     if (!videoEl) return;
-    let raf = 0;
 
-    const loop = () => {
+    // Single draw step — used by both the continuous rAF loop AND the
+    // PR-5 §5.5 one-shot syncs (mount + loadedmetadata + seeked). Extracted
+    // so we have exactly one source of truth for "render the SVG at the
+    // current video time" regardless of who's triggering it.
+    const draw = () => {
       const t = videoEl.currentTime;
       const candidate = nearestFrame(timeline.frames, t);
       const frame = candidate ?? lastValidFrameRef.current;
       if (candidate) lastValidFrameRef.current = candidate;
+      if (!frame) return;
 
-      if (frame) {
-        // Dots
-        for (const name of COCO_KEYPOINT_NAMES) {
-          const dot = dotRefs.current[name];
-          if (!dot) continue;
-          const kp = frame.keypoints[name];
-          const [x, y, conf] = kp;
-          if (x === null || y === null) {
-            dot.setAttribute('visibility', 'hidden');
-          } else {
-            dot.setAttribute('cx', String(x));
-            dot.setAttribute('cy', String(y));
-            dot.setAttribute('fill', conf >= HIGH_CONF ? COLOR_HIGH : COLOR_MID);
-            dot.setAttribute('visibility', 'visible');
-          }
+      // Dots
+      for (const name of COCO_KEYPOINT_NAMES) {
+        const dot = dotRefs.current[name];
+        if (!dot) continue;
+        const kp = frame.keypoints[name];
+        const [x, y, conf] = kp;
+        if (x === null || y === null) {
+          dot.setAttribute('visibility', 'hidden');
+        } else {
+          dot.setAttribute('cx', String(x));
+          dot.setAttribute('cy', String(y));
+          dot.setAttribute('fill', conf >= HIGH_CONF ? COLOR_HIGH : COLOR_MID);
+          dot.setAttribute('visibility', 'visible');
         }
-        // Edges
-        COCO_SKELETON_EDGES.forEach(([from, to], i) => {
-          const line = edgeRefs.current[i];
-          if (!line) return;
-          const a = frame.keypoints[from];
-          const b = frame.keypoints[to];
-          if (a[0] === null || a[1] === null || b[0] === null || b[1] === null) {
-            line.setAttribute('visibility', 'hidden');
-          } else {
-            line.setAttribute('x1', String(a[0]));
-            line.setAttribute('y1', String(a[1]));
-            line.setAttribute('x2', String(b[0]));
-            line.setAttribute('y2', String(b[1]));
-            line.setAttribute('visibility', 'visible');
-          }
-        });
       }
-
-      raf = requestAnimationFrame(loop);
+      // Edges
+      COCO_SKELETON_EDGES.forEach(([from, to], i) => {
+        const line = edgeRefs.current[i];
+        if (!line) return;
+        const a = frame.keypoints[from];
+        const b = frame.keypoints[to];
+        if (a[0] === null || a[1] === null || b[0] === null || b[1] === null) {
+          line.setAttribute('visibility', 'hidden');
+        } else {
+          line.setAttribute('x1', String(a[0]));
+          line.setAttribute('y1', String(a[1]));
+          line.setAttribute('x2', String(b[0]));
+          line.setAttribute('y2', String(b[1]));
+          line.setAttribute('visibility', 'visible');
+        }
+      });
     };
 
+    // Continuous rAF loop (existing behaviour).
+    let raf = 0;
+    const loop = () => {
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+
+    // PR-5 §5.5: defense-in-depth one-shot syncs. The continuous rAF
+    // covers the playing case; these handle the edge cases where the
+    // overlay is mounted after the video already has a meaningful
+    // currentTime (e.g. user toggled the overlay on while the video was
+    // ended, or seeked to a phase while paused). Without these, the
+    // first paint may show stale / 0,0 positions until the next rAF.
+    videoEl.addEventListener('loadedmetadata', draw);
+    videoEl.addEventListener('seeked', draw);
+    draw();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      videoEl.removeEventListener('loadedmetadata', draw);
+      videoEl.removeEventListener('seeked', draw);
+    };
   }, [videoEl, timeline]);
 
   return (
