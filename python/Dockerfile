@@ -60,6 +60,13 @@ RUN python -c "import cv2; print(f'[final] cv2 {cv2.__version__} OK')"
 RUN python -c "import mediapipe; print(f'[final] mediapipe {mediapipe.__version__} OK')"
 RUN python -c "from ultralytics import YOLO; YOLO('yolo11m-pose.pt'); print('[final] YOLO loaded OK')"
 
+# Hotfix v5: assert opencv-python (the full version, separate from
+# opencv-python-headless) is either absent or pinned to 4.10.0.84. Both
+# packages install to the same site-packages/cv2/ dir; if ultralytics
+# pulled in opencv-python at a later 4.11.x version it overwrote our
+# headless binaries with numpy-2.x-compiled ones.
+RUN python -c "import importlib.metadata as m; names = [d.metadata['Name'] for d in m.distributions()]; ver = m.version('opencv-python') if 'opencv-python' in names else None; print(f'[final] opencv-python={ver}'); assert ver is None or ver == '4.10.0.84', f'opencv-python must be 4.10.0.84 or absent, got {ver}'"
+
 # ── Layer 3.8: fresh-subprocess cv2 cold import ────────────────────────────
 # Hotfix v4: same-process imports above can pass due to module caching when
 # cv2 was loaded earlier in the build (e.g. by Ultralytics during preload)

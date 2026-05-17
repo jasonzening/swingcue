@@ -25,8 +25,30 @@ try:
         stderr=subprocess.STDOUT,
     ).decode().strip()
     print(f"[startup-verify] {_v}", flush=True)
+except subprocess.CalledProcessError as _e:
+    # CalledProcessError.__str__ doesn't show captured output — fetch it
+    # explicitly so we see the real Python traceback from the subprocess.
+    _out = _e.output.decode(errors="replace") if _e.output else "(no captured output)"
+    print(f"[startup-verify-FAIL] exit={_e.returncode}", flush=True)
+    print(f"[startup-verify-FAIL] subprocess stdout+stderr:\n{_out}", flush=True)
 except Exception as _e:
-    print(f"[startup-verify-FAIL] {_e}", flush=True)
+    print(f"[startup-verify-FAIL] {_e!r}", flush=True)
+
+# Also dump runtime package versions via pip freeze so we know what's
+# actually installed in the live container.
+try:
+    _f = subprocess.check_output(
+        [sys.executable, "-m", "pip", "freeze"],
+        stderr=subprocess.STDOUT,
+    ).decode()
+    _relevant = [
+        line.strip() for line in _f.split("\n")
+        if any(p in line.lower() for p in ["numpy", "opencv", "mediapipe", "ultralytics", "torch"])
+    ]
+    for line in _relevant:
+        print(f"[runtime-pkg] {line}", flush=True)
+except Exception as _e:
+    print(f"[runtime-pkg-FAIL] {_e!r}", flush=True)
 
 import asyncio
 import logging
