@@ -210,6 +210,7 @@ async def analyze(req: AnalyzeRequest):
             if raw_coco_frames:
                 from pose_timeline import (
                     apply_yolo_anchor_correction,
+                    attach_disc_anchors,
                     build_timeline_from_raw_coco_frames,
                     detect_outliers_and_reject,
                     gap_fill_linear,
@@ -239,6 +240,10 @@ async def analyze(req: AnalyzeRequest):
                     tl = apply_yolo_anchor_correction(
                         tl, yolo_kps_per_phase, phases,
                     )
+                # PR-4.1: derived disc anchors (body-aligned visual disc
+                # positions). Must run after yolo anchor correction so
+                # anchors reflect the final corrected keypoint positions.
+                tl = attach_disc_anchors(tl)
                 if validate_timeline(tl):
                     pose_timeline_2d = tl
                 else:

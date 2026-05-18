@@ -267,6 +267,32 @@ export interface PoseFrame {
   frame_idx: number;                                // original video frame index
   interpolated: boolean;                            // true = gap-filled, false = direct
   keypoints: Record<CocoKeypointName, Keypoint>;
+  /**
+   * PR-4.1: derived body-aligned anchor points for disc rendering. Absent
+   * on pre-PR-4.1 timelines OR on frames where any of the 4 source kp
+   * (shoulders + hips) was null — frontend falls back to raw midpoint.
+   * See docs/PR-3.1_POSE_DATA_AUDIT.md §4 Path Z.
+   */
+  disc_anchors?: DiscAnchors;
+}
+
+/**
+ * PR-4.1: derived disc anchors stored per-frame on PoseFrame.
+ *
+ * shoulder_center: raw midpoint of left/right shoulder (model is accurate
+ *   here so no offset is applied; field exists for schema symmetry and
+ *   future tuning).
+ * hip_belt: hip midpoint extended along the shoulder→hip vector by
+ *   DISC_HIP_BELT_EXTENSION (=0.85, backend constant) to compensate for
+ *   the COCO hip-annotation bias which lands ~130-170 native px above
+ *   the visual belt. Direction follows shoulder→hip, so during the swing
+ *   it rotates with the torso lean.
+ *
+ * Units: video native pixel space, same as raw keypoints.
+ */
+export interface DiscAnchors {
+  shoulder_center: { x: number; y: number };
+  hip_belt: { x: number; y: number };
 }
 
 export interface PoseTimeline {
@@ -274,7 +300,11 @@ export interface PoseTimeline {
   fps_sampled: number;
   video_width: number;
   video_height: number;
-  keypoint_source: 'mediapipe_pose' | 'yolo' | 'hybrid';
+  keypoint_source:
+    | 'mediapipe_pose'              // legacy (pre-PR-4.1)
+    | 'mediapipe_yolo_hybrid_v1'    // PR-4.1 — MP base + YOLO anchor + disc_anchors
+    | 'yolo'
+    | 'hybrid';
   yolo_anchor_correction: {
     applied: boolean;
     anchor_phases?: string[];
