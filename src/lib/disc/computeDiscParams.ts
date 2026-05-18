@@ -1,35 +1,30 @@
 /**
- * PR-4.1: per-frame shoulder + hip disc geometry. Disc CENTER comes from
- * the backend-derived `frame.disc_anchors` field when available, falling
- * back to raw shoulder/hip kp midpoint for legacy timelines or frames
- * where source kp are null. See PR-3.1_POSE_DATA_AUDIT.md §4 Path Z for
- * the motivation: COCO pose models annotate "hip" at the inner pelvis
- * (~130-170 native px above the visual belt), so the disc was visually
- * disconnected from the body even though the underlying skeleton dots
- * were honestly rendering the model's output. The backend now derives a
- * body-aligned anchor by extending shoulder→hip 85% past the hip; the
- * direction follows torso lean, so the anchor rotates correctly with the
- * swing without separate angular logic.
- *
- * Disc rx / ry / angleRad are still computed from the RAW shoulder (or
- * hip) keypoint pair — the rotation and size math depends on the line
- * between the two endpoints, not on the rendered center, so swapping in
- * a body-aligned center doesn't disturb them.
+ * PR-5.3: per-frame shoulder + hip disc geometry from PR-4 keypoints,
+ * with distance-ratio rotation. PR-5.1 §3.B anatomical-midpoint
+ * correction has been **reverted** in this PR — see commit message
+ * (browser-measured ground-truth vs. skeleton dots showed the shoulder
+ * lift over-corrected by 25-32 native px onto the neck, hip lift was
+ * visually negligible at ~2px).
  *
  * Pure functions — no React, no DOM. Called from the canvas rAF loop
  * in SwingPlayer.tsx.
  *
- * Inherited from prior PRs:
- *   (A) PR-5.1 — rotation magnitude derives from shoulder-distance
- *       perspective compression (acos of dist/baseline) instead of pure
- *       atan2 — atan2 alone is clipped to ±90° because MediaPipe's
- *       left/right labels are IMAGE-space, not anatomical, so L.x − R.x
- *       stays positive throughout a swing and atan2 can never exceed
- *       |π/2|. acos(ratio) sees the foreshortening and recovers the true
+ * Surviving changes vs. the PR-5 original:
+ *   (A) Rotation magnitude derives from shoulder-distance perspective
+ *       compression (acos of dist/baseline) instead of pure atan2 —
+ *       atan2 alone is clipped to ±90° because MediaPipe's left/right
+ *       labels are IMAGE-space, not anatomical, so L.x − R.x stays
+ *       positive throughout a swing and atan2 can never exceed |π/2|.
+ *       acos(ratio) sees the foreshortening and recovers the true
  *       rotation magnitude up to 90°. See PR-5.1_DESIGN.md §3.A.
- *   (C) PR-5.1 — `rx` here still returns dist/2 (raw); SwingPlayer
- *       overrides it with the per-video DiscAnchor.rx. See
- *       PR-5.1_DESIGN.md §3.C.
+ *   (C) `rx` here still returns dist/2 (raw); SwingPlayer overrides
+ *       it with the per-video DiscAnchor.rx. See PR-5.1_DESIGN.md §3.C.
+ *
+ * Removed (PR-5.3):
+ *   (B) Anatomical midpoint lift. Disc center is now the raw midpoint
+ *       of the left/right shoulder (or hip) keypoint pair — same point
+ *       SkeletonOverlay renders the dots on. Restores visual
+ *       skeleton/disc agreement.
  *
  * Angle convention (NORMATIVE, PR-5_DESIGN.md §3 unchanged):
  *   angle sign matches image-y-down rotation direction. Setup ≈ 0,
@@ -90,11 +85,9 @@ function validPair(
 /**
  * Shoulder disc from a PoseFrame.
  *
- * Center = `frame.disc_anchors.shoulder_center` when present (PR-4.1
- * backend-derived), else raw midpoint of (left_shoulder, right_shoulder).
- * Shoulder is approximately correct in the COCO pose models, so the
- * derived anchor equals the raw midpoint in practice — the field exists
- * for schema symmetry with hip_belt and as a future-tuning hook.
+ * Center = raw midpoint of (left_shoulder, right_shoulder). Matches
+ * where SkeletonOverlay draws its dots, so disc visually anchors on
+ * the skeleton's shoulder line.
  *
  * @param frame         PR-4 PoseFrame with COCO 17 keypoints.
  * @param baselineDist  Setup-frame shoulder pair distance (from
@@ -116,9 +109,8 @@ export function computeShoulderDisc(
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
 
-  const anchor = frame.disc_anchors?.shoulder_center;
-  const cx = anchor ? anchor.x : (pair.lx + pair.rx) / 2;
-  const cy = anchor ? anchor.y : (pair.ly + pair.ry) / 2;
+  const cx = (pair.lx + pair.rx) / 2;
+  const cy = (pair.ly + pair.ry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
   const rx = dist / 2;
 
@@ -135,21 +127,17 @@ export function computeShoulderDisc(
 /**
  * Hip disc from a PoseFrame.
  *
- * Center = `frame.disc_anchors.hip_belt` when present (PR-4.1
- * backend-derived; extends shoulder→hip vector by 85% to land on the
- * visual belt — see file-level doc). Falls back to raw midpoint of
- * (left_hip, right_hip) on legacy timelines or frames where source kp
- * were null.
+ * Center = raw midpoint of (left_hip, right_hip). Same convention as
+ * shoulder disc — see computeShoulderDisc.
  *
  * The third parameter (`_shoulderMid`) is retained from the PR-5.1
  * signature so existing SwingPlayer call sites still type-check
- * without modification, but it is no longer used (PR-4.1: the
- * shoulder→hip projection now lives in the backend disc_anchors field).
+ * without modification, but it is no longer used (PR-5.1 §3.B revert).
  * Removable in a future cleanup PR alongside the call-site update.
  *
  * @param frame         PR-4 PoseFrame with COCO 17 keypoints.
  * @param baselineDist  Setup-frame hip pair distance.
- * @param _shoulderMid  Deprecated (PR-4.1). Kept for caller compatibility.
+ * @param _shoulderMid  Deprecated (PR-5.3). Kept for caller compatibility.
  */
 export function computeHipDisc(
   frame: PoseFrame,
@@ -166,9 +154,8 @@ export function computeHipDisc(
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
 
-  const anchor = frame.disc_anchors?.hip_belt;
-  const cx = anchor ? anchor.x : (pair.lx + pair.rx) / 2;
-  const cy = anchor ? anchor.y : (pair.ly + pair.ry) / 2;
+  const cx = (pair.lx + pair.rx) / 2;
+  const cy = (pair.ly + pair.ry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
   const rx = dist / 2;
 

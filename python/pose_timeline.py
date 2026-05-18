@@ -254,7 +254,7 @@ def build_timeline_from_raw_coco_frames(
         "fps_sampled": int(round(sample_fps)),
         "video_width": video_width,
         "video_height": video_height,
-        "keypoint_source": "mediapipe_yolo_hybrid_v1",
+        "keypoint_source": "mediapipe_pose",
         "yolo_anchor_correction": {"applied": False},
         "frames": raw_frames,
     }
@@ -404,78 +404,6 @@ def apply_yolo_anchor_correction(
     logger.info(
         f"[pose_timeline] apply_yolo_anchor_correction: applied "
         f"phases={applied_phases}"
-    )
-    return timeline
-
-
-# ---------------------------------------------------------------------------
-# 4d. PR-4.1 — derived disc anchors (body-aligned visual disc positions)
-# ---------------------------------------------------------------------------
-
-# Calibrated against b3fea3f0 setup frame: stored hip y=634, visual belt y=770,
-# shoulder y=475 → 0.85 × (634-475) + 634 = 769 ≈ 770. The shoulder midpoint
-# itself is "approximately correct" so shoulder_center = raw midpoint (k=0).
-# Extending along the shoulder→hip vector means the projected belt point
-# rotates with the body during the swing without separate angular logic.
-DISC_HIP_BELT_EXTENSION: float = 0.85
-
-
-def compute_disc_anchors(frame_keypoints: dict[str, list[Any]]) -> Optional[dict]:
-    """
-    Derive shoulder_center + hip_belt anchor positions for one frame.
-
-    Both anchors are projected in video native pixel space, same units as
-    the raw keypoints. Returns None when any of the 4 source keypoints
-    (left/right shoulder, left/right hip) has a null coordinate — caller
-    should leave disc_anchors unset for that frame so the frontend falls
-    back to the raw midpoint behaviour.
-    """
-    ls = frame_keypoints.get("left_shoulder")
-    rs = frame_keypoints.get("right_shoulder")
-    lh = frame_keypoints.get("left_hip")
-    rh = frame_keypoints.get("right_hip")
-    if not (ls and rs and lh and rh):
-        return None
-    if (ls[0] is None or rs[0] is None
-            or lh[0] is None or rh[0] is None):
-        return None
-
-    sh_x = (ls[0] + rs[0]) / 2
-    sh_y = (ls[1] + rs[1]) / 2
-    hp_x = (lh[0] + rh[0]) / 2
-    hp_y = (lh[1] + rh[1]) / 2
-
-    return {
-        "shoulder_center": {
-            "x": round(sh_x, 1),
-            "y": round(sh_y, 1),
-        },
-        "hip_belt": {
-            "x": round(hp_x + DISC_HIP_BELT_EXTENSION * (hp_x - sh_x), 1),
-            "y": round(hp_y + DISC_HIP_BELT_EXTENSION * (hp_y - sh_y), 1),
-        },
-    }
-
-
-def attach_disc_anchors(timeline: dict) -> dict:
-    """
-    Compute frame.disc_anchors for every frame in the timeline. Frames
-    where any source keypoint is null are left without a disc_anchors
-    key (frontend falls back to raw midpoint).
-
-    Mutates and returns timeline. Run AFTER apply_yolo_anchor_correction
-    so anchors reflect the final corrected keypoint positions.
-    """
-    attached_count = 0
-    for f in timeline["frames"]:
-        anchors = compute_disc_anchors(f["keypoints"])
-        if anchors is not None:
-            f["disc_anchors"] = anchors
-            attached_count += 1
-    logger.info(
-        f"[pose_timeline] attach_disc_anchors: "
-        f"attached={attached_count}/{len(timeline['frames'])} "
-        f"extension={DISC_HIP_BELT_EXTENSION}"
     )
     return timeline
 
