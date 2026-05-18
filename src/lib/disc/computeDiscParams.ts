@@ -1,11 +1,15 @@
 /**
- * PR-5.1: per-frame shoulder + hip disc geometry from PR-4 keypoints,
- * with PR-5.1 anatomical correction + distance-ratio rotation.
+ * PR-5.3: per-frame shoulder + hip disc geometry from PR-4 keypoints,
+ * with distance-ratio rotation. PR-5.1 §3.B anatomical-midpoint
+ * correction has been **reverted** in this PR — see commit message
+ * (browser-measured ground-truth vs. skeleton dots showed the shoulder
+ * lift over-corrected by 25-32 native px onto the neck, hip lift was
+ * visually negligible at ~2px).
  *
  * Pure functions — no React, no DOM. Called from the canvas rAF loop
  * in SwingPlayer.tsx.
  *
- * Three changes vs. the PR-5 original:
+ * Surviving changes vs. the PR-5 original:
  *   (A) Rotation magnitude derives from shoulder-distance perspective
  *       compression (acos of dist/baseline) instead of pure atan2 —
  *       atan2 alone is clipped to ±90° because MediaPipe's left/right
@@ -13,12 +17,14 @@
  *       positive throughout a swing and atan2 can never exceed |π/2|.
  *       acos(ratio) sees the foreshortening and recovers the true
  *       rotation magnitude up to 90°. See PR-5.1_DESIGN.md §3.A.
- *   (B) Disc center is lifted from MediaPipe's clavicle/abdomen
- *       midpoint toward the anatomical acromion (shoulder) or hip
- *       joint via head-anchored / shoulder-anchored offsets. See
- *       PR-5.1_DESIGN.md §3.B.
  *   (C) `rx` here still returns dist/2 (raw); SwingPlayer overrides
- *       it with the per-video DiscAnchor.rx. See §3.C.
+ *       it with the per-video DiscAnchor.rx. See PR-5.1_DESIGN.md §3.C.
+ *
+ * Removed (PR-5.3):
+ *   (B) Anatomical midpoint lift. Disc center is now the raw midpoint
+ *       of the left/right shoulder (or hip) keypoint pair — same point
+ *       SkeletonOverlay renders the dots on. Restores visual
+ *       skeleton/disc agreement.
  *
  * Angle convention (NORMATIVE, PR-5_DESIGN.md §3 unchanged):
  *   angle sign matches image-y-down rotation direction. Setup ≈ 0,
@@ -62,7 +68,7 @@ function rotationFromGeometry(
 /**
  * Validate + unpack a Keypoint into a tuple of (x, y, conf) where x/y
  * are guaranteed numeric. Returns null on missing-pair, low confidence,
- * or null coords. Coalesces the four PR-5.1 / PR-5 fail-modes.
+ * or null coords.
  */
 function validPair(
   L: Keypoint | undefined, R: Keypoint | undefined,
@@ -77,66 +83,11 @@ function validPair(
 }
 
 /**
- * PR-5.1 §3.B — lift shoulder midpoint from MediaPipe's clavicle
- * position toward the visual acromion. Preferred path uses the
- * (nose, ear) triangle to derive a 0.5× ear-distance offset along
- * the mid→nose direction; fallback heuristic is a 15% upward shift
- * by the shoulder-pair distance.
- */
-function correctShoulderMidpoint(
-  rawMidX: number, rawMidY: number,
-  shoulderDist: number,
-  nose: Keypoint | undefined,
-  leftEar: Keypoint | undefined,
-  rightEar: Keypoint | undefined,
-): { cx: number; cy: number } {
-  if (nose && leftEar && rightEar
-      && nose[0] !== null && nose[1] !== null
-      && leftEar[0] !== null && leftEar[1] !== null
-      && rightEar[0] !== null && rightEar[1] !== null
-      && leftEar[2] > MIN_CONFIDENCE && rightEar[2] > MIN_CONFIDENCE) {
-    const earDx = leftEar[0] - rightEar[0];
-    const earDy = leftEar[1] - rightEar[1];
-    const earDist = Math.sqrt(earDx * earDx + earDy * earDy);
-    const liftAmount = earDist * 0.5;
-    const dx = nose[0] - rawMidX;
-    const dy = nose[1] - rawMidY;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len > 1) {
-      return {
-        cx: rawMidX + (dx / len) * liftAmount,
-        cy: rawMidY + (dy / len) * liftAmount,
-      };
-    }
-  }
-  // Fallback: straight up by 15% of shoulder distance.
-  return { cx: rawMidX, cy: rawMidY - shoulderDist * 0.15 };
-}
-
-/**
- * PR-5.1 §3.B — lift hip midpoint from MediaPipe's abdomen position
- * toward the corrected shoulder midpoint by 10% of hip-pair distance.
- * Returns the raw midpoint when no shoulder reference is available.
- */
-function correctHipMidpoint(
-  rawMidX: number, rawMidY: number,
-  hipDist: number,
-  shoulderMid: { cx: number; cy: number } | null,
-): { cx: number; cy: number } {
-  if (!shoulderMid) return { cx: rawMidX, cy: rawMidY };
-  const dx = shoulderMid.cx - rawMidX;
-  const dy = shoulderMid.cy - rawMidY;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len <= 1) return { cx: rawMidX, cy: rawMidY };
-  const liftAmount = hipDist * 0.1;
-  return {
-    cx: rawMidX + (dx / len) * liftAmount,
-    cy: rawMidY + (dy / len) * liftAmount,
-  };
-}
-
-/**
  * Shoulder disc from a PoseFrame.
+ *
+ * Center = raw midpoint of (left_shoulder, right_shoulder). Matches
+ * where SkeletonOverlay draws its dots, so disc visually anchors on
+ * the skeleton's shoulder line.
  *
  * @param frame         PR-4 PoseFrame with COCO 17 keypoints.
  * @param baselineDist  Setup-frame shoulder pair distance (from
@@ -158,21 +109,14 @@ export function computeShoulderDisc(
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
 
-  const rawMidX = (pair.lx + pair.rx) / 2;
-  const rawMidY = (pair.ly + pair.ry) / 2;
-  const corrected = correctShoulderMidpoint(
-    rawMidX, rawMidY, dist,
-    frame.keypoints.nose,
-    frame.keypoints.left_ear,
-    frame.keypoints.right_ear,
-  );
-
+  const cx = (pair.lx + pair.rx) / 2;
+  const cy = (pair.ly + pair.ry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
-
   const rx = dist / 2;
+
   return {
-    cx: corrected.cx,
-    cy: corrected.cy,
+    cx,
+    cy,
     rx,
     ry: rx * PERSPECTIVE_RY_RATIO,
     angleRad,
@@ -183,18 +127,22 @@ export function computeShoulderDisc(
 /**
  * Hip disc from a PoseFrame.
  *
+ * Center = raw midpoint of (left_hip, right_hip). Same convention as
+ * shoulder disc — see computeShoulderDisc.
+ *
+ * The third parameter (`_shoulderMid`) is retained from the PR-5.1
+ * signature so existing SwingPlayer call sites still type-check
+ * without modification, but it is no longer used (PR-5.1 §3.B revert).
+ * Removable in a future cleanup PR alongside the call-site update.
+ *
  * @param frame         PR-4 PoseFrame with COCO 17 keypoints.
- * @param baselineDist  Setup-frame hip pair distance (from SwingPlayer's
- *                      `discAnchorRef.hipRx * 2`). See computeShoulderDisc.
- * @param shoulderMid   Already-corrected shoulder midpoint (cx, cy) for
- *                      this same frame, so the hip anatomical lift points
- *                      toward the right place. Pass null when the
- *                      shoulder disc could not be computed (rare).
+ * @param baselineDist  Setup-frame hip pair distance.
+ * @param _shoulderMid  Deprecated (PR-5.3). Kept for caller compatibility.
  */
 export function computeHipDisc(
   frame: PoseFrame,
   baselineDist: number | null,
-  shoulderMid: { cx: number; cy: number } | null,
+  _shoulderMid: { cx: number; cy: number } | null,
 ): DiscParams | null {
   const pair = validPair(
     frame.keypoints.left_hip,
@@ -206,16 +154,14 @@ export function computeHipDisc(
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
 
-  const rawMidX = (pair.lx + pair.rx) / 2;
-  const rawMidY = (pair.ly + pair.ry) / 2;
-  const corrected = correctHipMidpoint(rawMidX, rawMidY, dist, shoulderMid);
-
+  const cx = (pair.lx + pair.rx) / 2;
+  const cy = (pair.ly + pair.ry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
-
   const rx = dist / 2;
+
   return {
-    cx: corrected.cx,
-    cy: corrected.cy,
+    cx,
+    cy,
     rx,
     ry: rx * PERSPECTIVE_RY_RATIO,
     angleRad,
