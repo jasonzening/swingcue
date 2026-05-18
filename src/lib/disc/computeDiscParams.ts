@@ -37,7 +37,29 @@ import type { PoseFrame, Keypoint } from '@/types/analysis';
 import type { DiscParams } from './types';
 
 const MIN_CONFIDENCE = 0.3;
-const PERSPECTIVE_RY_RATIO = 0.2;
+
+/**
+ * PR-5.4: disc radius is 80% of shoulder/hip kp distance (rx),
+ * so disc width = 1.6 × kp distance, extending ~30% beyond
+ * the lateral keypoints. Combined with perspective foreshortening
+ * and 3D tilt, the disc envelopes the upper/lower torso visually
+ * while the disc center remains exactly on the kp midpoint.
+ *
+ * Exported so SwingPlayer can apply the same ratio when overriding
+ * the per-frame rx with the per-video DiscAnchor (PR-5.1 §3.C). The
+ * anchor stores the setup-baseline distance/2, which must then be
+ * scaled identically here for the locked size to match.
+ */
+export const DISC_RX_RATIO = 1.6;
+
+/**
+ * PR-5.4: 3D plane depth ratio (was 0.20 pre-PR-5.4). After the
+ * camera-below-plane skew in SwingPlayer.drawTiltedDisc multiplies
+ * this by cos(25°) ≈ 0.906, the on-screen ry/rx settles around 0.29.
+ * Exported for the same SwingPlayer override-path reason as
+ * DISC_RX_RATIO.
+ */
+export const PERSPECTIVE_RY_RATIO = 0.32;
 
 /**
  * Distance-ratio rotation. When `baselineDist` is null/invalid, falls back
@@ -112,7 +134,10 @@ export function computeShoulderDisc(
   const cx = (pair.lx + pair.rx) / 2;
   const cy = (pair.ly + pair.ry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
-  const rx = dist / 2;
+  // PR-5.4: rx widened past the lateral kp so the disc visually
+  // envelops the upper/lower torso. Center stays on the raw kp
+  // midpoint (PR-5.3); only the radius scales.
+  const rx = (dist * DISC_RX_RATIO) / 2;
 
   return {
     cx,
@@ -157,7 +182,10 @@ export function computeHipDisc(
   const cx = (pair.lx + pair.rx) / 2;
   const cy = (pair.ly + pair.ry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
-  const rx = dist / 2;
+  // PR-5.4: rx widened past the lateral kp so the disc visually
+  // envelops the upper/lower torso. Center stays on the raw kp
+  // midpoint (PR-5.3); only the radius scales.
+  const rx = (dist * DISC_RX_RATIO) / 2;
 
   return {
     cx,

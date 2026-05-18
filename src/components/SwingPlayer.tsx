@@ -15,9 +15,24 @@ import type { OverlayElement, OverlayTimeline, PhaseMarkers, PoseTimeline } from
 import { SkeletonOverlay } from '@/components/SkeletonOverlay';
 // PR-5: frame-level disc geometry from PR-4 pose_timeline_2d.
 import { frameAt } from '@/lib/disc/frameAt';
-import { computeShoulderDisc, computeHipDisc } from '@/lib/disc/computeDiscParams';
+import {
+  computeShoulderDisc,
+  computeHipDisc,
+  DISC_RX_RATIO,
+  PERSPECTIVE_RY_RATIO,
+} from '@/lib/disc/computeDiscParams';
 import { unwrapAngle } from '@/lib/disc/unwrap';
-import type { DiscAnchor, DiscParams } from '@/lib/disc/types';
+import type { DiscAnchor } from '@/lib/disc/types';
+
+// ── PR-5.4 visual constants ──────────────────────────────────────────────
+// Neon green for both discs and the kp-line glow. Jason's single-color
+// decision (PR-5.4): shoulder vs hip will be distinguished later by a
+// rotation-angle numeric readout, not by hue.
+const NEON_GREEN = '#00ff88';
+// 3D perspective tilt — simulates viewing a horizontal body-rotation
+// plane from below. Applied via ctx.transform y-axis squish by cos(tilt).
+const PERSPECTIVE_TILT_DEG = 25;
+const PERSPECTIVE_TILT_RAD = (PERSPECTIVE_TILT_DEG * Math.PI) / 180;
 
 interface Props {
   videoUrl: string;
@@ -59,27 +74,79 @@ function isEllipseElement(el: OverlayElement): boolean {
 }
 
 /**
- * PR-5: draw one disc on the canvas in video-native-pixel coordinates,
- * scaled to the canvas's display dims. `scaleX`/`scaleY` are computed
- * from `canvas.width / poseTimeline.video_width` (and y analogously).
+ * PR-5.4: draw a 3D-tilted neon disc representing a body rotation plane.
  *
- * Coordinate / angle convention: see PR-5_DESIGN.md §3.
+ * The ellipse is rendered in a transformed coordinate system that
+ * simulates viewing a horizontal plane from below at PERSPECTIVE_TILT_DEG.
+ * Stroke is a neon outer (with shadow blur for the glow halo) plus a
+ * thinner white inner highlight — the double-stroke is what gives the
+ * "physical hoop" look in Jason's reference sample.
+ *
+ * cx/cy/rx/ry are all canvas-px (caller pre-scales). cx/cy stay exactly
+ * on the kp midpoint (PR-5.3 honesty preserved) — only the visual radius
+ * and tilt change.
  */
-function drawDisc(
+function drawTiltedDisc(
   ctx: CanvasRenderingContext2D,
-  p: DiscParams,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  angleRad: number,
   color: string,
-  scaleX: number,
-  scaleY: number,
 ): void {
   ctx.save();
-  ctx.translate(p.cx * scaleX, p.cy * scaleY);
-  ctx.rotate(p.angleRad);
-  ctx.beginPath();
-  ctx.ellipse(0, 0, p.rx * scaleX, p.ry * scaleY, 0, 0, Math.PI * 2);
+  // 1. Move origin to disc center, apply in-plane rotation (the
+  //    shoulder/hip line slope from PR-5.1 acos rotation).
+  ctx.translate(cx, cy);
+  ctx.rotate(angleRad);
+  // 2. Camera-below-plane perspective: squish the y axis by cos(tilt)
+  //    so the rotated ellipse looks like a tilted horizontal plane.
+  const cosT = Math.cos(PERSPECTIVE_TILT_RAD);
+  ctx.transform(1, 0, 0, cosT, 0, 0);
+  // 3. Outer neon stroke + glow.
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 12;
   ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // 4. Inner white highlight (no shadow) — depth pass.
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * PR-5.4: draw a frame-level horizontal kp connector line — the shoulder
+ * pair (or hip pair) drawn directly from poseFrame.keypoints. White solid
+ * with a neon-green outer glow, round caps. Sits visually inside the disc
+ * along the rotation axis. Endpoints are in canvas px (caller pre-scales).
+ *
+ * Note: this co-exists with the PR-3 phase-keyed LineElements that flow
+ * through renderFrame()/OverlayRenderer (the existing rgba(255,255,255,0.92)
+ * sparse lines). The new line is per-frame, so it tracks the swing live;
+ * the old phase lines snap to phase frames only.
+ */
+function drawKpLine(
+  ctx: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): void {
+  ctx.save();
+  ctx.shadowColor = NEON_GREEN;
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 4;
-  ctx.globalAlpha = 0.92;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
   ctx.stroke();
   ctx.restore();
 }
@@ -164,6 +231,11 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         // earliest setup-phase frame where all 4 shoulder + hip kp
         // have confidence ≥ 0.5. ts < 0.8s ensures we only capture
         // setup geometry, not mid-swing positions.
+        //
+        // PR-5.4: the stored rx now bakes in DISC_RX_RATIO so the
+        // override path below stays consistent with computeShoulderDisc's
+        // per-frame rx (which also includes the ratio). Without this the
+        // override would shrink the disc back to the raw kp half-width.
         if (!discAnchorRef.current && poseFrame.ts < 0.8) {
           const ls = poseFrame.keypoints.left_shoulder;
           const rs = poseFrame.keypoints.right_shoulder;
@@ -180,8 +252,8 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             const hDx = (lh[0] as number) - (rh[0] as number);
             const hDy = (lh[1] as number) - (rh[1] as number);
             discAnchorRef.current = {
-              shoulderRx: Math.sqrt(sDx * sDx + sDy * sDy) / 2,
-              hipRx:      Math.sqrt(hDx * hDx + hDy * hDy) / 2,
+              shoulderRx: (Math.sqrt(sDx * sDx + sDy * sDy) / 2) * DISC_RX_RATIO,
+              hipRx:      (Math.sqrt(hDx * hDx + hDy * hDy) / 2) * DISC_RX_RATIO,
             };
           }
         }
@@ -202,11 +274,18 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
           lastShoulderRef.current = { angleRad: unwrapped, ts: t };
           // PR-5.1 §3.C: override raw rx with the per-video anchor so
           // the disc doesn't shrink when shoulders are foreshortened.
+          // PR-5.4: both branches of the ?? now carry DISC_RX_RATIO —
+          // anchor stores it from lazy-init, computeShoulderDisc bakes
+          // it into its return rx — so ry derives via PERSPECTIVE_RY_RATIO.
           const fixedRx = discAnchorRef.current?.shoulderRx ?? shoulder.rx;
-          drawDisc(
+          drawTiltedDisc(
             ctx,
-            { ...shoulder, rx: fixedRx, ry: fixedRx * 0.2, angleRad: unwrapped },
-            '#FFFFFF', scaleX, scaleY,
+            shoulder.cx * scaleX,
+            shoulder.cy * scaleY,
+            fixedRx * scaleX,
+            fixedRx * PERSPECTIVE_RY_RATIO * scaleY,
+            unwrapped,
+            NEON_GREEN,
           );
         }
 
@@ -223,10 +302,39 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
           );
           lastHipRef.current = { angleRad: unwrapped, ts: t };
           const fixedRx = discAnchorRef.current?.hipRx ?? hip.rx;
-          drawDisc(
+          drawTiltedDisc(
             ctx,
-            { ...hip, rx: fixedRx, ry: fixedRx * 0.2, angleRad: unwrapped },
-            '#FFFFFF', scaleX, scaleY,
+            hip.cx * scaleX,
+            hip.cy * scaleY,
+            fixedRx * scaleX,
+            fixedRx * PERSPECTIVE_RY_RATIO * scaleY,
+            unwrapped,
+            NEON_GREEN,
+          );
+        }
+
+        // PR-5.4: frame-level horizontal kp connector lines, drawn
+        // directly from the per-frame keypoints (no anchor override) so
+        // they track the swing live. Endpoints are validated against
+        // null coords — same gating as the disc helpers.
+        const ls = poseFrame.keypoints.left_shoulder;
+        const rs = poseFrame.keypoints.right_shoulder;
+        if (ls[0] !== null && ls[1] !== null
+            && rs[0] !== null && rs[1] !== null) {
+          drawKpLine(
+            ctx,
+            ls[0] * scaleX, ls[1] * scaleY,
+            rs[0] * scaleX, rs[1] * scaleY,
+          );
+        }
+        const lh = poseFrame.keypoints.left_hip;
+        const rh = poseFrame.keypoints.right_hip;
+        if (lh[0] !== null && lh[1] !== null
+            && rh[0] !== null && rh[1] !== null) {
+          drawKpLine(
+            ctx,
+            lh[0] * scaleX, lh[1] * scaleY,
+            rh[0] * scaleX, rh[1] * scaleY,
           );
         }
       }
