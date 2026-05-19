@@ -52,7 +52,9 @@ import { getOverlayAtTime, getCurrentPhase, formatTime } from '@/lib/overlay/pla
 import type { OverlayElement, OverlayTimeline, PhaseMarkers, PoseTimeline } from '@/types/analysis';
 import { SkeletonOverlay } from '@/components/SkeletonOverlay';
 // PR-5: frame-level disc geometry from PR-4 pose_timeline_2d.
-import { frameAt } from '@/lib/disc/frameAt';
+// PR-5.9: `frameAt` kept (deprecated) for any out-of-tree consumer;
+// SwingPlayer now uses `interpolatedFrame` for continuous tracking.
+import { interpolatedFrame } from '@/lib/disc/frameAt';
 import {
   computeShoulderDisc,
   computeHipDisc,
@@ -310,7 +312,9 @@ export function SwingPlayer({
     // + PR-5.1 anatomical correction + distance-ratio rotation + size
     // anchor (so disc keeps setup baseline rx during rotation).
     if (poseTimeline) {
-      const poseFrame = frameAt(t, poseTimeline);
+      // PR-5.9 Task 3: interpolated lookup — disc cx/cy/angle now animate
+      // continuously between pose samples instead of snapping per sample.
+      const poseFrame = interpolatedFrame(poseTimeline, t);
       if (poseFrame) {
         const scaleX = cw / poseTimeline.video_width;
         const scaleY = ch / poseTimeline.video_height;

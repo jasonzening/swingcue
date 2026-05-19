@@ -87,7 +87,17 @@ export default function ResultPage() {
       setIssue(issueType);
       setCue(ana.cue_text ?? '');
 
-      const vmJson = ana.video_metadata_json as { durationSec?: number; dataSource?: string } | null;
+      // PR-5.9 Task 1: read native fps/width/height from video_metadata_json
+      // (already populated by Python analyzer at upload time, per
+      // docs/PR-5.9_AUDIT.md §7). Fallbacks preserve the previous
+      // hardcoded values when the column is missing or partial.
+      const vmJson = ana.video_metadata_json as {
+        durationSec?: number;
+        fps?: number;
+        width?: number;
+        height?: number;
+        dataSource?: string;
+      } | null;
       const dur = vmJson?.durationSec ?? 3;
       const source = vmJson?.dataSource ?? 'stub';
       setDataSource(source);
@@ -101,7 +111,12 @@ export default function ResultPage() {
       };
       setPhases(pm);
 
-      const vm: VideoMetadata = { durationSec: dur, fps: 30, width: 640, height: 360 };
+      const vm: VideoMetadata = {
+        durationSec: dur,
+        fps:    vmJson?.fps    ?? 30,
+        width:  vmJson?.width  ?? 640,
+        height: vmJson?.height ?? 360,
+      };
       setMeta(vm);
 
       const viewType = (vid.view_type as 'face_on' | 'down_the_line') ?? 'face_on';

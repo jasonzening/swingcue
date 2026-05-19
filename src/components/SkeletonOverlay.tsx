@@ -39,6 +39,8 @@ import {
   HIP_EXPAND_DEFAULT,
   type Point2D,
 } from '@/lib/skeleton/coachingAnchors';
+// PR-5.9 Task 3: linear-interpolated time lookup (replaces nearestFrame).
+import { interpolatedFrame } from '@/lib/disc/frameAt';
 
 type Props = {
   timeline: PoseTimeline;
@@ -80,7 +82,10 @@ export function SkeletonOverlay({
     // current video time" regardless of who's triggering it.
     const draw = () => {
       const t = videoEl.currentTime;
-      const candidate = nearestFrame(timeline.frames, t);
+      // PR-5.9 Task 3: interpolate between bracketing samples instead of
+      // snapping to nearest. Removes the per-frame freeze visible
+      // between pose samples on fast motion.
+      const candidate = interpolatedFrame(timeline, t);
       const frame = candidate ?? lastValidFrameRef.current;
       if (candidate) lastValidFrameRef.current = candidate;
       if (!frame) return;
@@ -232,6 +237,10 @@ function expandPairOrNull(
 }
 
 /**
+ * @deprecated PR-5.9 Task 3 — replaced by `interpolatedFrame` from
+ * `@/lib/disc/frameAt`. Left here for one more PR cycle so any
+ * out-of-tree consumer doesn't break; safe to delete after.
+ *
  * Nearest-frame lookup. Linear scan — fine for ~30–150 frames at 10 fps.
  * Returns null only when frames array is empty.
  */
