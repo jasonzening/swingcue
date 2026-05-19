@@ -18,11 +18,9 @@ import { frameAt } from '@/lib/disc/frameAt';
 import {
   computeShoulderDisc,
   computeHipDisc,
-  DISC_RX_RATIO,
   PERSPECTIVE_RY_RATIO,
 } from '@/lib/disc/computeDiscParams';
 import { unwrapAngle } from '@/lib/disc/unwrap';
-import type { DiscAnchor } from '@/lib/disc/types';
 
 // ── PR-5.4 visual constants ──────────────────────────────────────────────
 // Neon green for both discs and the kp-line glow. Jason's single-color
@@ -176,12 +174,6 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
   const lastShoulderRef = useRef<{ angleRad: number; ts: number } | null>(null);
   const lastHipRef      = useRef<{ angleRad: number; ts: number } | null>(null);
 
-  // PR-5.1: per-video disc-size anchor. Initialised lazily from the
-  // earliest setup-phase frame; held for the entire video. drawDisc
-  // overrides each frame's raw `rx` with the anchor value so the disc
-  // keeps its setup size during rotation. See PR-5.1_DESIGN.md §3.C.
-  const discAnchorRef = useRef<DiscAnchor | null>(null);
-
   /* ── Canvas sync ── */
   const syncCanvas = useCallback(() => {
     const v = videoRef.current;
@@ -227,43 +219,13 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         const scaleX = cw / poseTimeline.video_width;
         const scaleY = ch / poseTimeline.video_height;
 
-        // PR-5.1: lazy-init the per-video disc-size anchor from the
-        // earliest setup-phase frame where all 4 shoulder + hip kp
-        // have confidence ≥ 0.5. ts < 0.8s ensures we only capture
-        // setup geometry, not mid-swing positions.
-        //
-        // PR-5.4: the stored rx now bakes in DISC_RX_RATIO so the
-        // override path below stays consistent with computeShoulderDisc's
-        // per-frame rx (which also includes the ratio). Without this the
-        // override would shrink the disc back to the raw kp half-width.
-        if (!discAnchorRef.current && poseFrame.ts < 0.8) {
-          const ls = poseFrame.keypoints.left_shoulder;
-          const rs = poseFrame.keypoints.right_shoulder;
-          const lh = poseFrame.keypoints.left_hip;
-          const rh = poseFrame.keypoints.right_hip;
-          const allGood =
-            ls[0] !== null && ls[1] !== null && ls[2] > 0.5 &&
-            rs[0] !== null && rs[1] !== null && rs[2] > 0.5 &&
-            lh[0] !== null && lh[1] !== null && lh[2] > 0.5 &&
-            rh[0] !== null && rh[1] !== null && rh[2] > 0.5;
-          if (allGood) {
-            const sDx = (ls[0] as number) - (rs[0] as number);
-            const sDy = (ls[1] as number) - (rs[1] as number);
-            const hDx = (lh[0] as number) - (rh[0] as number);
-            const hDy = (lh[1] as number) - (rh[1] as number);
-            discAnchorRef.current = {
-              shoulderRx: (Math.sqrt(sDx * sDx + sDy * sDy) / 2) * DISC_RX_RATIO,
-              hipRx:      (Math.sqrt(hDx * hDx + hDy * hDy) / 2) * DISC_RX_RATIO,
-            };
-          }
-        }
-
-        const baselineShoulderDist = discAnchorRef.current
-          ? discAnchorRef.current.shoulderRx * 2 : null;
-        const baselineHipDist = discAnchorRef.current
-          ? discAnchorRef.current.hipRx * 2 : null;
-
-        const shoulder = computeShoulderDisc(poseFrame, baselineShoulderDist);
+        // PR-5.5: anchor lazy-init + rx lock removed. Disc width now
+        // tracks the current shoulder/hip kp distance directly, so the
+        // disc shrinks/grows with body rotation (visible foreshortening).
+        // rotationFromGeometry falls back to plain atan2 when baselineDist
+        // is null — body rotation magnitude is conveyed via rx shrink
+        // rather than acos angle amplification. See PR-5.5_DEFINITION.
+        const shoulder = computeShoulderDisc(poseFrame, null);
         if (shoulder) {
           const unwrapped = unwrapAngle(
             shoulder.angleRad,
@@ -272,12 +234,7 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             t,
           );
           lastShoulderRef.current = { angleRad: unwrapped, ts: t };
-          // PR-5.1 §3.C: override raw rx with the per-video anchor so
-          // the disc doesn't shrink when shoulders are foreshortened.
-          // PR-5.4: both branches of the ?? now carry DISC_RX_RATIO —
-          // anchor stores it from lazy-init, computeShoulderDisc bakes
-          // it into its return rx — so ry derives via PERSPECTIVE_RY_RATIO.
-          const fixedRx = discAnchorRef.current?.shoulderRx ?? shoulder.rx;
+          const fixedRx = shoulder.rx;
           drawTiltedDisc(
             ctx,
             shoulder.cx * scaleX,
@@ -292,7 +249,7 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         // Hip lift in computeHipDisc targets the corrected shoulder midpoint;
         // pass null when the shoulder disc couldn't be computed this frame.
         const shoulderMid = shoulder ? { cx: shoulder.cx, cy: shoulder.cy } : null;
-        const hip = computeHipDisc(poseFrame, baselineHipDist, shoulderMid);
+        const hip = computeHipDisc(poseFrame, null, shoulderMid);
         if (hip) {
           const unwrapped = unwrapAngle(
             hip.angleRad,
@@ -301,7 +258,7 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             t,
           );
           lastHipRef.current = { angleRad: unwrapped, ts: t };
-          const fixedRx = discAnchorRef.current?.hipRx ?? hip.rx;
+          const fixedRx = hip.rx;
           drawTiltedDisc(
             ctx,
             hip.cx * scaleX,

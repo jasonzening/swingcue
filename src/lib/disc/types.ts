@@ -18,32 +18,17 @@ export interface DiscParams {
   /** Center y in video native pixel space. */
   cy: number;
   /**
-   * Semi-major axis (along shoulder/hip line), RAW value (= dist / 2).
-   * PR-5.1: SwingPlayer overrides this with the per-video DiscAnchor.rx
-   * before drawing — disc size is locked to the setup baseline so it
-   * doesn't shrink during rotation (only the angle changes).
+   * Semi-major axis (along shoulder/hip line) in video native pixel space.
+   * PR-5.4 widens it past the lateral kp via DISC_RX_RATIO so the disc
+   * envelopes the torso (= dist × DISC_RX_RATIO / 2). PR-5.5 removed the
+   * setup-baseline rx lock, so this value now tracks the live keypoint
+   * distance — disc shrinks/grows with body rotation foreshortening.
    */
   rx: number;
   /** Semi-minor axis (perspective foreshortening). */
   ry: number;
-  /** Rotation angle in radians, CCW positive in image-y-down coords. See PR-5_DESIGN.md §3 + PR-5.1 §3.A. */
+  /** Rotation angle in radians, CCW positive in image-y-down coords. See PR-5_DESIGN.md §3. */
   angleRad: number;
   /** Min confidence of the two endpoint keypoints (0-1). */
   confidence: number;
-}
-
-/**
- * PR-5.1: per-video disc size anchor.
- *
- * Initialised once from the earliest valid setup-phase frame (ts < 0.8s
- * and all 4 of shoulders+hips kp confidences ≥ 0.5). Held across the
- * whole video in a SwingPlayer useRef; drawDisc overrides each frame's
- * `rx` with the anchor value so the disc keeps its setup size during
- * rotation. See PR-5.1_DESIGN.md §3.C.
- */
-export interface DiscAnchor {
-  /** Semi-major axis for the shoulder disc, in video native pixel space. */
-  shoulderRx: number;
-  /** Semi-major axis for the hip disc, in video native pixel space. */
-  hipRx: number;
 }
