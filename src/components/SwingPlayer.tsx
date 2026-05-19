@@ -85,6 +85,12 @@ interface Props {
   // skeleton overlay toggle. NULL when pose_timeline_2d failed
   // validation or the video predates PR-4.
   poseTimeline?: PoseTimeline | null;
+  // PR-5.8A: render-time coaching-anchor expansion factors. URL-sourced
+  // (?shoulderExpand=, ?hipExpand=) by the result page. Consumed by
+  // SkeletonOverlay (PR-5.8A commit 2) and computeShoulderDisc/Hip
+  // (commit 3). Optional; defaults live in lib/skeleton/coachingAnchors.
+  shoulderExpand?: number;
+  hipExpand?: number;
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
