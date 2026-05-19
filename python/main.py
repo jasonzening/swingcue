@@ -82,7 +82,11 @@ class AnalyzeRequest(BaseModel):
     video_url: str
     view_type: str = "face_on"
     club_type: str = "unknown"
-    sample_fps: float = 4.0
+    # PR-5.9 Task 1: sample_fps is now None-by-default. When unset, the
+    # analyzer uses min(video_native_fps, 60) — see analyze_video. Any
+    # explicit value here is still respected (clamped to [1, 60]) for
+    # callers that want a fixed rate (e.g., testing harness).
+    sample_fps: Optional[float] = None
     # PR-2B: required for pose_3d_phases service-role writes. The Next.js
     # API route enforces auth + ownership before calling us, so we trust
     # these values here.
@@ -119,7 +123,10 @@ async def analyze(req: AnalyzeRequest):
         tmp_path = download_video(req.video_url)
 
         # 2. Analyze
-        metadata, keypoint_frames, raw_coco_frames = analyze_video(
+        # PR-5.9 Task 1: analyze_video now returns the effective sample_fps
+        # it actually used (native fps capped at 60 by default; explicit
+        # req.sample_fps clamped to [1, 60] when provided).
+        metadata, keypoint_frames, raw_coco_frames, effective_sample_fps = analyze_video(
             tmp_path, sample_fps=req.sample_fps,
         )
 
@@ -220,8 +227,17 @@ async def analyze(req: AnalyzeRequest):
                     raw_frames=raw_coco_frames,
                     video_width=metadata.width,
                     video_height=metadata.height,
-                    sample_fps=req.sample_fps,
+                    sample_fps=effective_sample_fps,
                 )
+                # PR-5.9 Task 4: snapshot raw MediaPipe extract per frame
+                # BEFORE outlier/smooth/gap mutate `keypoints`. The debug
+                # overlay (?debug=pose, frontend commit 5) compares
+                # raw_keypoints vs the post-pipeline `keypoints` to
+                # visualize smoothing's effect. deepcopy is necessary —
+                # outlier/smooth/gap mutate the inner lists in place.
+                import copy as _copy
+                for f in tl["frames"]:
+                    f["raw_keypoints"] = _copy.deepcopy(f["keypoints"])
                 tl = detect_outliers_and_reject(tl)
                 tl = smooth_ema(tl, alpha=0.4)
                 tl = gap_fill_linear(tl)

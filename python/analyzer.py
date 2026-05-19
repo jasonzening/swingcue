@@ -166,20 +166,28 @@ def moving_average(arr: np.ndarray, window: int = 3) -> np.ndarray:
     kernel = np.ones(window) / window
     return np.convolve(arr, kernel, mode='same')
 
+_SAMPLE_FPS_CAP = 60.0
+_SAMPLE_FPS_FALLBACK_NATIVE = 30.0
+
 def analyze_video(
-    video_path: str, sample_fps: float = 4.0,
-) -> tuple[VideoMetadata, List[KeypointFrame], list[dict]]:
+    video_path: str, sample_fps: Optional[float] = None,
+) -> tuple[VideoMetadata, List[KeypointFrame], list[dict], float]:
     """
     Main analysis function.
-    Samples the video at sample_fps (default 4 frames/sec),
-    runs MediaPipe Pose on each frame.
+    Samples the video at sample_fps. When sample_fps is None (PR-5.9
+    default), uses min(native_fps, 60). When explicitly provided, the
+    value is clamped to [1, 60]. Runs MediaPipe Pose on each sampled
+    frame.
 
     Returns:
         VideoMetadata,
         List[KeypointFrame]    — existing BodyLandmarks (NOSE + 12 joints),
         list[dict]             — PR-4 raw COCO 17 frames {ts, frame_idx,
                                   interpolated:False, keypoints:{name:[x,y,c]}}
-                                  for input to pose_timeline.py pipeline.
+                                  for input to pose_timeline.py pipeline,
+        float                  — PR-5.9: effective sample_fps actually used
+                                  (so the caller can write it to the
+                                  pose_timeline_2d envelope).
     """
     # PR-4: COCO 17 extractor — defined here (rather than imported) so the
     # callers that don't care about pose_timeline still don't pay an import.
@@ -192,8 +200,18 @@ def analyze_video(
     metadata = get_video_metadata(cap)
     logger.info(f"Video: {metadata.width}x{metadata.height} @ {metadata.fps}fps, {metadata.durationSec:.2f}s")
 
-    video_fps = metadata.fps or 30.0
-    frame_interval = max(1, int(video_fps / sample_fps))
+    video_fps = metadata.fps or _SAMPLE_FPS_FALLBACK_NATIVE
+    # PR-5.9 Task 1: native-fps sampling by default, capped at 60.
+    if sample_fps is None:
+        effective_sample_fps = min(video_fps, _SAMPLE_FPS_CAP)
+    else:
+        # Explicit override (e.g., test harness). Clamp to [1, 60].
+        effective_sample_fps = max(1.0, min(float(sample_fps), _SAMPLE_FPS_CAP))
+    logger.info(
+        f"[analyze_video] sample_fps: requested={sample_fps} → "
+        f"effective={effective_sample_fps} (native={video_fps})"
+    )
+    frame_interval = max(1, int(round(video_fps / effective_sample_fps)))
 
     pose_config = mp.solutions.pose.Pose(
         static_image_mode=False,
@@ -251,4 +269,4 @@ def analyze_video(
         f"Extracted {len(keypoint_frames)} keypoint frames; "
         f"{len(raw_coco_frames)} raw COCO frames"
     )
-    return metadata, keypoint_frames, raw_coco_frames
+    return metadata, keypoint_frames, raw_coco_frames, effective_sample_fps
