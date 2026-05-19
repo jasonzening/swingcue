@@ -107,36 +107,49 @@ function validPair(
 /**
  * Shoulder disc from a PoseFrame.
  *
- * Center = raw midpoint of (left_shoulder, right_shoulder). Matches
- * where SkeletonOverlay draws its dots, so disc visually anchors on
- * the skeleton's shoulder line.
+ * Center = midpoint of (left_shoulder, right_shoulder), after PR-5.8A
+ * coaching-anchor expansion (default 0; SwingPlayer passes the URL-
+ * sourced shoulderExpand factor). With expansion=0 this matches the
+ * PR-5.3 behaviour of anchoring exactly on the raw kp midpoint; with
+ * expansion>0 the disc anchors on the SwingCue coaching shoulder line
+ * (humerus-to-body visual junction) and the chord endpoints
+ * (cx ± rx along the rotated axis) span the expanded shoulder span.
  *
- * @param frame         PR-4 PoseFrame with COCO 17 keypoints.
- * @param baselineDist  Setup-frame shoulder pair distance (from
- *                      SwingPlayer's `discAnchorRef.shoulderRx * 2`).
- *                      Null until the anchor is initialised — in that
- *                      case angle falls back to plain atan2.
+ * @param frame           PR-4 PoseFrame with COCO 17 keypoints.
+ * @param baselineDist    Setup-frame shoulder pair distance (from
+ *                        SwingPlayer's `discAnchorRef.shoulderRx * 2`).
+ *                        Null until the anchor is initialised — in
+ *                        that case angle falls back to plain atan2.
+ * @param shoulderExpand  PR-5.8A render-time outward expansion factor
+ *                        applied to L and R independently before any
+ *                        downstream geometry. Default 0 = behaviour
+ *                        unchanged. See lib/skeleton/coachingAnchors.
  */
 export function computeShoulderDisc(
   frame: PoseFrame,
   baselineDist: number | null,
+  shoulderExpand: number = 0,
 ): DiscParams | null {
   const pair = validPair(
     frame.keypoints.left_shoulder,
     frame.keypoints.right_shoulder,
   );
   if (!pair) return null;
-  const dx = pair.lx - pair.rx;
-  const dy = pair.ly - pair.ry;
+  // PR-5.8A: expand both endpoints outward along the shoulder line
+  // before computing dx/dy/dist/cx/cy. Mirror of the math in
+  // lib/skeleton/coachingAnchors.ts (single source of truth).
+  const { lx, ly, rx: rrx, ry: rry } = applyExpand(pair, shoulderExpand);
+  const dx = lx - rrx;
+  const dy = ly - rry;
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
 
-  const cx = (pair.lx + pair.rx) / 2;
-  const cy = (pair.ly + pair.ry) / 2;
+  const cx = (lx + rrx) / 2;
+  const cy = (ly + rry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
   // PR-5.4: rx widened past the lateral kp so the disc visually
-  // envelops the upper/lower torso. Center stays on the raw kp
-  // midpoint (PR-5.3); only the radius scales.
+  // envelops the upper/lower torso. Center stays on the (expanded)
+  // kp midpoint; only the radius scales.
   const rx = (dist * DISC_RX_RATIO) / 2;
 
   return {
@@ -152,8 +165,9 @@ export function computeShoulderDisc(
 /**
  * Hip disc from a PoseFrame.
  *
- * Center = raw midpoint of (left_hip, right_hip). Same convention as
- * shoulder disc — see computeShoulderDisc.
+ * Center = midpoint of (left_hip, right_hip) after PR-5.8A coaching-
+ * anchor expansion (default 0). See computeShoulderDisc for the
+ * rationale.
  *
  * The third parameter (`_shoulderMid`) is retained from the PR-5.1
  * signature so existing SwingPlayer call sites still type-check
@@ -163,28 +177,32 @@ export function computeShoulderDisc(
  * @param frame         PR-4 PoseFrame with COCO 17 keypoints.
  * @param baselineDist  Setup-frame hip pair distance.
  * @param _shoulderMid  Deprecated (PR-5.3). Kept for caller compatibility.
+ * @param hipExpand     PR-5.8A render-time outward expansion factor
+ *                      (default 0; see computeShoulderDisc).
  */
 export function computeHipDisc(
   frame: PoseFrame,
   baselineDist: number | null,
   _shoulderMid: { cx: number; cy: number } | null,
+  hipExpand: number = 0,
 ): DiscParams | null {
   const pair = validPair(
     frame.keypoints.left_hip,
     frame.keypoints.right_hip,
   );
   if (!pair) return null;
-  const dx = pair.lx - pair.rx;
-  const dy = pair.ly - pair.ry;
+  const { lx, ly, rx: rrx, ry: rry } = applyExpand(pair, hipExpand);
+  const dx = lx - rrx;
+  const dy = ly - rry;
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist < 1) return null;
 
-  const cx = (pair.lx + pair.rx) / 2;
-  const cy = (pair.ly + pair.ry) / 2;
+  const cx = (lx + rrx) / 2;
+  const cy = (ly + rry) / 2;
   const angleRad = rotationFromGeometry(dx, dy, dist, baselineDist);
   // PR-5.4: rx widened past the lateral kp so the disc visually
-  // envelops the upper/lower torso. Center stays on the raw kp
-  // midpoint (PR-5.3); only the radius scales.
+  // envelops the upper/lower torso. Center stays on the (expanded)
+  // kp midpoint; only the radius scales.
   const rx = (dist * DISC_RX_RATIO) / 2;
 
   return {
@@ -194,5 +212,32 @@ export function computeHipDisc(
     ry: rx * PERSPECTIVE_RY_RATIO,
     angleRad,
     confidence: pair.conf,
+  };
+}
+
+/**
+ * PR-5.8A: apply outward expansion along the L↔R line, returning the
+ * same field names the rest of this module expects (`lx, ly, rx, ry`
+ * — note `rx`/`ry` here are right.x/right.y, NOT disc radii). Keeps
+ * the math co-located with the existing pair shape so callers don't
+ * have to juggle Point2D vs validPair output.
+ *
+ * factor=0 → returns the input unchanged (no-op, no allocation cost
+ * difference worth optimising). factor>0 → both sides move outward
+ * symmetrically by `factor` × current half-span. See PR-5.8A spec.
+ */
+function applyExpand(
+  pair: { lx: number; ly: number; rx: number; ry: number; conf: number },
+  factor: number,
+): { lx: number; ly: number; rx: number; ry: number } {
+  if (factor === 0) return { lx: pair.lx, ly: pair.ly, rx: pair.rx, ry: pair.ry };
+  const midX = (pair.lx + pair.rx) / 2;
+  const midY = (pair.ly + pair.ry) / 2;
+  const k = 1 + factor;
+  return {
+    lx: midX + (pair.lx - midX) * k,
+    ly: midY + (pair.ly - midY) * k,
+    rx: midX + (pair.rx - midX) * k,
+    ry: midY + (pair.ry - midY) * k,
   };
 }

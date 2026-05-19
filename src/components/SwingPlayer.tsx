@@ -385,7 +385,10 @@ export function SwingPlayer({
         // remains the visual size source; phase + micro modulate it.
         // angle path: still atan2 (null baselineDist) — PR-5.1 §3.A
         // acos amplification is permanently retired.
-        const shoulder = computeShoulderDisc(poseFrame, null);
+        // PR-5.8A: pass the URL-sourced expansion factor so the disc
+        // anchor and chord endpoints align with the expanded skeleton
+        // dots/lines drawn by SkeletonOverlay (single source of truth).
+        const shoulder = computeShoulderDisc(poseFrame, null, shoulderExpand);
         if (shoulder) {
           const unwrapped = unwrapAngle(
             shoulder.angleRad,
@@ -427,7 +430,7 @@ export function SwingPlayer({
         // Hip lift in computeHipDisc targets the corrected shoulder midpoint;
         // pass null when the shoulder disc couldn't be computed this frame.
         const shoulderMid = shoulder ? { cx: shoulder.cx, cy: shoulder.cy } : null;
-        const hip = computeHipDisc(poseFrame, null, shoulderMid);
+        const hip = computeHipDisc(poseFrame, null, shoulderMid, hipExpand);
         if (hip) {
           const unwrapped = unwrapAngle(
             hip.angleRad,
@@ -462,7 +465,7 @@ export function SwingPlayer({
         }
       }
     }
-  }, [timeline, phases, layer, dur, poseTimeline]);
+  }, [timeline, phases, layer, dur, poseTimeline, shoulderExpand, hipExpand]);
 
   useEffect(() => {
     let id: number;
