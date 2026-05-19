@@ -274,7 +274,7 @@ export interface PoseTimeline {
   fps_sampled: number;
   video_width: number;
   video_height: number;
-  keypoint_source: 'mediapipe_pose' | 'yolo' | 'hybrid';
+  keypoint_source: 'mediapipe_pose' | 'mediapipe_pose_v1_5' | 'yolo' | 'hybrid';
   yolo_anchor_correction: {
     applied: boolean;
     anchor_phases?: string[];
