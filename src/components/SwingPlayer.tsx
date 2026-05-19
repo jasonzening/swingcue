@@ -6,6 +6,31 @@
  * 视频是页面主角。播放器尽量满屏，控制条紧凑在下方。
  * Canvas overlay 与视频时间精确同步。
  * 三层切换：Body / Arms / Club / All
+ *
+ * ── SwingCue disc semantics (NORMATIVE, PR-5.6 lock-in) ───────────────────
+ *
+ * The disc is a COACHING VISUAL PLANE anchored by body keypoints — not a
+ * physically exact 3D reconstruction of body geometry.
+ *
+ * Body keypoints determine:
+ *   1. Center position  (cx, cy = midpoint of L/R shoulder or hip kp)
+ *   2. Anchor direction (angleRad = atan2 of L/R kp pair per frame)
+ *   3. Body-layer identity (shoulder plane vs hip plane)
+ *
+ * Body keypoints do NOT determine:
+ *   - Visual disc width frame-by-frame
+ *   - ry / ry-to-rx ratio
+ *
+ * Visual disc width comes from a setup-baseline body scale (median of
+ * the first ~0.6s of valid frames), held stable through the entire swing
+ * so the plane stays coaching-readable during rotation, foreshortening,
+ * and finish poses. Readability and instructional clarity are prioritised
+ * over raw 2D foreshortening fidelity.
+ *
+ * This is the lesson distilled from PR-5.1 (rx locked absolutely → disc
+ * detached from body), PR-5.5 (rx tied to currentDist → disc collapsed
+ * at top/finish), and PR-5.6 (rx baseline-locked, center+direction
+ * live-tracked → coaching-readable AND body-anchored).
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
@@ -18,6 +43,7 @@ import { frameAt } from '@/lib/disc/frameAt';
 import {
   computeShoulderDisc,
   computeHipDisc,
+  DISC_RX_RATIO,
   PERSPECTIVE_RY_RATIO,
 } from '@/lib/disc/computeDiscParams';
 import { unwrapAngle } from '@/lib/disc/unwrap';
@@ -119,23 +145,25 @@ function drawTiltedDisc(
 }
 
 /**
- * PR-5.4: draw a frame-level horizontal kp connector line — the shoulder
- * pair (or hip pair) drawn directly from poseFrame.keypoints. White solid
- * with a neon-green outer glow, round caps. Sits visually inside the disc
- * along the rotation axis. Endpoints are in canvas px (caller pre-scales).
+ * PR-5.6: draw the disc's anchor axis — a white-with-neon-glow segment
+ * that spans the disc's major axis from -rx*0.85 to +rx*0.85 along
+ * angleRad. Replaces PR-5.4's raw L/R kp connector (which collapsed to
+ * a short segment at top/finish when the kp pair foreshortened toward
+ * each other). The anchor axis is computed from the stable baseline
+ * rx, so it reads as "the disc's equator" through the whole swing.
  *
- * Note: this co-exists with the PR-3 phase-keyed LineElements that flow
- * through renderFrame()/OverlayRenderer (the existing rgba(255,255,255,0.92)
- * sparse lines). The new line is per-frame, so it tracks the swing live;
- * the old phase lines snap to phase frames only.
+ * Endpoints are in canvas px (caller pre-scales cx/cy and rx).
  */
-function drawKpLine(
+function drawAnchorAxis(
   ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
+  cx: number,
+  cy: number,
+  angleRad: number,
+  rx: number,
 ): void {
+  const halfLen = rx * 0.85;
+  const dxAxis = Math.cos(angleRad) * halfLen;
+  const dyAxis = Math.sin(angleRad) * halfLen;
   ctx.save();
   ctx.shadowColor = NEON_GREEN;
   ctx.shadowBlur = 8;
@@ -143,10 +171,23 @@ function drawKpLine(
   ctx.lineWidth = 4;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
+  ctx.moveTo(cx - dxAxis, cy - dyAxis);
+  ctx.lineTo(cx + dxAxis, cy + dyAxis);
   ctx.stroke();
   ctx.restore();
+}
+
+/**
+ * PR-5.6: simple median for visual baseline sample aggregation. Sorts a
+ * copy (preserving caller's array order) and returns the lower-middle
+ * element. Used only on small arrays (<= ~10 elements) during setup-
+ * phase collection, so the O(n log n) sort cost is negligible.
+ *
+ * Pre-condition: `samples.length >= 1` — caller must check.
+ */
+function median(samples: number[]): number {
+  const sorted = [...samples].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
 }
 
 export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dataSource, poseTimeline }: Props) {
@@ -173,6 +214,20 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
   // disc visually flip 360° between rAF ticks. See unwrap.ts.
   const lastShoulderRef = useRef<{ angleRad: number; ts: number } | null>(null);
   const lastHipRef      = useRef<{ angleRad: number; ts: number } | null>(null);
+
+  // PR-5.6: per-video visual baseline (rx) for the disc. Set ONCE from
+  // a median of setup-phase frames; held stable through the entire
+  // swing so the coaching plane stays readable while cx/cy/angleRad
+  // continue to track the live body keypoints. NOT used for rotation
+  // correction (PR-5.1 §3.A acos amplification is permanently retired).
+  const discAnchorRef = useRef<{ shoulderRx: number; hipRx: number } | null>(null);
+  // Sample buffer for the median computation above. Pushed each rAF
+  // frame while ts < 0.8 and all 4 source kp are valid. Cleared after
+  // discAnchorRef is locked, to release the GC root.
+  const baselineSamplesRef = useRef<{
+    shoulderSamples: number[];
+    hipSamples: number[];
+  } | null>(null);
 
   /* ── Canvas sync ── */
   const syncCanvas = useCallback(() => {
@@ -219,12 +274,77 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         const scaleX = cw / poseTimeline.video_width;
         const scaleY = ch / poseTimeline.video_height;
 
-        // PR-5.5: anchor lazy-init + rx lock removed. Disc width now
-        // tracks the current shoulder/hip kp distance directly, so the
-        // disc shrinks/grows with body rotation (visible foreshortening).
-        // rotationFromGeometry falls back to plain atan2 when baselineDist
-        // is null — body rotation magnitude is conveyed via rx shrink
-        // rather than acos angle amplification. See PR-5.5_DEFINITION.
+        // PR-5.6: collect & lock the median-based visual baseline (rx)
+        // during setup. Cx/cy/angleRad still track live keypoints; only
+        // rx uses this stable baseline. See file-level docstring.
+        if (!discAnchorRef.current) {
+          const ls = poseFrame.keypoints.left_shoulder;
+          const rs = poseFrame.keypoints.right_shoulder;
+          const lh = poseFrame.keypoints.left_hip;
+          const rh = poseFrame.keypoints.right_hip;
+          const allGood =
+            ls[0] !== null && ls[1] !== null && ls[2] > 0.5 &&
+            rs[0] !== null && rs[1] !== null && rs[2] > 0.5 &&
+            lh[0] !== null && lh[1] !== null && lh[2] > 0.5 &&
+            rh[0] !== null && rh[1] !== null && rh[2] > 0.5;
+
+          if (poseFrame.ts < 0.8) {
+            // Setup window — accumulate samples for median.
+            if (allGood) {
+              const sDx = (ls[0] as number) - (rs[0] as number);
+              const sDy = (ls[1] as number) - (rs[1] as number);
+              const hDx = (lh[0] as number) - (rh[0] as number);
+              const hDy = (lh[1] as number) - (rh[1] as number);
+              const buf = baselineSamplesRef.current
+                ?? { shoulderSamples: [], hipSamples: [] };
+              buf.shoulderSamples.push(Math.sqrt(sDx * sDx + sDy * sDy));
+              buf.hipSamples.push(Math.sqrt(hDx * hDx + hDy * hDy));
+              baselineSamplesRef.current = buf;
+            }
+            // Lock when we have enough samples OR we've crossed 0.6s.
+            const buf = baselineSamplesRef.current;
+            if (buf
+                && buf.shoulderSamples.length >= 1
+                && buf.hipSamples.length >= 1
+                && (buf.shoulderSamples.length >= 5 || poseFrame.ts > 0.6)) {
+              discAnchorRef.current = {
+                shoulderRx: (median(buf.shoulderSamples) * DISC_RX_RATIO) / 2,
+                hipRx:      (median(buf.hipSamples)      * DISC_RX_RATIO) / 2,
+              };
+              baselineSamplesRef.current = null;
+            }
+          } else {
+            // Past 0.8s and still not locked — degraded path.
+            const buf = baselineSamplesRef.current;
+            if (buf
+                && buf.shoulderSamples.length >= 1
+                && buf.hipSamples.length >= 1) {
+              discAnchorRef.current = {
+                shoulderRx: (median(buf.shoulderSamples) * DISC_RX_RATIO) / 2,
+                hipRx:      (median(buf.hipSamples)      * DISC_RX_RATIO) / 2,
+              };
+              baselineSamplesRef.current = null;
+            } else if (allGood) {
+              // No samples collected in setup window — use this first
+              // valid post-setup frame directly.
+              const sDx = (ls[0] as number) - (rs[0] as number);
+              const sDy = (ls[1] as number) - (rs[1] as number);
+              const hDx = (lh[0] as number) - (rh[0] as number);
+              const hDy = (lh[1] as number) - (rh[1] as number);
+              discAnchorRef.current = {
+                shoulderRx: (Math.sqrt(sDx * sDx + sDy * sDy) / 2) * DISC_RX_RATIO,
+                hipRx:      (Math.sqrt(hDx * hDx + hDy * hDy) / 2) * DISC_RX_RATIO,
+              };
+            }
+          }
+        }
+
+        // PR-5.6: center + direction from live kp, visual width from
+        // stable baseline anchor. angle path: null baselineDist makes
+        // rotationFromGeometry return plain atan2 (PR-5.1 §3.A acos
+        // amplification is permanently retired — body rotation reads
+        // through the constant-size disc + live angle, not through
+        // amplified angle magnitude).
         const shoulder = computeShoulderDisc(poseFrame, null);
         if (shoulder) {
           const unwrapped = unwrapAngle(
@@ -234,15 +354,25 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             t,
           );
           lastShoulderRef.current = { angleRad: unwrapped, ts: t };
-          const fixedRx = shoulder.rx;
+          // Anchor when locked; live rx until then (first few rAF ticks
+          // before setup-phase samples are collected).
+          const fixedRx = discAnchorRef.current?.shoulderRx ?? shoulder.rx;
+          const fixedRxCv = fixedRx * scaleX;
           drawTiltedDisc(
             ctx,
             shoulder.cx * scaleX,
             shoulder.cy * scaleY,
-            fixedRx * scaleX,
+            fixedRxCv,
             fixedRx * PERSPECTIVE_RY_RATIO * scaleY,
             unwrapped,
             NEON_GREEN,
+          );
+          drawAnchorAxis(
+            ctx,
+            shoulder.cx * scaleX,
+            shoulder.cy * scaleY,
+            unwrapped,
+            fixedRxCv,
           );
         }
 
@@ -258,40 +388,23 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             t,
           );
           lastHipRef.current = { angleRad: unwrapped, ts: t };
-          const fixedRx = hip.rx;
+          const fixedRx = discAnchorRef.current?.hipRx ?? hip.rx;
+          const fixedRxCv = fixedRx * scaleX;
           drawTiltedDisc(
             ctx,
             hip.cx * scaleX,
             hip.cy * scaleY,
-            fixedRx * scaleX,
+            fixedRxCv,
             fixedRx * PERSPECTIVE_RY_RATIO * scaleY,
             unwrapped,
             NEON_GREEN,
           );
-        }
-
-        // PR-5.4: frame-level horizontal kp connector lines, drawn
-        // directly from the per-frame keypoints (no anchor override) so
-        // they track the swing live. Endpoints are validated against
-        // null coords — same gating as the disc helpers.
-        const ls = poseFrame.keypoints.left_shoulder;
-        const rs = poseFrame.keypoints.right_shoulder;
-        if (ls[0] !== null && ls[1] !== null
-            && rs[0] !== null && rs[1] !== null) {
-          drawKpLine(
+          drawAnchorAxis(
             ctx,
-            ls[0] * scaleX, ls[1] * scaleY,
-            rs[0] * scaleX, rs[1] * scaleY,
-          );
-        }
-        const lh = poseFrame.keypoints.left_hip;
-        const rh = poseFrame.keypoints.right_hip;
-        if (lh[0] !== null && lh[1] !== null
-            && rh[0] !== null && rh[1] !== null) {
-          drawKpLine(
-            ctx,
-            lh[0] * scaleX, lh[1] * scaleY,
-            rh[0] * scaleX, rh[1] * scaleY,
+            hip.cx * scaleX,
+            hip.cy * scaleY,
+            unwrapped,
+            fixedRxCv,
           );
         }
       }
