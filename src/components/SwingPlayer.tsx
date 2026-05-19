@@ -64,6 +64,12 @@ import {
   getPhaseCompression,
   computeMicroCorrection,
 } from '@/lib/disc/phaseCompression';
+// PR-5.8A: defaults for the coaching-anchor expansion props. The URL
+// is parsed in result/[id]/page.tsx; this module only consumes.
+import {
+  SHOULDER_EXPAND_DEFAULT,
+  HIP_EXPAND_DEFAULT,
+} from '@/lib/skeleton/coachingAnchors';
 
 // ── PR-5.4 visual constants ──────────────────────────────────────────────
 // Neon green for both discs and the kp-line glow. Jason's single-color
@@ -213,7 +219,19 @@ function median(samples: number[]): number {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dataSource, poseTimeline }: Props) {
+export function SwingPlayer({
+  videoUrl,
+  timeline,
+  phases,
+  duration: propDur,
+  dataSource,
+  poseTimeline,
+  // PR-5.8A: coaching-anchor expansion factors. Defaults applied here
+  // so internal call sites (SkeletonOverlay, computeShoulderDisc/Hip)
+  // see a guaranteed number.
+  shoulderExpand = SHOULDER_EXPAND_DEFAULT,
+  hipExpand = HIP_EXPAND_DEFAULT,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef    = useRef<number>(0);
@@ -547,7 +565,12 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
 
         {/* PR-4: skeleton overlay (toggle, default off) */}
         {skeletonOn && poseTimeline && (
-          <SkeletonOverlay timeline={poseTimeline} videoEl={videoRef.current} />
+          <SkeletonOverlay
+            timeline={poseTimeline}
+            videoEl={videoRef.current}
+            shoulderExpand={shoulderExpand}
+            hipExpand={hipExpand}
+          />
         )}
 
         {/* Badges */}
