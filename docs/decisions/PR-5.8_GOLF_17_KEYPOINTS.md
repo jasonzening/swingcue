@@ -76,20 +76,35 @@ club_shaft_midray = ray(midpoint(kp[5], kp[6]), midpoint(kp[7], kp[8])).extend(f
 
 MediaPipe Pose does not output skull-crown directly. We derive from face landmarks:
 
-```ts
-function deriveHeadCrown(mp33: MediaPipe33Frame): Keypoint {
-  const earMid   = midpoint(mp33[7], mp33[8]);    // left_ear, right_ear
-  const mouthMid = midpoint(mp33[9], mp33[10]);   // mouth_left, mouth_right
-  // crown sits roughly one "ear-to-mouth" distance above ears
-  return {
-    x: earMid.x + (earMid.x - mouthMid.x) * 0.45,
-    y: earMid.y + (earMid.y - mouthMid.y) * 0.45,
-    v: Math.min(mp33[7].v, mp33[8].v, mp33[9].v, mp33[10].v) * 0.8,
-  };
-}
+```python
+# Python-side derivation during pose extraction (in python/pose_timeline.py)
+def derive_head_crown(mp_landmarks):
+    """
+    Computes skull crown approximation from MediaPipe ear and mouth landmarks.
+    Returns [x_px, y_px, confidence] tuple.
+    """
+    left_ear   = mp_landmarks[7]   # MediaPipe 33 index
+    right_ear  = mp_landmarks[8]
+    mouth_l    = mp_landmarks[9]
+    mouth_r    = mp_landmarks[10]
+    
+    ear_mid_x   = (left_ear.x  + right_ear.x)  / 2
+    ear_mid_y   = (left_ear.y  + right_ear.y)  / 2
+    mouth_mid_x = (mouth_l.x   + mouth_r.x)    / 2
+    mouth_mid_y = (mouth_l.y   + mouth_r.y)    / 2
+    
+    # Crown sits roughly one ear-to-mouth distance above ears
+    factor = 0.45  # tunable; first-cut calibration on neutral standing setup pose
+    crown_x = ear_mid_x + (ear_mid_x - mouth_mid_x) * factor
+    crown_y = ear_mid_y + (ear_mid_y - mouth_mid_y) * factor
+    
+    conf = min(left_ear.visibility, right_ear.visibility, 
+               mouth_l.visibility,  mouth_r.visibility) * 0.8
+    
+    return [crown_x, crown_y, conf]
 ```
 
-Factor `0.45` calibrated on standing setup pose with neutral head. Tunable via `?headCrownFactor=` URL param during PR-5.8 implementation.
+The factor `0.45` is the first-cut. Tunable via a Python module constant `HEAD_CROWN_FACTOR` so it can be changed without re-deploy. Once stable, can be promoted to a config value.
 
 ---
 
@@ -109,33 +124,96 @@ This makes the rendering view-independent: face-on, behind-the-line, or any angl
 
 ## 6. Schema v2
 
-Field names align with PR-4 actual implementation (`version`, `keypoint_source`). v1 → v2 migration only changes the value of `version` and `keypoint_source`, not their names. Existing v1 data in DB is untouched.
+### v1 schema (actual current state in DB)
+Named-key dict per frame, value tuples `[x, y, confidence]`. Verified via direct Supabase query on b3fea3f0 (2026-05-19):
 
-New `pose_timeline_2d` JSONB structure:
+```json
+{
+  "version": 1,
+  "keypoint_source": "mediapipe_pose",
+  "fps_sampled": 10,
+  "frames": [
+    {
+      "ts": 0.0,
+      "frame_idx": 0,
+      "keypoints": {
+        "nose": [447.9, 437.6, 1.0],
+        "left_eye": [459.2, 422.7, 1.0],
+        "right_eye": [433.8, 425.6, 1.0],
+        "left_ear": [483.8, 414.2, 1.0],
+        "right_ear": [418.3, 423.2, 1.0],
+        "left_shoulder": [511.9, 475.1, 1.0],
+        "right_shoulder": [405.2, 477.6, 1.0],
+        "left_elbow": [497.1, 576.9, 0.985],
+        "right_elbow": [411.2, 587.6, 0.964],
+        "left_wrist": [464.5, 671.6, 0.962],
+        "right_wrist": [432.1, 679.8, 0.937],
+        "left_hip": [500.4, 631.1, 1.0],
+        "right_hip": [412.6, 626.4, 1.0],
+        "left_knee": [529.5, 767.1, 0.991],
+        "right_knee": [369.5, 754.8, 0.992],
+        "left_ankle": [539.3, 914.1, 0.995],
+        "right_ankle": [358.7, 895.5, 0.993]
+      },
+      "interpolated": false
+    }
+  ]
+}
+```
+
+Key facts about v1:
+- `keypoints` is a **named-key dict**, NOT an indexed array.
+- Each value is `[x_px, y_px, confidence]` — a 3-tuple list, NOT a `{x, y, v}` object.
+- No `frame_count` field exists at top level.
+- 17 named landmarks following MediaPipe / COCO `left_*` `right_*` naming.
+- Each frame has `frame_idx` (integer) and `interpolated` (boolean).
+
+### v2 schema (target for PR-5.8 implementation)
+Same overall envelope (named-key dict, `[x, y, c]` tuples, per-frame `frame_idx` + `interpolated`). Three changes:
+
+1. Rename keypoints from MediaPipe `left_*`/`right_*` style to SwingCue anatomical `*_L`/`*_R` suffix (matches §3 spec table).
+2. Drop face landmarks (`nose`, `left_eye`, `right_eye`, `left_ear`, `right_ear`) from output. Ears + mouths still extracted internally for `head_crown` derivation, then discarded.
+3. Add 5 new keypoints not in v1: `head_crown` (derived), `hand_L`, `hand_R`, `foot_L`, `foot_R`.
+
+`head_crown` is computed **Python-side during pose extraction** (formula in §4), not derived at render time. Frontend reads `keypoints["head_crown"]` as a plain stored value.
 
 ```json
 {
   "version": 2,
   "keypoint_source": "mediapipe_pose_33_v2",
   "fps_sampled": 10,
-  "frame_count": 70,
   "frames": [
     {
       "ts": 0.0,
-      "kp": [
-        { "x": 412.5, "y":  78.3, "v": 0.85 },
-        { "x": 380.1, "y": 195.2, "v": 0.97 },
-        ... 17 entries indexed 0..16 ...
-      ]
-    },
-    ...
+      "frame_idx": 0,
+      "keypoints": {
+        "head_crown":  [451.0,  380.0,  0.92],
+        "shoulder_L":  [511.9,  475.1,  1.0],
+        "shoulder_R":  [405.2,  477.6,  1.0],
+        "elbow_L":     [497.1,  576.9,  0.985],
+        "elbow_R":     [411.2,  587.6,  0.964],
+        "wrist_L":     [464.5,  671.6,  0.962],
+        "wrist_R":     [432.1,  679.8,  0.937],
+        "hand_L":      [466.0,  695.0,  0.93],
+        "hand_R":      [434.0,  703.0,  0.92],
+        "hip_L":       [500.4,  631.1,  1.0],
+        "hip_R":       [412.6,  626.4,  1.0],
+        "knee_L":      [529.5,  767.1,  0.991],
+        "knee_R":      [369.5,  754.8,  0.992],
+        "ankle_L":     [539.3,  914.1,  0.995],
+        "ankle_R":     [358.7,  895.5,  0.993],
+        "foot_L":      [540.0,  935.0,  0.99],
+        "foot_R":      [357.0,  920.0,  0.98]
+      },
+      "interpolated": false
+    }
   ]
 }
 ```
 
-**Coexistence with v1**:
-- Existing analyzed videos retain v1 (COCO 17). Migration is opt-in via re-analyze.
-- Frontend reads `version`; v1 → uses old COCO mapping (legacy), v2 → uses new SwingCue 17 mapping.
+### Coexistence with v1
+- Existing analyzed videos retain v1. Migration is opt-in via re-analyze.
+- Frontend reads `version` field first; v1 → legacy COCO mapping (kept as-is), v2 → new SwingCue 17 mapping.
 - New uploads always produce v2.
 
 ---
@@ -162,9 +240,21 @@ Test on `b3fea3f0-e248-44d7-a923-0bb43172b5bf` (test video):
 
 ### Step 3 — Python schema upgrade
 Modify `python/pose_timeline.py`:
-- Stop compressing MediaPipe 33 → COCO 17.
-- Output schema v2 with 17 SwingCue keypoints + derived head_crown.
-- Update `kp_source` metadata to `mediapipe_pose_33_v2` (also fixes the stale `mediapipe_pose` label).
+
+- Stop dropping the 7 MediaPipe-33 landmarks the v2 schema needs. Specifically, **keep** these MediaPipe 33 indices in addition to currently-kept landmarks:
+  - `mouth_left` (9), `mouth_right` (10) — required only for `head_crown` derivation, then discarded
+  - `left_index` (19), `right_index` (20) — become `hand_L`, `hand_R`
+  - `left_foot_index` (31), `right_foot_index` (32) — become `foot_L`, `foot_R`
+- **Drop** these face landmarks from final output (kept only as internal inputs to `head_crown`):
+  - `nose` (0), `left_eye` (2), `right_eye` (5), `left_ear` (7), `right_ear` (8)
+- **Compute `head_crown`** Python-side using formula in §4, emit at `keypoints["head_crown"]`.
+- **Rename** all anatomical landmarks from MediaPipe `left_*`/`right_*` style to SwingCue `*_L`/`*_R` suffix style:
+  - `left_shoulder` → `shoulder_L`, `right_shoulder` → `shoulder_R`
+  - same pattern for elbow, wrist, hip, knee, ankle
+  - `left_index` → `hand_L`, `right_index` → `hand_R`
+  - `left_foot_index` → `foot_L`, `right_foot_index` → `foot_R`
+- Update `version` field from 1 to 2.
+- Update `keypoint_source` field from `"mediapipe_pose"` to `"mediapipe_pose_33_v2"`.
 - YOLO anchor correction split for SwingCue 17:
   - 12 anatomical-overlap points (shoulder/elbow/wrist/hip/knee/ankle × 2): retain YOLO correction
   - 5 new points (head_crown, hand_L, hand_R, foot_L, foot_R): use MediaPipe raw value, no YOLO correction (YOLO does not output these landmarks)
