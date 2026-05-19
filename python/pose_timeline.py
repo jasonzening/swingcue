@@ -7,10 +7,15 @@ Pipeline order (composed by main.py / future callers):
 
     raw_coco_frames
       → detect_outliers_and_reject       (kp jumps > 10% of video width)
-      → smooth_ema                        (alpha=0.4 EMA per kp trajectory)
+      → bidirectional_ema                 (PR-5.9: forward+backward, zero phase)
       → gap_fill_linear                   (interp null runs <= 5 frames)
       → apply_yolo_anchor_correction      (when YOLO 5-phase data available)
       → validate_timeline                 (gate before write)
+
+PR-5.9 also snapshots raw_keypoints into each frame in main.py BEFORE
+the pipeline runs, so the post-pipeline `keypoints` field can be
+compared against the untouched `raw_keypoints` field by the frontend
+debug overlay.
 
 Coordinate convention: video native pixels throughout. Confidence values
 preserved through the pipeline; coordinate `None` values flow as
@@ -210,6 +215,10 @@ def detect_outliers_and_reject(
 
 def smooth_ema(timeline: dict, alpha: float = 0.4) -> dict:
     """
+    DEPRECATED (PR-5.9 Task 2). Causal EMA — left in place for any
+    historical caller / test. The pipeline now invokes
+    `bidirectional_ema` instead. See that function for the replacement.
+
     Exponential moving average per keypoint trajectory.
 
     Null frames are skipped (smoothing does not fill in gaps — that is
@@ -239,6 +248,120 @@ def smooth_ema(timeline: dict, alpha: float = 0.4) -> dict:
             kp[1] = round(new_y, 1)
             prev = (new_x, new_y)
     logger.info(f"[pose_timeline] smooth_ema: alpha={alpha}")
+    return timeline
+
+
+# Names processed by PR-5.9 bidirectional_ema. Includes the derived
+# head_crown so it shares the same smoothing treatment as the COCO 17
+# (otherwise it would jitter per-frame while everything else is smooth).
+# Outlier rejection + gap fill remain COCO-only; those are independent
+# concerns and head_crown's nulls come from its inputs' visibility, not
+# from per-frame motion outliers.
+_SMOOTHABLE_NAMES: tuple[str, ...] = COCO_NAMES + ("head_crown",)
+
+
+def _bidirectional_ema_1d(values: list[Optional[float]], alpha: float) -> list[Optional[float]]:
+    """
+    PR-5.9 Task 2: forward-backward EMA pass.
+    Null-aware: a None value resets both passes (so blending never spans
+    a gap). The output at each position is the average of the forward
+    and backward smoothed estimates — zero phase delay.
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    # Forward (causal)
+    forward: list[Optional[float]] = [None] * n
+    prev_f: Optional[float] = None
+    for i in range(n):
+        v = values[i]
+        if v is None:
+            forward[i] = None
+            prev_f = None
+            continue
+        if prev_f is None:
+            forward[i] = v
+            prev_f = v
+        else:
+            new_v = prev_f + alpha * (v - prev_f)
+            forward[i] = new_v
+            prev_f = new_v
+    # Backward (anti-causal)
+    backward: list[Optional[float]] = [None] * n
+    prev_b: Optional[float] = None
+    for i in range(n - 1, -1, -1):
+        v = values[i]
+        if v is None:
+            backward[i] = None
+            prev_b = None
+            continue
+        if prev_b is None:
+            backward[i] = v
+            prev_b = v
+        else:
+            new_v = prev_b + alpha * (v - prev_b)
+            backward[i] = new_v
+            prev_b = new_v
+    # Average — when both passes have a value at i, return the mean.
+    # When only one side has a value (the other is None due to a null
+    # somewhere ahead/behind), fall back to the side that does. This
+    # preserves the original null-skip behaviour at gap boundaries.
+    out: list[Optional[float]] = [None] * n
+    for i in range(n):
+        f, b = forward[i], backward[i]
+        if f is None and b is None:
+            out[i] = None
+        elif f is None:
+            out[i] = b
+        elif b is None:
+            out[i] = f
+        else:
+            out[i] = (f + b) / 2
+    return out
+
+
+def bidirectional_ema(timeline: dict, alpha: float = 0.4) -> dict:
+    """
+    PR-5.9 Task 2: replaces the causal `smooth_ema` with a forward-
+    backward double pass. Zero phase delay — appropriate for offline
+    analysis where the entire timeline is available before write.
+
+    Applied per-keypoint, per-coordinate (x and y independently).
+    Confidence values pass through unchanged. Null-aware per the
+    _bidirectional_ema_1d contract. Iterates `_SMOOTHABLE_NAMES` which
+    includes the PR-5.9 head_crown derivation.
+
+    Mutates and returns timeline.
+    """
+    frames = timeline["frames"]
+    if not frames:
+        logger.info(f"[pose_timeline] bidirectional_ema: zero frames, no-op")
+        return timeline
+    for name in _SMOOTHABLE_NAMES:
+        xs: list[Optional[float]] = []
+        ys: list[Optional[float]] = []
+        for f in frames:
+            kp = f["keypoints"].get(name)
+            if kp is None:
+                xs.append(None)
+                ys.append(None)
+                continue
+            xs.append(kp[0])
+            ys.append(kp[1])
+        smoothed_x = _bidirectional_ema_1d(xs, alpha)
+        smoothed_y = _bidirectional_ema_1d(ys, alpha)
+        for i, f in enumerate(frames):
+            kp = f["keypoints"].get(name)
+            if kp is None:
+                continue
+            if smoothed_x[i] is not None:
+                kp[0] = round(smoothed_x[i], 1)
+            if smoothed_y[i] is not None:
+                kp[1] = round(smoothed_y[i], 1)
+    logger.info(
+        f"[pose_timeline] bidirectional_ema: alpha={alpha} "
+        f"names={len(_SMOOTHABLE_NAMES)}"
+    )
     return timeline
 
 

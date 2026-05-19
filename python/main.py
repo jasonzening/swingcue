@@ -217,10 +217,10 @@ async def analyze(req: AnalyzeRequest):
             if raw_coco_frames:
                 from pose_timeline import (
                     apply_yolo_anchor_correction,
+                    bidirectional_ema,
                     build_timeline_from_raw_coco_frames,
                     detect_outliers_and_reject,
                     gap_fill_linear,
-                    smooth_ema,
                     validate_timeline,
                 )
                 tl = build_timeline_from_raw_coco_frames(
@@ -239,7 +239,9 @@ async def analyze(req: AnalyzeRequest):
                 for f in tl["frames"]:
                     f["raw_keypoints"] = _copy.deepcopy(f["keypoints"])
                 tl = detect_outliers_and_reject(tl)
-                tl = smooth_ema(tl, alpha=0.4)
+                # PR-5.9 Task 2: bidirectional (forward+backward) EMA —
+                # zero phase delay vs the prior causal smooth_ema.
+                tl = bidirectional_ema(tl, alpha=0.4)
                 tl = gap_fill_linear(tl)
                 # Collect YOLO keypoints per phase from the orchestrator
                 # summary (PR-4 patched yolo/orchestrator.py to include
