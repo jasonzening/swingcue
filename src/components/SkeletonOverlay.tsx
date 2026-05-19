@@ -49,6 +49,11 @@ type Props = {
   // Optional with defaults from coachingAnchors. See module docstring.
   shoulderExpand?: number;
   hipExpand?: number;
+  // PR-5.9 Task 5: debug overlay mode. When `'pose'` AND the active
+  // frame has `raw_keypoints` (v1.5+ pose_timeline_2d), render a
+  // second dot set in blue so the smoothing effect is visible. Silently
+  // disabled when raw_keypoints is absent (legacy v1 videos).
+  debugMode?: 'pose';
 };
 
 // PR-5.8A: keypoints whose draw position becomes the expanded value.
@@ -58,20 +63,38 @@ const EXPANDED_NAMES = new Set<CocoKeypointName>([
   'left_shoulder', 'right_shoulder', 'left_hip', 'right_hip',
 ]);
 
-const HIGH_CONF = 0.7;
 const COLOR_HIGH = '#CCCCCC';      // bright grey — confident keypoint
 const COLOR_MID  = '#666666';      // dim grey — lower confidence
 const COLOR_EDGE = '#999999';      // skeleton bone
+// PR-5.9 Task 5: raw debug dot style.
+const COLOR_RAW  = '#5599FF';
+const RAW_DOT_RADIUS = 3;
+const RAW_DOT_OPACITY = 0.7;
+
+// PR-5.9 Task 6: 4-tier confidence-based fade. Replaces the prior
+// binary HIGH_CONF threshold. Edge opacity uses the min of its two
+// endpoint opacities — so an edge with one low-conf endpoint fades
+// proportionally rather than disappearing in lockstep with the dot.
+function confidenceOpacity(conf: number): number {
+  if (conf >= 0.7) return 1.0;
+  if (conf >= 0.5) return 0.7;
+  if (conf >= 0.3) return 0.4;
+  return 0; // < 0.3 → hidden
+}
 
 export function SkeletonOverlay({
   timeline,
   videoEl,
   shoulderExpand = SHOULDER_EXPAND_DEFAULT,
   hipExpand = HIP_EXPAND_DEFAULT,
+  debugMode,
 }: Props) {
   const dotRefs = useRef<Partial<Record<CocoKeypointName, SVGCircleElement | null>>>({});
   const edgeRefs = useRef<Array<SVGLineElement | null>>([]);
+  // PR-5.9 Task 5: parallel raw-dot refs, mounted only when debugMode active.
+  const rawDotRefs = useRef<Partial<Record<CocoKeypointName, SVGCircleElement | null>>>({});
   const lastValidFrameRef = useRef<PoseFrame | null>(null);
+  const debugOn = debugMode === 'pose';
 
   useEffect(() => {
     if (!videoEl) return;
@@ -121,18 +144,24 @@ export function SkeletonOverlay({
         return frame.keypoints[name];
       };
 
+      // Per-keypoint opacity (PR-5.9 Task 6) — cached for edge endpoint
+      // lookups below.
+      const opacityByName: Partial<Record<CocoKeypointName, number>> = {};
       // Dots
       for (const name of COCO_KEYPOINT_NAMES) {
         const dot = dotRefs.current[name];
         if (!dot) continue;
         const kp = resolveKp(name);
         const [x, y, conf] = kp;
-        if (x === null || y === null) {
+        const op = confidenceOpacity(conf);
+        opacityByName[name] = op;
+        if (x === null || y === null || op === 0) {
           dot.setAttribute('visibility', 'hidden');
         } else {
           dot.setAttribute('cx', String(x));
           dot.setAttribute('cy', String(y));
-          dot.setAttribute('fill', conf >= HIGH_CONF ? COLOR_HIGH : COLOR_MID);
+          dot.setAttribute('fill', conf >= 0.7 ? COLOR_HIGH : COLOR_MID);
+          dot.setAttribute('opacity', String(op));
           dot.setAttribute('visibility', 'visible');
         }
       }
@@ -144,16 +173,40 @@ export function SkeletonOverlay({
         if (!line) return;
         const a = resolveKp(from);
         const b = resolveKp(to);
-        if (a[0] === null || a[1] === null || b[0] === null || b[1] === null) {
+        // PR-5.9 Task 6: edge opacity = min of two endpoint opacities.
+        const edgeOp = Math.min(
+          opacityByName[from] ?? 0,
+          opacityByName[to]   ?? 0,
+        );
+        if (a[0] === null || a[1] === null || b[0] === null || b[1] === null || edgeOp === 0) {
           line.setAttribute('visibility', 'hidden');
         } else {
           line.setAttribute('x1', String(a[0]));
           line.setAttribute('y1', String(a[1]));
           line.setAttribute('x2', String(b[0]));
           line.setAttribute('y2', String(b[1]));
+          line.setAttribute('opacity', String(0.7 * edgeOp));
           line.setAttribute('visibility', 'visible');
         }
       });
+      // PR-5.9 Task 5: raw dots (debug mode only, when raw_keypoints
+      // present on the interpolated frame). Rendered without PR-5.8A
+      // expansion so the comparison is to truly-untouched data.
+      if (debugOn) {
+        const raw = (frame as PoseFrame & { raw_keypoints?: Record<string, [number | null, number | null, number]> }).raw_keypoints;
+        for (const name of COCO_KEYPOINT_NAMES) {
+          const rd = rawDotRefs.current[name];
+          if (!rd) continue;
+          const rk = raw?.[name];
+          if (!rk || rk[0] === null || rk[1] === null) {
+            rd.setAttribute('visibility', 'hidden');
+          } else {
+            rd.setAttribute('cx', String(rk[0]));
+            rd.setAttribute('cy', String(rk[1]));
+            rd.setAttribute('visibility', 'visible');
+          }
+        }
+      }
     };
 
     // Continuous rAF loop (existing behaviour).
@@ -179,7 +232,7 @@ export function SkeletonOverlay({
       videoEl.removeEventListener('loadedmetadata', draw);
       videoEl.removeEventListener('seeked', draw);
     };
-  }, [videoEl, timeline]);
+  }, [videoEl, timeline, shoulderExpand, hipExpand, debugOn]);
 
   return (
     <svg
@@ -211,6 +264,17 @@ export function SkeletonOverlay({
           r={5}
           stroke="rgba(0,0,0,0.5)"
           strokeWidth={1}
+          visibility="hidden"
+        />
+      ))}
+      {/* PR-5.9 Task 5: raw debug dots — only mounted when ?debug=pose. */}
+      {debugOn && COCO_KEYPOINT_NAMES.map(name => (
+        <circle
+          key={`raw-${name}`}
+          ref={el => { rawDotRefs.current[name] = el; }}
+          r={RAW_DOT_RADIUS}
+          fill={COLOR_RAW}
+          opacity={RAW_DOT_OPACITY}
           visibility="hidden"
         />
       ))}

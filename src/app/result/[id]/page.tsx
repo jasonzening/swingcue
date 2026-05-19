@@ -33,6 +33,10 @@ export default function ResultPage() {
     [searchParams],
   );
 
+  // PR-5.9 Task 5: ?debug=pose enables the raw-vs-final dot overlay in
+  // SkeletonOverlay. Hidden behind URL param — no production UI change.
+  const debugMode = searchParams.get('debug') === 'pose' ? 'pose' : undefined;
+
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [videoUrl, setVideoUrl] = useState('');
   const [issue, setIssue] = useState<MainIssueType>('early_extension');
@@ -218,6 +222,7 @@ export default function ResultPage() {
           poseTimeline={poseTimeline}
           shoulderExpand={expandFactors.shoulder}
           hipExpand={expandFactors.hip}
+          debugMode={debugMode}
         />
       ) : (
         <div className="no-vid"><p>Video loading…</p></div>

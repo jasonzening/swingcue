@@ -99,6 +99,11 @@ interface Props {
   // (commit 3). Optional; defaults live in lib/skeleton/coachingAnchors.
   shoulderExpand?: number;
   hipExpand?: number;
+  // PR-5.9 Task 5: debug overlay mode. Only `'pose'` is meaningful right
+  // now — when set, SkeletonOverlay renders the raw_keypoints sibling
+  // (when present) as small blue dots alongside the final keypoints.
+  // URL-sourced (?debug=pose) by the result page.
+  debugMode?: 'pose';
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
@@ -233,6 +238,8 @@ export function SwingPlayer({
   // see a guaranteed number.
   shoulderExpand = SHOULDER_EXPAND_DEFAULT,
   hipExpand = HIP_EXPAND_DEFAULT,
+  // PR-5.9 Task 5: debug overlay mode forwarded to SkeletonOverlay.
+  debugMode,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -577,6 +584,7 @@ export function SwingPlayer({
             videoEl={videoRef.current}
             shoulderExpand={shoulderExpand}
             hipExpand={hipExpand}
+            debugMode={debugMode}
           />
         )}
 
