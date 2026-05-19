@@ -7,30 +7,43 @@
  * Canvas overlay 与视频时间精确同步。
  * 三层切换：Body / Arms / Club / All
  *
- * ── SwingCue disc semantics (NORMATIVE, PR-5.6 lock-in) ───────────────────
+ * ── SwingCue disc semantics (NORMATIVE, PR-5.7 lock-in) ───────────────────
  *
- * The disc is a COACHING VISUAL PLANE anchored by body keypoints — not a
- * physically exact 3D reconstruction of body geometry.
+ * The disc is a PHASE-AWARE COACHING VISUAL PLANE anchored by body
+ * keypoints — not a physically exact 3D reconstruction of body geometry.
  *
- * Body keypoints determine:
- *   1. Center position  (cx, cy = midpoint of L/R shoulder or hip kp)
- *   2. Anchor direction (angleRad = atan2 of L/R kp pair per frame)
- *   3. Body-layer identity (shoulder plane vs hip plane)
+ * Three-layer signal model (per PR-5.7 audit + Jason ref-image):
  *
- * Body keypoints do NOT determine:
- *   - Visual disc width frame-by-frame
- *   - ry / ry-to-rx ratio
+ *   1. PHASE    — primary visual state. The swing phase (setup → top →
+ *                 transition → impact → finish) drives a per-layer
+ *                 compression curve on the disc's visual width. Shoulder
+ *                 and hip compress on independent curves because the
+ *                 body opens differently at each.
+ *   2. KEYPOINTS — anchor only. Body keypoints determine:
+ *                   - Center position (cx, cy = midpoint of L/R kp)
+ *                   - Anchor direction (angleRad = atan2 of L/R kp)
+ *                   - Body-layer identity (shoulder plane vs hip plane)
+ *                 Body keypoints DO NOT directly determine visual width.
+ *   3. currentDist — ±10% micro-correction layered on top of the phase
+ *                 compression so the disc still "breathes" with live kp
+ *                 foreshortening, without letting kp dominate the
+ *                 coaching readability of the plane.
  *
- * Visual disc width comes from a setup-baseline body scale (median of
- * the first ~0.6s of valid frames), held stable through the entire swing
- * so the plane stays coaching-readable during rotation, foreshortening,
- * and finish poses. Readability and instructional clarity are prioritised
- * over raw 2D foreshortening fidelity.
+ * final_rx = baseline_rx × phase_compression × (1 + micro_correction)
  *
- * This is the lesson distilled from PR-5.1 (rx locked absolutely → disc
- * detached from body), PR-5.5 (rx tied to currentDist → disc collapsed
- * at top/finish), and PR-5.6 (rx baseline-locked, center+direction
- * live-tracked → coaching-readable AND body-anchored).
+ * Baseline_rx is captured once from a median of setup-phase frames
+ * (PR-5.6), held stable across the swing. This is a coaching overlay,
+ * not a physically exact 3D reconstruction. Readability and
+ * instructional clarity are prioritised over raw 2D foreshortening
+ * fidelity.
+ *
+ * Lesson history:
+ *   PR-5.1 — rx locked absolutely        → disc detached during rotation
+ *   PR-5.5 — rx tied to currentDist      → disc collapsed at top/finish
+ *   PR-5.6 — baseline-locked, kp anchor  → readable AND anchored, but
+ *                                          visually static through swing
+ *   PR-5.7 — phase-driven compression    → readable, anchored, AND
+ *                                          communicates body rotation
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
@@ -47,6 +60,10 @@ import {
   PERSPECTIVE_RY_RATIO,
 } from '@/lib/disc/computeDiscParams';
 import { unwrapAngle } from '@/lib/disc/unwrap';
+import {
+  getPhaseCompression,
+  computeMicroCorrection,
+} from '@/lib/disc/phaseCompression';
 
 // ── PR-5.4 visual constants ──────────────────────────────────────────────
 // Neon green for both discs and the kp-line glow. Jason's single-color
@@ -339,12 +356,11 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
           }
         }
 
-        // PR-5.6: center + direction from live kp, visual width from
-        // stable baseline anchor. angle path: null baselineDist makes
-        // rotationFromGeometry return plain atan2 (PR-5.1 §3.A acos
-        // amplification is permanently retired — body rotation reads
-        // through the constant-size disc + live angle, not through
-        // amplified angle magnitude).
+        // PR-5.7: phase-driven compression (primary) × baseline rx ×
+        // (1 + micro currentDist correction). PR-5.6 baseline anchor
+        // remains the visual size source; phase + micro modulate it.
+        // angle path: still atan2 (null baselineDist) — PR-5.1 §3.A
+        // acos amplification is permanently retired.
         const shoulder = computeShoulderDisc(poseFrame, null);
         if (shoulder) {
           const unwrapped = unwrapAngle(
@@ -354,16 +370,24 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             t,
           );
           lastShoulderRef.current = { angleRad: unwrapped, ts: t };
-          // Anchor when locked; live rx until then (first few rAF ticks
-          // before setup-phase samples are collected).
-          const fixedRx = discAnchorRef.current?.shoulderRx ?? shoulder.rx;
-          const fixedRxCv = fixedRx * scaleX;
+          // Baseline rx (PR-5.6 median anchor); falls back to live rx
+          // during the first few rAF ticks before samples are collected.
+          const baselineRx = discAnchorRef.current?.shoulderRx ?? shoulder.rx;
+          // PR-5.7 phase compression (smoothstep across 5 phase anchors).
+          const phaseComp = getPhaseCompression(t, phases, 'shoulder');
+          // PR-5.7 ±10% micro: dist is rx × 2 / DISC_RX_RATIO since rx
+          // already bakes in the ratio (see computeDiscParams).
+          const baselineDist = (baselineRx * 2) / DISC_RX_RATIO;
+          const currentDist  = (shoulder.rx * 2) / DISC_RX_RATIO;
+          const micro = computeMicroCorrection(currentDist, baselineDist);
+          const finalRx = baselineRx * phaseComp * (1 + micro);
+          const finalRxCv = finalRx * scaleX;
           drawTiltedDisc(
             ctx,
             shoulder.cx * scaleX,
             shoulder.cy * scaleY,
-            fixedRxCv,
-            fixedRx * PERSPECTIVE_RY_RATIO * scaleY,
+            finalRxCv,
+            finalRx * PERSPECTIVE_RY_RATIO * scaleY,
             unwrapped,
             NEON_GREEN,
           );
@@ -372,7 +396,7 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             shoulder.cx * scaleX,
             shoulder.cy * scaleY,
             unwrapped,
-            fixedRxCv,
+            finalRxCv,
           );
         }
 
@@ -388,14 +412,19 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             t,
           );
           lastHipRef.current = { angleRad: unwrapped, ts: t };
-          const fixedRx = discAnchorRef.current?.hipRx ?? hip.rx;
-          const fixedRxCv = fixedRx * scaleX;
+          const baselineRx = discAnchorRef.current?.hipRx ?? hip.rx;
+          const phaseComp = getPhaseCompression(t, phases, 'hip');
+          const baselineDist = (baselineRx * 2) / DISC_RX_RATIO;
+          const currentDist  = (hip.rx * 2) / DISC_RX_RATIO;
+          const micro = computeMicroCorrection(currentDist, baselineDist);
+          const finalRx = baselineRx * phaseComp * (1 + micro);
+          const finalRxCv = finalRx * scaleX;
           drawTiltedDisc(
             ctx,
             hip.cx * scaleX,
             hip.cy * scaleY,
-            fixedRxCv,
-            fixedRx * PERSPECTIVE_RY_RATIO * scaleY,
+            finalRxCv,
+            finalRx * PERSPECTIVE_RY_RATIO * scaleY,
             unwrapped,
             NEON_GREEN,
           );
@@ -404,7 +433,7 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
             hip.cx * scaleX,
             hip.cy * scaleY,
             unwrapped,
-            fixedRxCv,
+            finalRxCv,
           );
         }
       }
