@@ -109,13 +109,15 @@ This makes the rendering view-independent: face-on, behind-the-line, or any angl
 
 ## 6. Schema v2
 
+Field names align with PR-4 actual implementation (`version`, `keypoint_source`). v1 → v2 migration only changes the value of `version` and `keypoint_source`, not their names. Existing v1 data in DB is untouched.
+
 New `pose_timeline_2d` JSONB structure:
 
 ```json
 {
-  "schema_version": 2,
-  "kp_source": "mediapipe_pose_33_v2",
-  "fps_sampled": 14,
+  "version": 2,
+  "keypoint_source": "mediapipe_pose_33_v2",
+  "fps_sampled": 10,
   "frame_count": 70,
   "frames": [
     {
@@ -133,7 +135,7 @@ New `pose_timeline_2d` JSONB structure:
 
 **Coexistence with v1**:
 - Existing analyzed videos retain v1 (COCO 17). Migration is opt-in via re-analyze.
-- Frontend reads `schema_version`; v1 → uses old COCO mapping (legacy), v2 → uses new SwingCue 17 mapping.
+- Frontend reads `version`; v1 → uses old COCO mapping (legacy), v2 → uses new SwingCue 17 mapping.
 - New uploads always produce v2.
 
 ---
@@ -152,11 +154,20 @@ Test on `b3fea3f0-e248-44d7-a923-0bb43172b5bf` (test video):
 - If yes: no offset needed for shoulders/hips. PR-5.8 complete after schema migration.
 - If no: apply joint center offset per original PR-5.8 design (8% of `|shoulder→hip|` toward body center).
 
+### Visual acceptance criteria (must pass before deciding no-offset)
+- Skeleton overlay: shoulder → elbow line visibly passes through upper arm midline (not along outer skin edge)
+- Skeleton overlay: hip → knee line visibly passes through thigh midline (not along outer skin edge)
+- If both pass on b3fea3f0 setup frame: do NOT apply any joint-center offset. Proceed to Step 3 schema migration only.
+- If either fails: apply offset per original PR-5.8 design (`?shoulderOffset=0.08&hipOffset=0.08`), URL-tunable, iterate visually on test video until pass.
+
 ### Step 3 — Python schema upgrade
 Modify `python/pose_timeline.py`:
 - Stop compressing MediaPipe 33 → COCO 17.
 - Output schema v2 with 17 SwingCue keypoints + derived head_crown.
 - Update `kp_source` metadata to `mediapipe_pose_33_v2` (also fixes the stale `mediapipe_pose` label).
+- YOLO anchor correction split for SwingCue 17:
+  - 12 anatomical-overlap points (shoulder/elbow/wrist/hip/knee/ankle × 2): retain YOLO correction
+  - 5 new points (head_crown, hand_L, hand_R, foot_L, foot_R): use MediaPipe raw value, no YOLO correction (YOLO does not output these landmarks)
 
 ### Step 4 — Frontend mapping migration
 - Replace `src/lib/skeleton/coco.ts` with `src/lib/skeleton/swingcue17.ts`.
@@ -173,7 +184,7 @@ Modify `python/pose_timeline.py`:
 
 ## 8. Joint Center Question (deferred to Step 2 verification)
 
-MediaPipe Pose documentation describes landmarks 11/12/23/24 as the "shoulder" and "hip" joints (not surface landmarks). Our hypothesis: these are already at glenohumeral / femoral head centers.
+MediaPipe landmarks may be closer to joint centers than COCO surface landmarks, but this must be visually verified before any offset is applied.
 
 **If hypothesis confirmed** (Step 2 visual check passes): no joint-center offset needed. PR-5.8 is purely schema migration + index re-mapping.
 
@@ -222,7 +233,7 @@ Run these commands and report findings before starting Step 3:
 grep -nE "mediapipe|MediaPipe|YOLO|yolo|Pose" python/pose_timeline.py
 
 # Confirm metadata label and current schema output
-grep -nA 3 "kp_source\|schema_version\|landmarks" python/pose_timeline.py
+grep -nA 3 "keypoint_source\|version\|landmarks" python/pose_timeline.py
 
 # Check what MediaPipe model variant is in use (Pose Landmarker, Pose, etc.)
 grep -nE "pose_landmarker|PoseLandmarker|mp\.solutions\.pose|mediapipe\.solutions" python/
@@ -237,8 +248,8 @@ psql -c "SELECT id, jsonb_path_query(pose_timeline_2d, '$.schema_version') AS v 
 
 Expected findings:
 - Pipeline includes both `mediapipe` and `yolo` imports / function calls
-- `kp_source = "mediapipe_pose"` (stale, per existing memory note) or `"mediapipe_yolo_hybrid_v1"`
-- Schema version = 1 currently, 17 COCO kp output
+- `keypoint_source = "mediapipe_pose"` (stale label, fix during PR-5.8)
+- `version` field = 1 currently, 17 COCO kp output
 - MediaPipe model = either `mp.solutions.pose` (legacy) or `pose_landmarker` (new API)
 
 If audit reveals YOLO-only pipeline (no MediaPipe), revise this spec — PR-5.8 then requires adding MediaPipe integration as additional work.
