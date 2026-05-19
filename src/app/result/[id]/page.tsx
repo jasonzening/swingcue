@@ -8,8 +8,8 @@
  * 2. 如果没有 keypoint 数据，fallback 到存储的 overlay_timeline_json（5帧快照）
  */
 
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { SwingPlayer } from '@/components/SwingPlayer';
 import { generateDenseOverlayTimeline } from '@/lib/overlay/templates';
@@ -17,11 +17,21 @@ import { generateSparsePhaseOverlayTimeline } from '@/lib/overlay/sparsePhaseOve
 import { fetchPoseRows } from '@/lib/sam3d/poseFetch';
 import type { MainIssueType, PhaseMarkers, VideoMetadata, OverlayTimeline, KeypointFrame, PoseTimeline } from '@/types/analysis';
 import { ISSUE_LABELS } from '@/types/analysis';
+// PR-5.8A: render-time coaching-anchor expansion (URL-tunable).
+import { readExpandFactorsFromURL } from '@/lib/skeleton/coachingAnchors';
 
 export default function ResultPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const videoId = params.id as string;
+
+  // PR-5.8A: parse ?shoulderExpand=...&hipExpand=... once per mount.
+  // Falls back to defaults (0.40 / 0.25) when missing or out-of-range.
+  const expandFactors = useMemo(
+    () => readExpandFactorsFromURL(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
 
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [videoUrl, setVideoUrl] = useState('');
@@ -191,6 +201,8 @@ export default function ResultPage() {
           duration={meta.durationSec}
           dataSource={dataSource}
           poseTimeline={poseTimeline}
+          shoulderExpand={expandFactors.shoulder}
+          hipExpand={expandFactors.hip}
         />
       ) : (
         <div className="no-vid"><p>Video loading…</p></div>

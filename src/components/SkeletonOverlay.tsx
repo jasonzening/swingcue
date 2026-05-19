@@ -26,22 +26,47 @@
 import { useEffect, useRef } from 'react';
 import type {
   CocoKeypointName,
+  Keypoint,
   PoseFrame,
   PoseTimeline,
 } from '@/types/analysis';
 import { COCO_KEYPOINT_NAMES, COCO_SKELETON_EDGES } from '@/lib/skeleton/coco';
+// PR-5.8A: render-time SwingCue coaching-anchor expansion.
+import {
+  expandShoulders,
+  expandHips,
+  SHOULDER_EXPAND_DEFAULT,
+  HIP_EXPAND_DEFAULT,
+  type Point2D,
+} from '@/lib/skeleton/coachingAnchors';
 
 type Props = {
   timeline: PoseTimeline;
   videoEl: HTMLVideoElement | null;
+  // PR-5.8A: outward expansion factors along the shoulder/hip line.
+  // Optional with defaults from coachingAnchors. See module docstring.
+  shoulderExpand?: number;
+  hipExpand?: number;
 };
+
+// PR-5.8A: keypoints whose draw position becomes the expanded value.
+// All other keypoints render raw. Edges from shoulder→elbow and
+// hip→knee use the expanded proximal + the raw distal.
+const EXPANDED_NAMES = new Set<CocoKeypointName>([
+  'left_shoulder', 'right_shoulder', 'left_hip', 'right_hip',
+]);
 
 const HIGH_CONF = 0.7;
 const COLOR_HIGH = '#CCCCCC';      // bright grey — confident keypoint
 const COLOR_MID  = '#666666';      // dim grey — lower confidence
 const COLOR_EDGE = '#999999';      // skeleton bone
 
-export function SkeletonOverlay({ timeline, videoEl }: Props) {
+export function SkeletonOverlay({
+  timeline,
+  videoEl,
+  shoulderExpand = SHOULDER_EXPAND_DEFAULT,
+  hipExpand = HIP_EXPAND_DEFAULT,
+}: Props) {
   const dotRefs = useRef<Partial<Record<CocoKeypointName, SVGCircleElement | null>>>({});
   const edgeRefs = useRef<Array<SVGLineElement | null>>([]);
   const lastValidFrameRef = useRef<PoseFrame | null>(null);
@@ -60,11 +85,42 @@ export function SkeletonOverlay({ timeline, videoEl }: Props) {
       if (candidate) lastValidFrameRef.current = candidate;
       if (!frame) return;
 
+      // PR-5.8A: compute expanded shoulder + hip pairs once per draw.
+      // Resolved at lookup time below for both dots and edges. When a
+      // pair has any null coord, the resolver falls back to raw — the
+      // existing null-handling branches below still hide the element.
+      const expandedShoulder = expandPairOrNull(
+        frame.keypoints.left_shoulder,
+        frame.keypoints.right_shoulder,
+        shoulderExpand,
+        expandShoulders,
+      );
+      const expandedHip = expandPairOrNull(
+        frame.keypoints.left_hip,
+        frame.keypoints.right_hip,
+        hipExpand,
+        expandHips,
+      );
+      const resolveKp = (
+        name: CocoKeypointName,
+      ): readonly [number | null, number | null, number] => {
+        if (!EXPANDED_NAMES.has(name)) return frame.keypoints[name];
+        if (name === 'left_shoulder'  && expandedShoulder)
+          return [expandedShoulder.left.x,  expandedShoulder.left.y,  frame.keypoints[name][2]];
+        if (name === 'right_shoulder' && expandedShoulder)
+          return [expandedShoulder.right.x, expandedShoulder.right.y, frame.keypoints[name][2]];
+        if (name === 'left_hip'       && expandedHip)
+          return [expandedHip.left.x,       expandedHip.left.y,       frame.keypoints[name][2]];
+        if (name === 'right_hip'      && expandedHip)
+          return [expandedHip.right.x,      expandedHip.right.y,      frame.keypoints[name][2]];
+        return frame.keypoints[name];
+      };
+
       // Dots
       for (const name of COCO_KEYPOINT_NAMES) {
         const dot = dotRefs.current[name];
         if (!dot) continue;
-        const kp = frame.keypoints[name];
+        const kp = resolveKp(name);
         const [x, y, conf] = kp;
         if (x === null || y === null) {
           dot.setAttribute('visibility', 'hidden');
@@ -75,12 +131,14 @@ export function SkeletonOverlay({ timeline, videoEl }: Props) {
           dot.setAttribute('visibility', 'visible');
         }
       }
-      // Edges
+      // Edges — each endpoint resolved through resolveKp so the four
+      // edges touching a shoulder/hip endpoint pick up the expanded
+      // value; the elbow/wrist/knee/ankle distal points stay raw.
       COCO_SKELETON_EDGES.forEach(([from, to], i) => {
         const line = edgeRefs.current[i];
         if (!line) return;
-        const a = frame.keypoints[from];
-        const b = frame.keypoints[to];
+        const a = resolveKp(from);
+        const b = resolveKp(to);
         if (a[0] === null || a[1] === null || b[0] === null || b[1] === null) {
           line.setAttribute('visibility', 'hidden');
         } else {
@@ -153,6 +211,24 @@ export function SkeletonOverlay({ timeline, videoEl }: Props) {
       ))}
     </svg>
   );
+}
+
+/**
+ * PR-5.8A: apply an expansion helper to an L/R Keypoint pair, returning
+ * null when either side has a null coord (so the caller can fall back
+ * to the raw value and let the existing null-handling branches hide
+ * the element). Confidence is read from the raw value at the call site.
+ */
+function expandPairOrNull(
+  L: Keypoint,
+  R: Keypoint,
+  factor: number,
+  fn: (l: Point2D, r: Point2D, f: number) => { left: Point2D; right: Point2D },
+): { left: Point2D; right: Point2D } | null {
+  const [lx, ly] = L;
+  const [rx, ry] = R;
+  if (lx === null || ly === null || rx === null || ry === null) return null;
+  return fn({ x: lx, y: ly }, { x: rx, y: ry }, factor);
 }
 
 /**

@@ -64,6 +64,12 @@ import {
   getPhaseCompression,
   computeMicroCorrection,
 } from '@/lib/disc/phaseCompression';
+// PR-5.8A: defaults for the coaching-anchor expansion props. The URL
+// is parsed in result/[id]/page.tsx; this module only consumes.
+import {
+  SHOULDER_EXPAND_DEFAULT,
+  HIP_EXPAND_DEFAULT,
+} from '@/lib/skeleton/coachingAnchors';
 
 // ── PR-5.4 visual constants ──────────────────────────────────────────────
 // Neon green for both discs and the kp-line glow. Jason's single-color
@@ -85,6 +91,12 @@ interface Props {
   // skeleton overlay toggle. NULL when pose_timeline_2d failed
   // validation or the video predates PR-4.
   poseTimeline?: PoseTimeline | null;
+  // PR-5.8A: render-time coaching-anchor expansion factors. URL-sourced
+  // (?shoulderExpand=, ?hipExpand=) by the result page. Consumed by
+  // SkeletonOverlay (PR-5.8A commit 2) and computeShoulderDisc/Hip
+  // (commit 3). Optional; defaults live in lib/skeleton/coachingAnchors.
+  shoulderExpand?: number;
+  hipExpand?: number;
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
@@ -207,7 +219,19 @@ function median(samples: number[]): number {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dataSource, poseTimeline }: Props) {
+export function SwingPlayer({
+  videoUrl,
+  timeline,
+  phases,
+  duration: propDur,
+  dataSource,
+  poseTimeline,
+  // PR-5.8A: coaching-anchor expansion factors. Defaults applied here
+  // so internal call sites (SkeletonOverlay, computeShoulderDisc/Hip)
+  // see a guaranteed number.
+  shoulderExpand = SHOULDER_EXPAND_DEFAULT,
+  hipExpand = HIP_EXPAND_DEFAULT,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef    = useRef<number>(0);
@@ -361,7 +385,10 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         // remains the visual size source; phase + micro modulate it.
         // angle path: still atan2 (null baselineDist) — PR-5.1 §3.A
         // acos amplification is permanently retired.
-        const shoulder = computeShoulderDisc(poseFrame, null);
+        // PR-5.8A: pass the URL-sourced expansion factor so the disc
+        // anchor and chord endpoints align with the expanded skeleton
+        // dots/lines drawn by SkeletonOverlay (single source of truth).
+        const shoulder = computeShoulderDisc(poseFrame, null, shoulderExpand);
         if (shoulder) {
           const unwrapped = unwrapAngle(
             shoulder.angleRad,
@@ -403,7 +430,7 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         // Hip lift in computeHipDisc targets the corrected shoulder midpoint;
         // pass null when the shoulder disc couldn't be computed this frame.
         const shoulderMid = shoulder ? { cx: shoulder.cx, cy: shoulder.cy } : null;
-        const hip = computeHipDisc(poseFrame, null, shoulderMid);
+        const hip = computeHipDisc(poseFrame, null, shoulderMid, hipExpand);
         if (hip) {
           const unwrapped = unwrapAngle(
             hip.angleRad,
@@ -438,7 +465,7 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
         }
       }
     }
-  }, [timeline, phases, layer, dur, poseTimeline]);
+  }, [timeline, phases, layer, dur, poseTimeline, shoulderExpand, hipExpand]);
 
   useEffect(() => {
     let id: number;
@@ -541,7 +568,12 @@ export function SwingPlayer({ videoUrl, timeline, phases, duration: propDur, dat
 
         {/* PR-4: skeleton overlay (toggle, default off) */}
         {skeletonOn && poseTimeline && (
-          <SkeletonOverlay timeline={poseTimeline} videoEl={videoRef.current} />
+          <SkeletonOverlay
+            timeline={poseTimeline}
+            videoEl={videoRef.current}
+            shoulderExpand={shoulderExpand}
+            hipExpand={hipExpand}
+          />
         )}
 
         {/* Badges */}
