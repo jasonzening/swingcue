@@ -72,7 +72,7 @@ import {
 const NEON_GREEN = '#00ff88';
 // 3D perspective tilt — simulates viewing a horizontal body-rotation
 // plane from below. Applied via ctx.transform y-axis squish by cos(tilt).
-const PERSPECTIVE_TILT_DEG = 25;
+const PERSPECTIVE_TILT_DEG = 75;   // SPIKE - DO NOT MERGE
 const PERSPECTIVE_TILT_RAD = (PERSPECTIVE_TILT_DEG * Math.PI) / 180;
 
 interface Props {
