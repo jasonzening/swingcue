@@ -430,18 +430,24 @@ def build_timeline_from_raw_coco_frames(
     video_width: int,
     video_height: int,
     sample_fps: float,
+    keypoint_source: str = "mediapipe_pose_v1_5",
 ) -> dict:
     """
     Wrap a list of per-frame coco dicts into the v1 pose_timeline_2d JSON
     envelope. Caller is expected to pass the output through the data-
     quality helpers above + apply_yolo_anchor_correction before writing.
+
+    keypoint_source labels the extractor that produced raw_frames. PR-6.1a
+    adds "rtmpose_v1" alongside the existing "mediapipe_pose_v1_5". The
+    field flows through to the JSONB envelope and is consumed by the
+    frontend type union in src/types/analysis.ts.
     """
     return {
         "version": 1,
         "fps_sampled": int(round(sample_fps)),
         "video_width": video_width,
         "video_height": video_height,
-        "keypoint_source": "mediapipe_pose_v1_5",
+        "keypoint_source": keypoint_source,
         "yolo_anchor_correction": {"applied": False},
         "frames": raw_frames,
     }

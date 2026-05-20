@@ -21,7 +21,16 @@ fal-client==0.5.6
 # Dockerfile yolo-builder stage and is NOT installed at runtime —
 # see docs/decisions/PR-3_C_ONNX_DESIGN.md.
 #
-# onnxruntime 1.18.x is the last release line built against numpy 1.x;
-# 1.19+ added numpy 2.x support. We stay on the 1.x-compatible line so
-# the resolver agrees with our mediapipe pin (which requires numpy 1.x).
-onnxruntime>=1.18,<2.0
+# PR-6.1a tightens this from `>=1.18,<2.0` to a single pinned version.
+# 1.20.0 is the spec-recommended onnxruntime build (PR-6.1_SPEC_v2 §6),
+# tested compatible with rtmlib 0.0.15 + numpy 1.26.4 + mediapipe 0.10.x.
+onnxruntime==1.20.0
+
+# PR-6.1a: RTMPose pose-estimation extractor behind POSE_RUNNER_OVERRIDE
+# env flag. Apache-2.0 thin wrapper over ONNXRuntime (no mmcv/mmpose/torch
+# at runtime — same lightweight pattern as the PR-3 YOLO11m ONNX path).
+# Phase 1B verdict ranked RTMPose #1/5 on visual quality vs the current
+# mediapipe_pose production runner. Ships dormant by default; flag flip
+# is a Railway env var edit (PR-6.1_SPEC_v2 §13). Cache pre-fetched into
+# /opt/rtmlib-cache via the Dockerfile rtmpose-fetch stage.
+rtmlib==0.0.15

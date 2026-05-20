@@ -209,9 +209,22 @@ async def analyze(req: AnalyzeRequest):
             )
 
         # 4c. PR-4: pose_timeline_2d pipeline.
-        # Independent of pose3d / yolo paths above; runs on the MediaPipe-
-        # derived raw_coco_frames. YOLO 5-phase keypoints (if available)
-        # are used as anchor corrections. Non-fatal on failure.
+        # Independent of pose3d / yolo paths above; runs on the
+        # extractor's raw_coco_frames. YOLO 5-phase keypoints (if
+        # available) are used as anchor corrections — but ONLY for the
+        # MediaPipe path. RTMPose is already a top-down detector with
+        # its own bbox-cropped pose head, so the MP→YOLO offset
+        # correction designed for MediaPipe drift doesn't transfer and
+        # may add jitter. PR-6.1_SPEC_v2 §10 Q6 + audit-stage decision.
+        # Non-fatal on failure.
+        # PR-6.1a: read POSE_RUNNER_OVERRIDE here too so we can label the
+        # envelope correctly and skip YOLO anchor for the rtmpose path.
+        # analyzer.py reads the same env at the same call boundary.
+        _pose_runner = os.environ.get(
+            "POSE_RUNNER_OVERRIDE", "mediapipe",
+        ).strip().lower()
+        _is_rtmpose = _pose_runner == "rtmpose"
+        _keypoint_source = "rtmpose_v1" if _is_rtmpose else "mediapipe_pose_v1_5"
         pose_timeline_2d: Optional[dict] = None
         try:
             if raw_coco_frames:
@@ -228,9 +241,10 @@ async def analyze(req: AnalyzeRequest):
                     video_width=metadata.width,
                     video_height=metadata.height,
                     sample_fps=effective_sample_fps,
+                    keypoint_source=_keypoint_source,
                 )
-                # PR-5.9 Task 4: snapshot raw MediaPipe extract per frame
-                # BEFORE outlier/smooth/gap mutate `keypoints`. The debug
+                # PR-5.9 Task 4: snapshot raw extract per frame BEFORE
+                # outlier/smooth/gap mutate `keypoints`. The debug
                 # overlay (?debug=pose, frontend commit 5) compares
                 # raw_keypoints vs the post-pipeline `keypoints` to
                 # visualize smoothing's effect. deepcopy is necessary —
@@ -243,20 +257,29 @@ async def analyze(req: AnalyzeRequest):
                 # zero phase delay vs the prior causal smooth_ema.
                 tl = bidirectional_ema(tl, alpha=0.4)
                 tl = gap_fill_linear(tl)
-                # Collect YOLO keypoints per phase from the orchestrator
-                # summary (PR-4 patched yolo/orchestrator.py to include
-                # keypoints_2d on completed-status entries).
-                yolo_kps_per_phase: dict[str, list] = {}
-                if isinstance(yolo_summary, dict):
-                    for r in yolo_summary.get("results", []) or []:
-                        if (isinstance(r, dict)
-                                and r.get("status") == "completed"
-                                and r.get("keypoints_2d") is not None):
-                            yolo_kps_per_phase[r["phase"]] = r["keypoints_2d"]
-                if yolo_kps_per_phase:
-                    tl = apply_yolo_anchor_correction(
-                        tl, yolo_kps_per_phase, phases,
+                if _is_rtmpose:
+                    # PR-6.1a: skip YOLO anchor correction for the rtmpose
+                    # path; see envelope comment above for rationale.
+                    # PR-6.1c may re-enable after visual review.
+                    logger.info(
+                        "[pose_timeline] rtmpose path: skipping "
+                        "apply_yolo_anchor_correction (PR-6.1a)"
                     )
+                else:
+                    # Collect YOLO keypoints per phase from the orchestrator
+                    # summary (PR-4 patched yolo/orchestrator.py to include
+                    # keypoints_2d on completed-status entries).
+                    yolo_kps_per_phase: dict[str, list] = {}
+                    if isinstance(yolo_summary, dict):
+                        for r in yolo_summary.get("results", []) or []:
+                            if (isinstance(r, dict)
+                                    and r.get("status") == "completed"
+                                    and r.get("keypoints_2d") is not None):
+                                yolo_kps_per_phase[r["phase"]] = r["keypoints_2d"]
+                    if yolo_kps_per_phase:
+                        tl = apply_yolo_anchor_correction(
+                            tl, yolo_kps_per_phase, phases,
+                        )
                 if validate_timeline(tl):
                     pose_timeline_2d = tl
                 else:

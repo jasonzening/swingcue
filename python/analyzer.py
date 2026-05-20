@@ -169,11 +169,11 @@ def moving_average(arr: np.ndarray, window: int = 3) -> np.ndarray:
 _SAMPLE_FPS_CAP = 60.0
 _SAMPLE_FPS_FALLBACK_NATIVE = 30.0
 
-def analyze_video(
+def _analyze_video_mediapipe(
     video_path: str, sample_fps: Optional[float] = None,
 ) -> tuple[VideoMetadata, List[KeypointFrame], list[dict], float]:
     """
-    Main analysis function.
+    MediaPipe extractor path (production default — predates PR-6.1).
     Samples the video at sample_fps. When sample_fps is None (PR-5.9
     default), uses min(native_fps, 60). When explicitly provided, the
     value is clamped to [1, 60]. Runs MediaPipe Pose on each sampled
@@ -270,3 +270,211 @@ def analyze_video(
         f"{len(raw_coco_frames)} raw COCO frames"
     )
     return metadata, keypoint_frames, raw_coco_frames, effective_sample_fps
+
+
+# ---------------------------------------------------------------------------
+# PR-6.1a: RTMPose extractor path. Behind POSE_RUNNER_OVERRIDE env flag.
+# Ships dormant by default; opt-in via POSE_RUNNER_OVERRIDE=rtmpose.
+# See docs/files/PR-6.1_SPEC_v2.md §13 (env-flagged rollout).
+# ---------------------------------------------------------------------------
+
+# COCO 17 names used to build BodyLandmarks from the rtmpose extractor's
+# pixel dict. Mirrors the same 13 named slots in BodyLandmarks but sourced
+# from COCO names instead of MediaPipe 33-point indices.
+_BODY_LANDMARK_FROM_COCO: tuple[tuple[str, str], ...] = (
+    ("head",          "nose"),
+    ("leftShoulder",  "left_shoulder"),
+    ("rightShoulder", "right_shoulder"),
+    ("leftElbow",     "left_elbow"),
+    ("rightElbow",    "right_elbow"),
+    ("leftWrist",     "left_wrist"),
+    ("rightWrist",    "right_wrist"),
+    ("leftHip",       "left_hip"),
+    ("rightHip",      "right_hip"),
+    ("leftKnee",      "left_knee"),
+    ("rightKnee",     "right_knee"),
+    ("leftAnkle",     "left_ankle"),
+    ("rightAnkle",    "right_ankle"),
+)
+
+
+def _coco_pixel_dict_to_body_landmarks(
+    coco: dict[str, list],
+    video_width: int,
+    video_height: int,
+) -> Optional[BodyLandmarks]:
+    """
+    Convert the 17-COCO pixel-space dict (from rtmpose_extractor) into the
+    same BodyLandmarks shape the MediaPipe path emits.
+
+    Coords come back from the extractor in native pixels; BodyLandmarks
+    holds normalized 0-1 floats — divide by width/height. RTMPose does
+    not predict depth; z is forced to 0.0.
+
+    Returns None when ALL 13 mapped keypoints are null. Otherwise returns
+    a BodyLandmarks whose individual fields may still be None for nulled
+    keypoints (matches MediaPipe extract_landmarks semantics).
+    """
+    if not coco:
+        return None
+
+    def pt(coco_name: str) -> Optional[Point2D]:
+        kp = coco.get(coco_name)
+        if kp is None or kp[0] is None or kp[1] is None:
+            return None
+        x_px, y_px, conf = kp
+        return Point2D(
+            x=round(float(x_px) / video_width,  4) if video_width  else 0.0,
+            y=round(float(y_px) / video_height, 4) if video_height else 0.0,
+            # rtmpose does not predict depth; coaching code that reads
+            # Point2D.z (e.g. shoulder rotation disc occlusion) silently
+            # gets 0.0 for now. Disc visualisation already gracefully
+            # handles flat-z input — verified in PR-6.0 Phase 1B smoke.
+            z=0.0,
+            confidence=round(float(conf), 3),
+        )
+
+    bl = BodyLandmarks(
+        head=pt("nose"),
+        leftShoulder=pt("left_shoulder"),
+        rightShoulder=pt("right_shoulder"),
+        leftElbow=pt("left_elbow"),
+        rightElbow=pt("right_elbow"),
+        leftWrist=pt("left_wrist"),
+        rightWrist=pt("right_wrist"),
+        leftHip=pt("left_hip"),
+        rightHip=pt("right_hip"),
+        leftKnee=pt("left_knee"),
+        rightKnee=pt("right_knee"),
+        leftAnkle=pt("left_ankle"),
+        rightAnkle=pt("right_ankle"),
+    )
+    # All-null guard mirrors the MediaPipe path's "no pose_landmarks → None"
+    # behavior. If every keypoint dropped below visibility, treat the frame
+    # as null so callers skip appending a KeypointFrame.
+    has_any = any(getattr(bl, attr) is not None for attr, _ in _BODY_LANDMARK_FROM_COCO)
+    return bl if has_any else None
+
+
+def _analyze_video_rtmpose(
+    video_path: str, sample_fps: Optional[float] = None,
+) -> tuple[VideoMetadata, List[KeypointFrame], list[dict], float]:
+    """
+    RTMPose extractor path — same return shape as _analyze_video_mediapipe.
+
+    Sampling logic mirrors the MediaPipe path exactly so a side-by-side
+    comparison varies only the extractor, not the timing of sampled
+    frames. head_crown is intentionally NOT derived here (PR-6.1a scope
+    decision; PR-6.1b adds an ear+nose derivation after empirical sweep).
+    """
+    # Deferred import keeps the mediapipe-default code path free of any
+    # rtmlib transitive cost when POSE_RUNNER_OVERRIDE is unset.
+    from pose.rtmpose_extractor import extract_coco_subset_from_rtmpose
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    metadata = get_video_metadata(cap)
+    logger.info(
+        f"[rtmpose] Video: {metadata.width}x{metadata.height} @ "
+        f"{metadata.fps}fps, {metadata.durationSec:.2f}s"
+    )
+
+    video_fps = metadata.fps or _SAMPLE_FPS_FALLBACK_NATIVE
+    # Same sampling logic as the MediaPipe path. PR-6.1d will replace
+    # this fixed-stride sampling with adaptive (low fps in static
+    # phases, high fps in active swing window); for 6.1a we keep parity.
+    if sample_fps is None:
+        effective_sample_fps = min(video_fps, _SAMPLE_FPS_CAP)
+    else:
+        effective_sample_fps = max(1.0, min(float(sample_fps), _SAMPLE_FPS_CAP))
+    logger.info(
+        f"[analyze_video_rtmpose] sample_fps: requested={sample_fps} → "
+        f"effective={effective_sample_fps} (native={video_fps})"
+    )
+    frame_interval = max(1, int(round(video_fps / effective_sample_fps)))
+
+    keypoint_frames: List[KeypointFrame] = []
+    raw_coco_frames: list[dict] = []
+    frame_idx = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if frame_idx % frame_interval == 0:
+            time_sec = frame_idx / video_fps
+
+            # rtmpose extractor takes BGR directly — no colour conversion.
+            coco_dict = extract_coco_subset_from_rtmpose(
+                frame, metadata.width, metadata.height,
+            )
+
+            if coco_dict is not None:
+                landmarks = _coco_pixel_dict_to_body_landmarks(
+                    coco_dict, metadata.width, metadata.height,
+                )
+                if landmarks is not None:
+                    keypoint_frames.append(KeypointFrame(
+                        time=round(time_sec, 3),
+                        landmarks=landmarks,
+                    ))
+                # Raw COCO frame mirrors the mediapipe path's envelope so
+                # pose_timeline.py downstream pipeline doesn't need to
+                # special-case the source. head_crown is intentionally
+                # absent — 6.1b adds it.
+                raw_coco_frames.append({
+                    "ts": round(time_sec, 3),
+                    "frame_idx": frame_idx,
+                    "interpolated": False,
+                    "keypoints": coco_dict,
+                })
+
+        frame_idx += 1
+
+    cap.release()
+    logger.info(
+        f"[rtmpose] Extracted {len(keypoint_frames)} keypoint frames; "
+        f"{len(raw_coco_frames)} raw COCO frames"
+    )
+    return metadata, keypoint_frames, raw_coco_frames, effective_sample_fps
+
+
+# Env var name documented in PR-6.1_SPEC_v2.md §9 + §13. Default value
+# 'mediapipe' is explicit so the production code path is identical to
+# pre-PR-6.1 behavior unless this flag is set on the deploy.
+_POSE_RUNNER_ENV: str = "POSE_RUNNER_OVERRIDE"
+
+
+def analyze_video(
+    video_path: str, sample_fps: Optional[float] = None,
+) -> tuple[VideoMetadata, List[KeypointFrame], list[dict], float]:
+    """
+    PR-6.1a env-flag dispatcher.
+
+    Reads POSE_RUNNER_OVERRIDE at call time (not import time) so a
+    Railway env var flip + redeploy switches the extractor without code
+    changes. Unrecognised values fall back to the mediapipe default with
+    a warning — never a hard error.
+
+    Supported values:
+      - "mediapipe" (default if unset): legacy MediaPipe Pose extractor
+      - "rtmpose":                     PR-6.1 RTMPose extractor
+
+    Both paths return the identical tuple shape.
+    """
+    runner = os.environ.get(_POSE_RUNNER_ENV, "mediapipe").strip().lower()
+    if runner == "rtmpose":
+        logger.info(
+            f"[analyze_video] dispatch: POSE_RUNNER_OVERRIDE={runner} "
+            f"→ _analyze_video_rtmpose"
+        )
+        return _analyze_video_rtmpose(video_path, sample_fps)
+    if runner not in ("", "mediapipe"):
+        logger.warning(
+            f"[analyze_video] unknown POSE_RUNNER_OVERRIDE={runner!r}; "
+            f"falling back to mediapipe"
+        )
+    return _analyze_video_mediapipe(video_path, sample_fps)

@@ -278,7 +278,18 @@ export interface PoseTimeline {
   fps_sampled: number;
   video_width: number;
   video_height: number;
-  keypoint_source: 'mediapipe_pose' | 'mediapipe_pose_v1_5' | 'yolo' | 'hybrid';
+  // PR-6.1a adds 'rtmpose_v1' alongside the MediaPipe family. The
+  // frontend SkeletonOverlay reads 17-COCO names regardless of source,
+  // so this union expansion is purely a TypeScript narrowing hint —
+  // runtime rendering is unchanged for the rtmpose path in 6.1a. The
+  // v1.5+ raw_keypoints field is also present on rtmpose envelopes
+  // (main.py writes deepcopy snapshot for both extractor paths).
+  keypoint_source:
+    | 'mediapipe_pose'
+    | 'mediapipe_pose_v1_5'
+    | 'rtmpose_v1'
+    | 'yolo'
+    | 'hybrid';
   yolo_anchor_correction: {
     applied: boolean;
     anchor_phases?: string[];
