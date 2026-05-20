@@ -267,6 +267,10 @@ export interface PoseFrame {
   frame_idx: number;                                // original video frame index
   interpolated: boolean;                            // true = gap-filled, false = direct
   keypoints: Record<CocoKeypointName, Keypoint>;
+  // PR-5.9 Task 4: pre-smoothing per-frame MediaPipe extract. Optional
+  // (legacy v1 timelines do not have this; v1.5+ always does). Same
+  // schema as `keypoints` plus the v1.5 head_crown entry.
+  raw_keypoints?: Record<CocoKeypointName, Keypoint>;
 }
 
 export interface PoseTimeline {
@@ -274,7 +278,7 @@ export interface PoseTimeline {
   fps_sampled: number;
   video_width: number;
   video_height: number;
-  keypoint_source: 'mediapipe_pose' | 'yolo' | 'hybrid';
+  keypoint_source: 'mediapipe_pose' | 'mediapipe_pose_v1_5' | 'yolo' | 'hybrid';
   yolo_anchor_correction: {
     applied: boolean;
     anchor_phases?: string[];

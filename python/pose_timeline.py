@@ -7,10 +7,15 @@ Pipeline order (composed by main.py / future callers):
 
     raw_coco_frames
       → detect_outliers_and_reject       (kp jumps > 10% of video width)
-      → smooth_ema                        (alpha=0.4 EMA per kp trajectory)
+      → bidirectional_ema                 (PR-5.9: forward+backward, zero phase)
       → gap_fill_linear                   (interp null runs <= 5 frames)
       → apply_yolo_anchor_correction      (when YOLO 5-phase data available)
       → validate_timeline                 (gate before write)
+
+PR-5.9 also snapshots raw_keypoints into each frame in main.py BEFORE
+the pipeline runs, so the post-pipeline `keypoints` field can be
+compared against the untouched `raw_keypoints` field by the frontend
+debug overlay.
 
 Coordinate convention: video native pixels throughout. Confidence values
 preserved through the pipeline; coordinate `None` values flow as
@@ -57,6 +62,19 @@ MEDIAPIPE_TO_COCO_IDX: dict[str, int] = {
 # rejected as [None, None, conf]. Matches MediaPipe's recommended default.
 MIN_VISIBILITY: float = 0.3
 
+# PR-5.9 Task 7: head_crown derivation.
+# Tunable Python module constant. crown sits roughly factor × (ear→mouth)
+# distance above the ear midline. First-cut 0.45 calibrated on b3fea3f0
+# face-on setup pose. Adjustable via Python redeploy.
+HEAD_CROWN_FACTOR: float = 0.45
+
+# Internal-only MediaPipe 33 indices for landmarks NOT in the 17 output
+# keypoints, but required as inputs to derived points (e.g., head_crown).
+# Kept separate from MEDIAPIPE_TO_COCO_IDX so the canonical output map
+# stays at 17 entries.
+_MP_MOUTH_LEFT_IDX: int = 9
+_MP_MOUTH_RIGHT_IDX: int = 10
+
 
 # ---------------------------------------------------------------------------
 # 1. Extractor — MediaPipe 33-point → COCO 17 subset (per frame)
@@ -69,12 +87,15 @@ def extract_coco_subset_from_mediapipe(
 ) -> dict[str, list[Any]]:
     """
     Convert MediaPipe's 33-point pose_landmarks.landmark list into the
-    COCO 17-keypoint subset, in video native pixel coordinates.
+    COCO 17-keypoint subset, in video native pixel coordinates. Also
+    emits the PR-5.9-derived `head_crown` point (computed from internal
+    mouth + ear landmarks; mouth itself is not exported).
 
     Returns:
-        {name: [x_px | None, y_px | None, confidence]} for all 17 names.
-        Coordinates are None when MediaPipe visibility < MIN_VISIBILITY;
-        confidence is still recorded in the third slot for diagnostics.
+        {name: [x_px | None, y_px | None, confidence]} for all 17 COCO
+        names + `head_crown`. Coordinates are None when MediaPipe
+        visibility < MIN_VISIBILITY; confidence is still recorded in
+        the third slot for diagnostics.
     """
     out: dict[str, list[Any]] = {}
     for name in COCO_NAMES:
@@ -89,7 +110,55 @@ def extract_coco_subset_from_mediapipe(
                 round(float(lm.y) * video_height, 1),
                 conf,
             ]
+    # PR-5.9 Task 7: derive head_crown from ear midline + mouth midline.
+    out["head_crown"] = derive_head_crown(
+        mp_pose_landmarks, video_width, video_height,
+    )
     return out
+
+
+def derive_head_crown(
+    mp_pose_landmarks: Any,
+    video_width: int,
+    video_height: int,
+) -> list[Any]:
+    """
+    PR-5.9 Task 7: skull-crown approximation from MediaPipe ear + mouth
+    landmarks. MediaPipe Pose does not output skull crown directly.
+
+    crown = ear_mid + (ear_mid - mouth_mid) * HEAD_CROWN_FACTOR
+    conf  = min(left_ear, right_ear, mouth_left, mouth_right) * 0.8
+
+    Returns [x_px, y_px, confidence] in video native pixels. Returns
+    [None, None, conf] when any of the four input landmarks has
+    visibility below MIN_VISIBILITY (mirrors the existing per-keypoint
+    null contract).
+    """
+    left_ear   = mp_pose_landmarks[MEDIAPIPE_TO_COCO_IDX["left_ear"]]
+    right_ear  = mp_pose_landmarks[MEDIAPIPE_TO_COCO_IDX["right_ear"]]
+    mouth_l    = mp_pose_landmarks[_MP_MOUTH_LEFT_IDX]
+    mouth_r    = mp_pose_landmarks[_MP_MOUTH_RIGHT_IDX]
+    conf = round(
+        min(left_ear.visibility, right_ear.visibility,
+            mouth_l.visibility,  mouth_r.visibility) * 0.8,
+        3,
+    )
+    if (left_ear.visibility  < MIN_VISIBILITY
+            or right_ear.visibility < MIN_VISIBILITY
+            or mouth_l.visibility   < MIN_VISIBILITY
+            or mouth_r.visibility   < MIN_VISIBILITY):
+        return [None, None, conf]
+    ear_mid_x   = (left_ear.x + right_ear.x) / 2
+    ear_mid_y   = (left_ear.y + right_ear.y) / 2
+    mouth_mid_x = (mouth_l.x  + mouth_r.x)  / 2
+    mouth_mid_y = (mouth_l.y  + mouth_r.y)  / 2
+    crown_x = ear_mid_x + (ear_mid_x - mouth_mid_x) * HEAD_CROWN_FACTOR
+    crown_y = ear_mid_y + (ear_mid_y - mouth_mid_y) * HEAD_CROWN_FACTOR
+    return [
+        round(float(crown_x) * video_width,  1),
+        round(float(crown_y) * video_height, 1),
+        conf,
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +215,10 @@ def detect_outliers_and_reject(
 
 def smooth_ema(timeline: dict, alpha: float = 0.4) -> dict:
     """
+    DEPRECATED (PR-5.9 Task 2). Causal EMA — left in place for any
+    historical caller / test. The pipeline now invokes
+    `bidirectional_ema` instead. See that function for the replacement.
+
     Exponential moving average per keypoint trajectory.
 
     Null frames are skipped (smoothing does not fill in gaps — that is
@@ -175,6 +248,120 @@ def smooth_ema(timeline: dict, alpha: float = 0.4) -> dict:
             kp[1] = round(new_y, 1)
             prev = (new_x, new_y)
     logger.info(f"[pose_timeline] smooth_ema: alpha={alpha}")
+    return timeline
+
+
+# Names processed by PR-5.9 bidirectional_ema. Includes the derived
+# head_crown so it shares the same smoothing treatment as the COCO 17
+# (otherwise it would jitter per-frame while everything else is smooth).
+# Outlier rejection + gap fill remain COCO-only; those are independent
+# concerns and head_crown's nulls come from its inputs' visibility, not
+# from per-frame motion outliers.
+_SMOOTHABLE_NAMES: tuple[str, ...] = COCO_NAMES + ("head_crown",)
+
+
+def _bidirectional_ema_1d(values: list[Optional[float]], alpha: float) -> list[Optional[float]]:
+    """
+    PR-5.9 Task 2: forward-backward EMA pass.
+    Null-aware: a None value resets both passes (so blending never spans
+    a gap). The output at each position is the average of the forward
+    and backward smoothed estimates — zero phase delay.
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    # Forward (causal)
+    forward: list[Optional[float]] = [None] * n
+    prev_f: Optional[float] = None
+    for i in range(n):
+        v = values[i]
+        if v is None:
+            forward[i] = None
+            prev_f = None
+            continue
+        if prev_f is None:
+            forward[i] = v
+            prev_f = v
+        else:
+            new_v = prev_f + alpha * (v - prev_f)
+            forward[i] = new_v
+            prev_f = new_v
+    # Backward (anti-causal)
+    backward: list[Optional[float]] = [None] * n
+    prev_b: Optional[float] = None
+    for i in range(n - 1, -1, -1):
+        v = values[i]
+        if v is None:
+            backward[i] = None
+            prev_b = None
+            continue
+        if prev_b is None:
+            backward[i] = v
+            prev_b = v
+        else:
+            new_v = prev_b + alpha * (v - prev_b)
+            backward[i] = new_v
+            prev_b = new_v
+    # Average — when both passes have a value at i, return the mean.
+    # When only one side has a value (the other is None due to a null
+    # somewhere ahead/behind), fall back to the side that does. This
+    # preserves the original null-skip behaviour at gap boundaries.
+    out: list[Optional[float]] = [None] * n
+    for i in range(n):
+        f, b = forward[i], backward[i]
+        if f is None and b is None:
+            out[i] = None
+        elif f is None:
+            out[i] = b
+        elif b is None:
+            out[i] = f
+        else:
+            out[i] = (f + b) / 2
+    return out
+
+
+def bidirectional_ema(timeline: dict, alpha: float = 0.4) -> dict:
+    """
+    PR-5.9 Task 2: replaces the causal `smooth_ema` with a forward-
+    backward double pass. Zero phase delay — appropriate for offline
+    analysis where the entire timeline is available before write.
+
+    Applied per-keypoint, per-coordinate (x and y independently).
+    Confidence values pass through unchanged. Null-aware per the
+    _bidirectional_ema_1d contract. Iterates `_SMOOTHABLE_NAMES` which
+    includes the PR-5.9 head_crown derivation.
+
+    Mutates and returns timeline.
+    """
+    frames = timeline["frames"]
+    if not frames:
+        logger.info(f"[pose_timeline] bidirectional_ema: zero frames, no-op")
+        return timeline
+    for name in _SMOOTHABLE_NAMES:
+        xs: list[Optional[float]] = []
+        ys: list[Optional[float]] = []
+        for f in frames:
+            kp = f["keypoints"].get(name)
+            if kp is None:
+                xs.append(None)
+                ys.append(None)
+                continue
+            xs.append(kp[0])
+            ys.append(kp[1])
+        smoothed_x = _bidirectional_ema_1d(xs, alpha)
+        smoothed_y = _bidirectional_ema_1d(ys, alpha)
+        for i, f in enumerate(frames):
+            kp = f["keypoints"].get(name)
+            if kp is None:
+                continue
+            if smoothed_x[i] is not None:
+                kp[0] = round(smoothed_x[i], 1)
+            if smoothed_y[i] is not None:
+                kp[1] = round(smoothed_y[i], 1)
+    logger.info(
+        f"[pose_timeline] bidirectional_ema: alpha={alpha} "
+        f"names={len(_SMOOTHABLE_NAMES)}"
+    )
     return timeline
 
 
@@ -254,7 +441,7 @@ def build_timeline_from_raw_coco_frames(
         "fps_sampled": int(round(sample_fps)),
         "video_width": video_width,
         "video_height": video_height,
-        "keypoint_source": "mediapipe_pose",
+        "keypoint_source": "mediapipe_pose_v1_5",
         "yolo_anchor_correction": {"applied": False},
         "frames": raw_frames,
     }
