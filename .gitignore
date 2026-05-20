@@ -59,3 +59,4 @@ __pycache__/
 # build time (see python/Dockerfile). Same convention as the .pt weights,
 # which are also never committed.
 *.onnx
+tmp/
