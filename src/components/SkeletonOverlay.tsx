@@ -193,7 +193,11 @@ export function SkeletonOverlay({
       // present on the interpolated frame). Rendered without PR-5.8A
       // expansion so the comparison is to truly-untouched data.
       if (debugOn) {
-        const raw = (frame as PoseFrame & { raw_keypoints?: Record<string, [number | null, number | null, number]> }).raw_keypoints;
+        // PR-5.9 Vercel fixup: PoseFrame.raw_keypoints is already
+        // optional + correctly typed (Record<CocoKeypointName, Keypoint>).
+        // The previous inline cast widened it to a looser shape and
+        // dropped `readonly`, which TS strict mode rejects.
+        const raw = frame.raw_keypoints;
         for (const name of COCO_KEYPOINT_NAMES) {
           const rd = rawDotRefs.current[name];
           if (!rd) continue;

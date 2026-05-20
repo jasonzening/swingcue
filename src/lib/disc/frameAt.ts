@@ -85,39 +85,52 @@ export function interpolatedFrame(
   if (before.ts === after.ts) return before;
   const ratio = (t - before.ts) / (after.ts - before.ts);
 
-  const keypoints = lerpKeypointSets(before.keypoints, after.keypoints, ratio);
-  const beforeRaw = (before as PoseFrame & { raw_keypoints?: Record<string, Keypoint> }).raw_keypoints;
-  const afterRaw  = (after  as PoseFrame & { raw_keypoints?: Record<string, Keypoint> }).raw_keypoints;
-  const synth: PoseFrame & { raw_keypoints?: Record<string, Keypoint> } = {
+  // PR-5.9 Vercel fixup: lerpKeypointSets is generic over the record's
+  // key type, so passing Record<CocoKeypointName, Keypoint> returns
+  // Record<CocoKeypointName, Keypoint> — no casts, no widening,
+  // assignments to PoseFrame.keypoints / raw_keypoints type-check
+  // directly. PoseFrame.raw_keypoints is already optional on the type,
+  // so we don't need an intersection-extension cast on before/after.
+  const synth: PoseFrame = {
     ts: t,
     frame_idx: before.frame_idx,
     interpolated: true,
-    keypoints: keypoints as PoseFrame['keypoints'],
+    keypoints: lerpKeypointSets(before.keypoints, after.keypoints, ratio),
   };
-  if (beforeRaw && afterRaw) {
-    synth.raw_keypoints = lerpKeypointSets(beforeRaw, afterRaw, ratio);
+  if (before.raw_keypoints && after.raw_keypoints) {
+    synth.raw_keypoints = lerpKeypointSets(
+      before.raw_keypoints, after.raw_keypoints, ratio,
+    );
   }
   return synth;
 }
 
 /**
- * Per-keypoint linear lerp. Operates on the loose Record shape (string
- * key) so the function works for both the COCO-typed `keypoints` map
- * and the PR-5.9 `raw_keypoints` sibling (which carries the same
- * 17 + head_crown keys but isn't strict-typed on PoseFrame).
+ * Per-keypoint linear lerp. Generic over the record's key type so the
+ * function preserves the caller's strict typing — when invoked with
+ * Record<CocoKeypointName, Keypoint> it returns the same, allowing
+ * direct assignment to PoseFrame.keypoints / raw_keypoints without
+ * casts.
  *
  * For each name present in `a`:
  *   - if `b` is missing the name → use a's value as-is
  *   - if either side's coord is null → use the non-null side
  *   - else → linearly interpolate x and y, take min of confidences
+ *
+ * Iteration is via Object.keys(a) so the runtime walks ALL keys present
+ * in the source record (including the v1.5 head_crown emitted by the
+ * Python backend, even though it isn't currently in CocoKeypointName).
+ * The `as K[]` cast on Object.keys claims they're all K — true for the
+ * intersection of TS-declared keys; runtime-extra keys still iterate
+ * correctly via bracket access.
  */
-function lerpKeypointSets(
-  a: Record<string, Keypoint>,
-  b: Record<string, Keypoint>,
+function lerpKeypointSets<K extends string>(
+  a: Record<K, Keypoint>,
+  b: Record<K, Keypoint>,
   ratio: number,
-): Record<string, Keypoint> {
-  const out: Record<string, Keypoint> = {};
-  for (const name of Object.keys(a)) {
+): Record<K, Keypoint> {
+  const out = {} as Record<K, Keypoint>;
+  for (const name of Object.keys(a) as K[]) {
     const ka = a[name];
     const kb = b[name];
     if (!kb) {
