@@ -1,8 +1,11 @@
-# PR-6.0 benchmark requirements — Python 3.11.
+# PR-6.0 benchmark requirements �?Python 3.11.
 #
-# Install into a clean venv, do NOT mix with python/requirements.txt
-# (production pins are numpy 1.x; here we use numpy 2.x because TF 2.16
-# needs it). Recommended setup:
+# Install into a clean venv, do NOT mix with python/requirements.txt.
+# Production pins numpy 1.x; we match that here because mediapipe 0.10.21
+# hard-blocks numpy 2.x and TF 2.16 + opencv 4.11 are both happy on 1.x.
+# (Earlier Phase 1A draft of this file pinned numpy>=2.0; that resolved
+# fine without mediapipe but pip refuses the full 5-runner install.)
+# Recommended setup:
 #
 #   python3.11 -m venv .venv-benchmark
 #   source .venv-benchmark/bin/activate    (or .venv-benchmark\Scripts\activate on Windows)
@@ -12,9 +15,9 @@
 # If you only want to run the two MediaPipe runners and skip MoveNet,
 # comment out the tensorflow* lines below.
 
-# Core video I/O + image processing — shared by all runners.
+# Core video I/O + image processing �?shared by all runners.
 opencv-python==4.11.0.86
-numpy>=2.0,<3.0
+numpy>=1.23.5,<2.0
 
 # Runner 1 + 2: MediaPipe (covers both mp.solutions.pose AND mp.tasks).
 # 0.10.21 is the version production runs in Docker; pinning the same
@@ -24,8 +27,8 @@ mediapipe==0.10.21
 # Runner 3: MoveNet. tensorflow_hub 0.16.1 + tensorflow 2.16.2 is the
 # combo that worked on Py 3.11 with the v4 Thunder graph (2026-04
 # verified). Use tensorflow-cpu instead of tensorflow if you don't have
-# CUDA — it's a drop-in replacement and ~200 MB smaller.
-tensorflow==2.16.2
+# CUDA �?it's a drop-in replacement and ~200 MB smaller.
+tensorflow-cpu==2.16.2
 tensorflow-hub==0.16.1
 
 # Runners 4 + 5: RTMPose + ViTPose via rtmlib (Apache-2.0 thin ONNX

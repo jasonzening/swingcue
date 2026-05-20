@@ -72,20 +72,44 @@ def main() -> None:
 
     runners = [] if args.skip_runners else _all_runners()
 
-    # Step 1: run each runner on each video.
+    # Step 1: run each runner on each video. Each runner is isolated in
+    # its own try/except: a setup() failure (e.g. model download fail,
+    # OS-specific path bug) or per-video run() failure must not kill
+    # subsequent runners. Phase 1B runs 5 runners × N videos and a single
+    # brittle setup() could otherwise nuke the whole batch.
+    runner_failures: list[str] = []
     for r in runners:
         print(f"\n[run_all] ===== setting up {r.name} =====")
-        r.setup()
+        try:
+            r.setup()
+        except Exception as e:
+            msg = f"{r.name}: setup() failed → {type(e).__name__}: {e}"
+            print(f"[run_all] !! SKIP {msg}")
+            runner_failures.append(msg)
+            continue
         try:
             for video in all_videos:
                 video_id = video.stem
                 print(f"[run_all]   {r.name} on {video_id} …")
-                result = r.run(video, video_id, sample_fps=args.sample_fps)
+                try:
+                    result = r.run(video, video_id, sample_fps=args.sample_fps)
+                except Exception as e:
+                    msg = (
+                        f"{r.name} on {video_id}: run() failed → "
+                        f"{type(e).__name__}: {e}"
+                    )
+                    print(f"[run_all]     !! {msg}")
+                    runner_failures.append(msg)
+                    continue
                 kp_out = OUTPUT_DIR / r.name / video_id / "keypoints.json"
                 result.save(kp_out)
                 print(f"[run_all]     → {kp_out}  ({len(result.frames)} frames)")
         finally:
-            r.teardown()
+            try:
+                r.teardown()
+            except Exception as e:
+                # Teardown failures shouldn't surface — log and move on.
+                print(f"[run_all]     teardown() warning: {type(e).__name__}: {e}")
 
     # Step 2: render per-runner overlay videos.
     if not args.skip_overlay:
@@ -150,7 +174,12 @@ def main() -> None:
                 out.write_text(__import__("json").dumps(comp, indent=2))
                 print(f"[run_all] cross-metrics {video_id} → {out}")
 
-    print("\n[run_all] done.")
+    if runner_failures:
+        print(f"\n[run_all] done with {len(runner_failures)} failure(s):")
+        for msg in runner_failures:
+            print(f"  - {msg}")
+    else:
+        print("\n[run_all] done.")
 
 
 if __name__ == "__main__":

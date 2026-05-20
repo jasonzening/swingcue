@@ -96,9 +96,14 @@ class MediaPipeTasksRunner(Runner):
 
     def setup(self) -> None:
         model_path = _ensure_model()
+        # Use model_asset_buffer (raw bytes) instead of model_asset_path
+        # to bypass a Windows-specific MediaPipe C++ bug that treats
+        # absolute paths as relative to site-packages and concatenates
+        # them — producing "<venv>/Lib/site-packages/C:\Users\...\model.task"
+        # and ENOENT. Buffer path works identically on POSIX too.
         options = mp_vision.PoseLandmarkerOptions(
             base_options=mp_tasks.BaseOptions(
-                model_asset_path=str(model_path),
+                model_asset_buffer=model_path.read_bytes(),
             ),
             # TODO(jason): VIDEO mode requires monotonically-increasing
             # timestamps via detect_for_video(). If you'd rather use
