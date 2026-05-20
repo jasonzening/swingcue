@@ -84,7 +84,13 @@ async function callPythonAnalyzer(
       body: JSON.stringify({
         video_url: videoUrl,
         view_type: viewType,
-        sample_fps: 10.0,
+        // PR-5.9.1: drop the hardcoded sample_fps: 10.0 so the analyzer
+        // takes its PR-5.9-Task-3 default of min(native_fps, 60). The
+        // implementation has shipped at python/analyzer.py:204 since
+        // PR-5.9 but was overridden here. Verdict v2 §7 caveat 6
+        // mis-attributed this as "Task 3 did not land" — only the
+        // wiring was missing. Pre-emptive accuracy improvement on the
+        // existing mediapipe path, independent of PR-6.1.
         // PR-2B: analyzer needs these to write pose_3d_phases with service-role
         video_id: videoId,
         user_id: userId,
