@@ -60,3 +60,9 @@ __pycache__/
 # which are also never committed.
 *.onnx
 tmp/
+
+# PR-6.0 benchmark harness — local-only test videos + runner outputs.
+# Never committed; runners regenerate everything from source videos.
+python/benchmark/test_videos/
+python/benchmark/output/
+.venv-benchmark/
