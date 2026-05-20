@@ -35,7 +35,15 @@ def _all_runners() -> list[Runner]:
     from .runners.mediapipe_pose   import MediaPipePoseRunner
     from .runners.mediapipe_tasks  import MediaPipeTasksRunner
     from .runners.movenet_thunder  import MoveNetThunderRunner
-    return [MediaPipePoseRunner(), MediaPipeTasksRunner(), MoveNetThunderRunner()]
+    from .runners.rtmpose          import RTMPoseRunner
+    from .runners.vitpose          import ViTPoseRunner
+    return [
+        MediaPipePoseRunner(),
+        MediaPipeTasksRunner(),
+        MoveNetThunderRunner(),
+        RTMPoseRunner(),
+        ViTPoseRunner(),
+    ]
 
 
 def main() -> None:

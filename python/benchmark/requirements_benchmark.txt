@@ -28,6 +28,16 @@ mediapipe==0.10.21
 tensorflow==2.16.2
 tensorflow-hub==0.16.1
 
+# Runners 4 + 5: RTMPose + ViTPose via rtmlib (Apache-2.0 thin ONNX
+# wrapper, no mmcv / mmpose / torch). rtmlib pulls onnxruntime as the
+# default CPU backend; pinning both unpinned for the first install so
+# pip resolves the latest compatible pair. After Phase 1B run-through,
+# pin to the working versions. Combined disk: ~500 MB including model
+# downloads (RTMPose ~50 MB to ~/.cache/rtmlib/, ViTPose-B ~340 MB to
+# the HF cache).
+rtmlib
+onnxruntime
+
 # download_videos.py uses stdlib urllib + httpx (smaller than requests).
 httpx==0.28.1
 

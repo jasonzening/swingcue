@@ -66,3 +66,7 @@ tmp/
 python/benchmark/test_videos/
 python/benchmark/output/
 .venv-benchmark/
+
+# Phase 1C — local-only doc zip + extracted spec working copies
+docs/files.zip
+docs/files/

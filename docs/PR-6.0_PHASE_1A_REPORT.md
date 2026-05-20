@@ -23,7 +23,9 @@ python/benchmark/
     ├── __init__.py
     ├── mediapipe_pose.py           ← production mirror (confidence: HIGH)
     ├── mediapipe_tasks.py          ← Tasks-API + heavy model (MEDIUM)
-    └── movenet_thunder.py          ← Google MoveNet (MEDIUM)
+    ├── movenet_thunder.py          ← Google MoveNet (MEDIUM)
+    ├── rtmpose.py                  ← rtmlib RTMPose-m balanced (MEDIUM-HIGH)
+    └── vitpose.py                  ← rtmlib YOLOX + ViTPose-B (MEDIUM, checkpoint verify)
 ```
 
 `.gitignore` updated to exclude `python/benchmark/test_videos/`,
@@ -178,6 +180,32 @@ If your bucket is named differently, edit `BUCKET` at the top of
 codec across platforms but produces large files (no real H.264
 re-encoding). Comparison videos for 3 runners × 4s @ 30fps will be
 ~30MB each. Fine for inspection; not what you'd ship.
+
+### R7 — `vitpose.py` ONNX checkpoint may be wrong family  (MEDIUM × medium)
+
+**File**: `python/benchmark/runners/vitpose.py` L51-69 (`MODEL_URL` block)
+
+Primary checkpoint is `JunkyByte/easy_ViTPose` **coco** (17-kp human).
+If that URL 404s or HuggingFace renames the path, the inline TODO
+lists three alternates plus an `apt36k` animal-trained 36-kp last
+resort. If the animal fallback is what loads, the runner self-tags
+its `notes` field with `WARNING: animal-trained apt36k checkpoint in
+use` so Phase 1B reading knows that runner's numbers aren't
+apples-to-apples. CC verified that ViTPose ONNX I/O matches rtmlib's
+RTMPose class signature, so the wrapper loads either head cleanly.
+
+### R8 — ViTPose CPU latency  (HIGH × tolerable)
+
+**File**: `python/benchmark/runners/vitpose.py`
+
+ViTPose-B is a transformer (86 M params) and runs ~5-10× slower than
+RTMPose-m on CPU. On a 7s × 30 fps swing clip with `sample_fps=10` (≈70
+sampled frames) expect ~3-8 min/video; full 30 fps sampling will hit
+20+ min/video and isn't recommended. If wall-clock is unacceptable,
+the inline TODO points at swapping `MODEL_URL` to ViTPose-S
+(`vitpose-s-coco.onnx`, ~60 MB, ~3× faster, ~2 AP lower on COCO).
+Total 1B run-through with all 5 runners × 3 videos at `sample_fps=10`:
+expect ~45-60 min wall clock vs ~6 min for the 3-runner baseline.
 
 ---
 
