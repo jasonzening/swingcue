@@ -1,0 +1,29 @@
+{
+  "video_id": "b3fea3f0-e248-44d7-a923-0bb43172b5bf",
+  "phase": "setup",
+  "frame_idx": 7,
+  "video_width": 720,
+  "video_height": 1280,
+  "labels": {
+    "left_shoulder": {
+      "x": 387,
+      "y": 476
+    },
+    "right_shoulder": {
+      "x": 535,
+      "y": 465
+    },
+    "left_hip": {
+      "x": 410,
+      "y": 610
+    },
+    "right_hip": {
+      "x": 501,
+      "y": 616
+    },
+    "neck_center": {
+      "x": 447,
+      "y": 371
+    }
+  }
+}

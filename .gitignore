@@ -78,3 +78,9 @@ docs/files/
 local_models/
 local-body-models/
 python/pilot/output/
+
+# PR-7b ground-truth — extracted phase frame PNGs are reproducible
+# via `python/pilot/scripts/extract_phase_frames.py` from the source
+# video. The label JSON files at docs/PR-7_GROUND_TRUTH/*.json ARE
+# committed (Jason's hand-marked moat data).
+docs/PR-7_GROUND_TRUTH/frames/
