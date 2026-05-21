@@ -17,8 +17,12 @@
 #
 #   python -m python.pilot.modal_app
 
-# Modal client. 0.64+ is the post-1.0 stable line with modal.App API.
-modal>=0.64,<1.0
+# Modal client. Server-side enforces a minimum version that moves
+# forward over time — `0.77.0` (resolved 2026-05-20) was already
+# rejected with "Version 0.77.0 of modal is deprecated". Bumping the
+# floor to >=1.0 keeps us on the actively-supported line; no upper
+# bound so future deprecations resolve via `pip install --upgrade`.
+modal>=1.0
 
 # httpx for video download fetch (mirrors python/benchmark/requirements_benchmark.txt
 # convention; not strictly needed for phase2a but reserved for phase2b).

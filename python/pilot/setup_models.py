@@ -71,6 +71,164 @@ BODY_MODELS_DIR = "/models/body_models"  # populated by `modal volume put`
 
 
 # ---------------------------------------------------------------------------
+# Body-model archive layout.
+#
+# Jason uploads the official SMPL/SMPL-X/SMPL-H ZIP archives directly
+# via `modal volume put` (license-clean — no scraping). The archives'
+# internal filename conventions don't match the canonical names smplx
+# expects (`SMPL_NEUTRAL.pkl`, `SMPLH_NEUTRAL.npz`, `SMPLX_NEUTRAL.npz`),
+# so setup_all_models extracts + renames in-place on the Volume.
+#
+# Format observed 2026-05-20:
+#   smpl/SMPL_python_v.1.1.0.zip            (330 MB, smpl.is.tue.mpg.de)
+#     SMPL_python_v.1.1.0/smpl/models/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl
+#     SMPL_python_v.1.1.0/smpl/models/basicmodel_m_lbs_10_207_0_v1.1.0.pkl
+#     SMPL_python_v.1.1.0/smpl/models/basicmodel_f_lbs_10_207_0_v1.1.0.pkl
+#
+#   smplx/models_smplx_v1_1.zip             (870 MB, smpl-x.is.tue.mpg.de)
+#     models/smplx/SMPLX_NEUTRAL.npz        (canonical names already)
+#     models/smplx/SMPLX_MALE.npz
+#     models/smplx/SMPLX_FEMALE.npz
+#     models/smplx/SMPLX_*.pkl              (also present, ignored — npz preferred)
+#
+#   smplh/<filename TBD>                    (from mano.is.tue.mpg.de)
+#     TODO(jason-smpl-h): document exact archive name + internal layout
+#     once your SMPL-H download lands. Common shape:
+#       mano_v1_2.zip  containing models/SMPLH_*.npz or similar.
+# ---------------------------------------------------------------------------
+
+# (zip-internal regex pattern → canonical destination relative to
+# BODY_MODELS_DIR). Matches are tried per-source-archive only after the
+# zip's internal subdir is stripped. None = file is intentionally skipped
+# (e.g. .DS_Store, source code).
+SMPL_RENAME_MAP: tuple[tuple[str, str], ...] = (
+    ("basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl", "smpl/SMPL_NEUTRAL.pkl"),
+    ("basicmodel_m_lbs_10_207_0_v1.1.0.pkl",       "smpl/SMPL_MALE.pkl"),
+    ("basicmodel_f_lbs_10_207_0_v1.1.0.pkl",       "smpl/SMPL_FEMALE.pkl"),
+)
+SMPLX_RENAME_MAP: tuple[tuple[str, str], ...] = (
+    # SMPL-X zip already has canonical names; just move them to the
+    # smplx/ prefix in body_models/. Skip .pkl copies (npz is preferred
+    # and smaller) and the smplx_npz.zip nested archive.
+    ("SMPLX_NEUTRAL.npz", "smplx/SMPLX_NEUTRAL.npz"),
+    ("SMPLX_MALE.npz",    "smplx/SMPLX_MALE.npz"),
+    ("SMPLX_FEMALE.npz",  "smplx/SMPLX_FEMALE.npz"),
+)
+
+
+def _extract_body_archive(zip_path: str, rename_map: tuple[tuple[str, str], ...]) -> int:
+    """
+    Extract canonical files from one body-model zip into BODY_MODELS_DIR.
+
+    Args:
+        zip_path:    absolute path to the source .zip on the Volume.
+        rename_map:  (zip_basename_pattern, canonical_relpath) entries.
+                     Match: zip entry basename == zip_basename_pattern.
+
+    Returns: number of files extracted.
+    """
+    import zipfile
+
+    extracted = 0
+    with zipfile.ZipFile(zip_path) as z:
+        for entry in z.namelist():
+            base = os.path.basename(entry)
+            for pattern, canonical_rel in rename_map:
+                if base == pattern:
+                    dst = os.path.join(BODY_MODELS_DIR, canonical_rel)
+                    if os.path.exists(dst):
+                        print(f"[setup_models]   skip (already extracted): {canonical_rel}")
+                        extracted += 1
+                        break
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    # zipfile.extract preserves directory hierarchy; we
+                    # want a flat rename, so read+write instead.
+                    with z.open(entry) as src_f, open(dst, "wb") as dst_f:
+                        import shutil
+                        shutil.copyfileobj(src_f, dst_f)
+                    sz_mb = os.path.getsize(dst) / 1024 / 1024
+                    print(f"[setup_models]   extracted: {canonical_rel} ({sz_mb:.1f} MB)")
+                    extracted += 1
+                    break
+    return extracted
+
+
+def _extract_smplh_generic(zip_path: str) -> int:
+    """
+    SMPL-H archive structure is less predictable than SMPL/SMPL-X.
+    Generic strategy: look for any file matching `SMPLH_*.npz` in the
+    archive and copy it to body_models/smplh/<basename>. If the upstream
+    archive uses a different format (e.g. tarball or different naming),
+    update with explicit rename mapping once the file is in hand.
+    """
+    import zipfile
+    extracted = 0
+    with zipfile.ZipFile(zip_path) as z:
+        for entry in z.namelist():
+            base = os.path.basename(entry)
+            if not base.startswith("SMPLH_") or not base.endswith(".npz"):
+                continue
+            dst = os.path.join(BODY_MODELS_DIR, "smplh", base)
+            if os.path.exists(dst):
+                print(f"[setup_models]   skip (already extracted): smplh/{base}")
+                extracted += 1
+                continue
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            import shutil
+            with z.open(entry) as src_f, open(dst, "wb") as dst_f:
+                shutil.copyfileobj(src_f, dst_f)
+            sz_mb = os.path.getsize(dst) / 1024 / 1024
+            print(f"[setup_models]   extracted: smplh/{base} ({sz_mb:.1f} MB)")
+            extracted += 1
+    return extracted
+
+
+def _extract_all_body_archives() -> None:
+    """
+    Scan BODY_MODELS_DIR/{smpl,smplh,smplx}/ for *.zip files Jason
+    uploaded via `modal volume put`. Extract canonical files in place.
+
+    Idempotent: skips files already extracted; safe to re-run.
+
+    Does NOT delete the source .zip after extraction — the Volume has
+    plenty of space and keeping the archives means re-extract is
+    possible if a canonical file gets accidentally deleted.
+    """
+    for subdir, rename_map, label in (
+        ("smpl",  SMPL_RENAME_MAP,  "SMPL"),
+        ("smplx", SMPLX_RENAME_MAP, "SMPL-X"),
+    ):
+        full_subdir = os.path.join(BODY_MODELS_DIR, subdir)
+        if not os.path.isdir(full_subdir):
+            print(f"[setup_models] no {subdir}/ dir on Volume — skipping {label} extract")
+            continue
+        zips = [
+            os.path.join(full_subdir, f)
+            for f in os.listdir(full_subdir)
+            if f.lower().endswith(".zip")
+        ]
+        if not zips:
+            continue
+        for z in zips:
+            n = _extract_body_archive(z, rename_map)
+            print(f"[setup_models] {label}: extracted {n} files from {os.path.basename(z)}")
+
+    # SMPL-H (generic — exact archive layout TBD when Jason's file lands)
+    smplh_dir = os.path.join(BODY_MODELS_DIR, "smplh")
+    if os.path.isdir(smplh_dir):
+        zips = [
+            os.path.join(smplh_dir, f)
+            for f in os.listdir(smplh_dir)
+            if f.lower().endswith((".zip", ))
+        ]
+        for z in zips:
+            n = _extract_smplh_generic(z)
+            print(f"[setup_models] SMPL-H: extracted {n} files from {os.path.basename(z)}")
+        # TODO(jason-smpl-h): if your mano.is.tue.mpg.de download is a
+        # .tar.xz instead of .zip, add a tarfile branch here.
+
+
+# ---------------------------------------------------------------------------
 # Download helper. Uses gdown's Python API (preferred over the CLI for
 # error capture); falls back to `gdown` subprocess if the API path
 # fails (some Drive files require alternate cookie handling).
@@ -175,25 +333,35 @@ if _MODAL_AVAILABLE:
         print("[setup_models] Volume committed")
 
         # Cross-check SMPL upload (Jason's `modal volume put` step).
-        # Warn but don't fail — WHAM weight download alone is useful
-        # progress even if body models aren't up yet.
+        # Two-phase: (a) extract zip archives if any, (b) verify
+        # canonical filenames exist. Warn-but-don't-fail — WHAM weight
+        # download alone is useful progress even if body_models isn't
+        # up yet.
         print(f"[setup_models] verifying body_models at {BODY_MODELS_DIR}")
         if not os.path.isdir(BODY_MODELS_DIR):
             print(
                 f"[setup_models] WARNING: {BODY_MODELS_DIR} not present. "
                 f"Run `modal volume put swingcue-pilot-models "
-                f"./local-body-models /models/body_models` before phase2b "
+                f"./local_models /models/body_models` before phase2b "
                 f"WHAM inference."
             )
         else:
+            # (a) Extract any *.zip archives in subdirs to canonical names.
+            print("[setup_models] extracting body-model archives (idempotent)")
+            _extract_all_body_archives()
+            # Commit Volume changes — extracted files only persist if we
+            # commit before the function returns.
+            model_volume.commit()
+            # (b) Verify canonical filenames exist + are sized correctly.
             missing = _verify_body_models()
             if missing:
                 print("[setup_models] body_models gaps:")
                 for line in missing:
                     print(f"  - {line}")
                 print(
-                    "[setup_models] phase2b WHAM run will fail until these "
-                    "are uploaded via `modal volume put`."
+                    "[setup_models] phase2b WHAM run will fail until "
+                    "these are present (re-upload missing archives or "
+                    "verify the extract step ran)."
                 )
 
         # Final report
