@@ -1,0 +1,34 @@
+{
+  "schema_version": "v3",
+  "sport": "golf",
+  "video_id": "b32e0f21-2656-473c-aa87-e1eaf6e1221f",
+  "phase": "setup",
+  "frame_idx": 6,
+  "view": "down_the_line",
+  "video_width": 720,
+  "video_height": 1280,
+  "labels": {
+    "left_shoulder": {
+      "x": 411,
+      "y": 465
+    },
+    "right_shoulder": {
+      "x": 401,
+      "y": 461
+    },
+    "left_hip": {
+      "x": 274,
+      "y": 589
+    },
+    "right_hip": {
+      "x": 274,
+      "y": 580
+    },
+    "neck_center": {
+      "x": 489,
+      "y": 404
+    }
+  },
+  "labeler_version": "labeler_v2",
+  "labeled_at": "2026-05-21T18:35:31Z"
+}
