@@ -6,6 +6,7 @@
 **Strategic frame**: Build a generic motion correction engine + sport-agnostic plugin architecture. Golf is the first domain plugin. Tennis / ski / PT / ergonomics are future plugins. The engine + the per-domain ground-truth datasets are SwingCue Inc.'s technical moat.
 
 **v3 changes vs v2**:
+- §0 NEW: strategic priority lock — Golf first / Platform-aware / NOT platform-first
 - §2 architecture refactored: generic Engine + Domain Plugin layers
 - §3 module layout: `python/motion_correction/{engine,domains,schemas}` (was `python/golf_correction/`)
 - §4 NEW: `DomainPlugin` abstract interface + golf as reference implementation
@@ -14,6 +15,25 @@
 - §11 NEW: future plugins roadmap (tennis/baseball/ski/running/PT/industrial)
 - §12 NEW: multi-view support (face_on / down_the_line) — coefficient sweep per view
 - §13 NEW: migration path v2 → v3
+
+---
+
+## §0 Strategic priority (lock above all)
+
+**Golf first. Platform-aware. NOT platform-first.**
+
+PR-7a's deliverable is **corrected golf keypoints rendering through the pipeline on real swing videos**. Not a "perfect universal motion platform." Not a "DomainPlugin pattern showcase." The platform structure (engine/, domains/, ABC) exists ONLY because it imposes cleaner code organization at zero extra cost; it MUST NOT add a single day of implementation delay vs a hypothetical golf-only version.
+
+Concrete operational rules derived from this principle:
+
+- If during PR-7a CC notices DomainPlugin ABC adds friction without obvious value → strip the ABC for now, keep concrete classes. Re-introduce ABC in PR-7.x once tennis or another second plugin is real demand.
+- If multi-view config (`ANATOMICAL_OFFSETS["face_on" | "down_the_line"]`) feels overbuilt for the 15-sample ground truth Jason has → ship golf face_on first, add down_the_line as PR-7.0.5 follow-up.
+- If schema separation (analysis anchors vs visual anchors) doesn't show clear benefit in PR-7c integration → collapse to one schema, document the decision for future re-separation.
+- If correction engine modules (`engine/`) end up referencing golf-specific concepts → that's FINE if it ships golf. Decouple in PR-7.x when second domain forces the constraint.
+
+**The architecture is in service of golf shipping, not the reverse.**
+
+Future plugins (tennis, ski, PT, industrial) are roadmap signals (§11), NOT current commitments. SwingCue Inc. value capture = golf shipped + ground truth dataset accumulated, in that order.
 
 ---
 
