@@ -8,8 +8,8 @@ on Modal GPU. **NEVER touches production code** (`python/analyzer.py`,
 
 | Sub-PR | Phase | Status |
 |---|---|---|
-| phase2a | Modal scaffold (Volume + Image defs + setup function) | ✓ in progress |
-| phase2b | WHAM-first smoke (real inference on `b3fea3f0`) | pending |
+| phase2a | Modal scaffold (Volume + Image defs + setup function) | ✓ done (`25f0fae`) |
+| phase2b | WHAM-first smoke (real inference on `b3fea3f0`) | code in place; awaiting Jason prep |
 | phase2c | Expand to Human3R / SMPLest-X / EasyMocap / SMPLify-X | pending |
 
 See `docs/files/PHASE_2_BONE_CENTER_PILOT_SPEC_v2.md` for the
@@ -27,8 +27,7 @@ python/pilot/
 └── runners/
     ├── __init__.py
     └── _base.py               ← shared PilotRunResult schema (20 joints)
-    # phase2b adds:
-    # └── wham_runner.py       ← WHAM Modal entrypoint + result writer
+    └── wham_runner.py       ← WHAM Modal entrypoint + result writer (phase2b)
     # phase2c adds:
     # └── human3r_runner.py    ← Human3R Modal entrypoint
     # └── smplest_x_runner.py  ← SMPLest-X Modal entrypoint
@@ -54,24 +53,50 @@ python -m python.pilot.modal_app
 #   → prints APP_NAME, VOLUME_NAME, defined images, etc.
 ```
 
-## SMPL research-license credentials (phase2b prerequisite)
+## SMPL family weights — `modal volume put` (phase2b prerequisite)
 
-Phase 2 needs SMPL/SMPL-X model weights, which live behind a
-registration wall (research-license, non-commercial). Jason registers
-at:
+Phase 2 needs SMPL / SMPL-H / SMPL-X model weights, which live behind a
+registration wall (research-license, non-commercial). **Transport into
+Modal: `modal volume put`** — no scraping, no credentials-in-Modal-
+Secret. Decision rationale: license-clean + site form structure can
+change without notice.
 
-1. https://smpl.is.tue.mpg.de/  → register, accept license
-2. https://smpl-x.is.tue.mpg.de/ → same
+Jason workflow (one-time):
 
-Then store credentials as a Modal Secret (NOT in `.env.local`, NOT in
-repo):
+1. Register at:
+   - https://smpl.is.tue.mpg.de/  → SMPL (Neutral / Male / Female)
+   - https://mano.is.tue.mpg.de/  → SMPL-H (WHAM's actual requirement)
+   - https://smpl-x.is.tue.mpg.de/ → SMPL-X (phase2c nice-to-have)
 
-```powershell
-modal secret create smpl-research-creds USERNAME="email@..." PASSWORD="..."
-```
+2. Download + unzip locally into this exact layout (the names matter —
+   `setup_models._verify_body_models` checks them):
 
-The Secret is mounted into `setup_models.py::setup_all_models` only,
-never into inference runners.
+   ```
+   ./local-body-models/
+   ├── smpl/
+   │   ├── SMPL_NEUTRAL.pkl
+   │   ├── SMPL_MALE.pkl
+   │   └── SMPL_FEMALE.pkl
+   ├── smplh/
+   │   └── SMPLH_NEUTRAL.npz
+   └── smplx/                       (phase2c)
+       └── SMPLX_NEUTRAL.npz
+   ```
+
+3. Upload to the Modal Volume in one shot:
+
+   ```powershell
+   modal volume put swingcue-pilot-models ./local-body-models /models/body_models
+   ```
+
+After upload, `setup_models.py::setup_all_models` cross-checks the
+layout and warns if anything is missing/too-small. Volume is persistent
+across Modal deploys — this upload is one-time.
+
+(The earlier draft of this doc mentioned a `smpl-research-creds` Modal
+Secret. That was an alternative scraping-based design; the `volume put`
+path replaces it. If you've already created the Secret, it's now
+unused — harmless to leave or delete.)
 
 ## Cost model (per spec §3)
 
@@ -98,20 +123,38 @@ is NOT for production deploy.
 - Do NOT import `python.pilot.*` from `python/analyzer.py`,
   `python/main.py`, `python/pose_timeline.py`, or any other production
   module. Pilot must remain orphaned from the production import graph.
-- Do NOT put SMPL credentials in `.env.local` or `python/.env`. Modal
-  Secret only.
+- Do NOT scrape smpl.is.tue.mpg.de or smpl-x.is.tue.mpg.de. SMPL
+  transport is `modal volume put` from your local download only.
 - Do NOT combine multiple libraries into one Modal Image. Per-library
   isolation is a hard rule (spec §3 + CC review §2).
 - Do NOT touch the rtmpose runner here. Phase 2 uses current production
   mediapipe 2D output as input until rtmpose ships in PR-6.1e.
 
-## Next action
+## Next action — phase2b WHAM smoke
 
-phase2a status: scaffolding files in place. Awaiting:
+phase2b code is in place. Sequenced with Jason's one-time prep:
 
-1. Jason runs `modal token new` (browser flow)
-2. Jason runs `modal volume create swingcue-pilot-models` (or lets
-   `create_if_missing=True` auto-create on first deploy)
-3. Jason registers SMPL research license + creates Modal Secret
-4. Then phase2b starts: write `runners/wham_runner.py` with the actual
-   WHAM Modal entrypoint that runs inference on `b3fea3f0`.
+**Jason — ~10 min prep:**
+1. `python3.11 -m venv .venv-pilot` + activate + `pip install -r python/pilot/requirements_pilot.txt`
+2. `modal token new` (browser flow)
+3. SMPL family research-license downloads + `modal volume put` per the
+   layout above
+4. Signal CC: "ready"
+
+**CC drives autonomously after "ready":**
+1. `modal volume create swingcue-pilot-models` (or auto-created by
+   `create_if_missing=True` on first deploy)
+2. `modal run python/pilot/setup_models.py::setup_all_models` —
+   downloads 6 WHAM weight files (~1.5 GB) to /models/wham via gdown
+   and cross-checks Jason's SMPL upload
+3. → GO/NO-GO gate: Jason ACK "WHAM weights downloaded" (next step
+   spends GPU money)
+4. `modal run python/pilot/runners/wham_runner.py::run_wham_local
+   --video-id b3fea3f0-… --video-url <signed URL>` — A10G GPU
+   inference, ~30 s wall clock, ~$0.01 per run
+5. Local result fetch → `python/pilot/output/wham/b3fea3f0-…/joint_centers_3d.json`
+6. 2D back-projection overlay render (local, no Modal cost) — phase2b
+   second commit
+
+After step 6 → comparison.mp4 → Jason watches → decide on phase2c
+expansion or pivot.

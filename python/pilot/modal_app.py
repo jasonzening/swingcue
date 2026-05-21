@@ -1,56 +1,48 @@
 """
-modal_app.py — Modal infrastructure scaffold for the Phase 2 pilot.
+modal_app.py — Modal infrastructure for the Phase 2 bone-center pilot.
 
-phase2a deliverable. Defines:
+phase2a + phase2b deliverable. Defines:
   - Modal App stub (name: "swingcue-pilot")
   - Persistent Volume "swingcue-pilot-models" (model weight cache)
-  - Per-library Images (one per candidate 3D fitter — no shared image
-    to avoid PyTorch/CUDA/pytorch3d cross-pollination per CC review §2)
-  - Modal Secret refs (Modal token, SMPL research-license credentials)
+  - WHAM Image (PyTorch 1.11 + CUDA 11.3 + Python 3.9 — WHAM's tested stack)
 
-This module does NOT do inference. phase2a is pure plumbing. phase2b
-adds the WHAM runner that actually executes on GPU and writes joint
-center timelines.
+phase2c additions later: human3r_image, smplest_x_image, etc. Each
+library gets its own Image to keep PyTorch/CUDA/pytorch3d trees
+isolated (CC review §2, no shared image).
 
-Bootstrap once-per-environment (commands Jason runs locally, NOT
-invoked by this module):
+Bootstrap order (Jason runs locally, one-time):
 
-    # 1. Install Modal client + auth
+    # 1. Fresh venv + Modal client
+    python3.11 -m venv .venv-pilot
+    .\.venv-pilot\Scripts\Activate.ps1
     pip install -r python/pilot/requirements_pilot.txt
+
+    # 2. Auth
     modal token new
 
-    # 2. Create Volume + Secrets (read setup steps in README.md):
-    modal volume create swingcue-pilot-models
-    modal secret create smpl-research-creds USERNAME=... PASSWORD=...
+    # 3. SMPL family weights — Jason downloads locally via the SMPL
+    #    research-license site, then `modal volume put` directly into
+    #    the persisted Volume (license-clean; setup_models.py does NOT
+    #    scrape smpl.is.tue.mpg.de).
+    #    Files expected at /models/body_models/ inside the Volume:
+    #      - smpl/SMPL_NEUTRAL.pkl (from smpl.is.tue.mpg.de)
+    #      - smpl/SMPL_MALE.pkl
+    #      - smpl/SMPL_FEMALE.pkl
+    #      - smplx/SMPLX_NEUTRAL.npz (from smpl-x.is.tue.mpg.de)
+    #      - smplh/SMPLH_NEUTRAL.npz (from mano.is.tue.mpg.de)
+    #    Once downloaded locally + unzipped:
+    #      modal volume put swingcue-pilot-models \
+    #        ./local-body-models /models/body_models
 
-    # 3. Verify scaffold imports clean (no Modal cost):
-    python -c "from python.pilot import modal_app; print(modal_app.app.name)"
+    # 4. CC drives the rest (volume create, setup_models, wham_runner).
 
-After bootstrap, phase2b adds `@app.function(...)` decorated entries
-and `modal deploy modal_app.py` actually creates the Modal endpoints.
-
-Cost model: defining Images here is free; building them happens at
-deploy time. Volume + Secret creation is free. First real $$ comes
-when phase2b runs WHAM inference on GPU.
-
-Library priority per spec §2 (WHAM-first):
-  1. WHAM        — A10G, CVPR 2024, 2D-keypoint input compatible
-  2. Human3R     — A10G (tight on 24 GB), feed-forward fastest
-  3. SMPLest-X   — H100 (needs >24 GB), highest reported accuracy
-  4. EasyMocap   — A10G, mature Apache code
-  5. SMPLify-X   — A10G, classical iterative baseline (slowest)
-  6. 4D-Humans   — deprioritized (older than 2024+ alternatives)
-
-phase2a defines (1) WHAM image only — others added in phase2c when
-WHAM-first proves the pipeline.
+WHAM commit pin: 2b54f7797391c94876848b905ed875b154c4a295
+Captured via `git ls-remote https://github.com/yohanshin/WHAM HEAD` on
+2026-05-20.
 """
 
 from __future__ import annotations
 
-# Modal import is deferred to module evaluation, but we want to keep
-# the Modal-not-installed case usable for static analysis / py_compile.
-# Local dev installs `modal` via python/pilot/requirements_pilot.txt;
-# CI / IDE without the dep gets the placeholder branch.
 try:
     import modal
     _MODAL_AVAILABLE = True
@@ -72,21 +64,25 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Volume — single persistent volume holds ALL library model weights.
-# Layout (populated by setup_models.py, run-once):
-#   /models/smpl/        SMPL/SMPL-X/SMPL-H research-license weights
-#   /models/wham/        WHAM checkpoint + auxiliary configs
-#   /models/human3r/     Human3R weights (phase2c)
-#   /models/smplest_x/   SMPLest-X 8.2 GB weights (phase2c)
-#   /models/easymocap/   EasyMocap configs (phase2c)
+# Volume — single persistent volume holds all model weights.
+# Layout (populated by setup_models.py + Jason's `modal volume put`):
+#   /models/wham/                  WHAM checkpoint family (6 files,
+#                                  setup_models downloads via gdown)
+#       wham_vit_w_3dpw.pth.tar    primary WHAM checkpoint
+#       wham_vit_bedlam_w_3dpw.pth.tar  alt (bedlam-trained)
+#       hmr2a.ckpt                 HMR2A subnet
+#       dpvo.pth                   DPVO SLAM subnet
+#       yolov8x.pt                 YOLOv8 person detector
+#       vitpose-h-multi-coco.pth   ViTPose-H 2D keypoint subnet
+#   /models/body_models/           SMPL family — Jason uploads locally:
+#       smpl/SMPL_*.pkl            SMPL Neutral/Male/Female
+#       smplx/SMPLX_NEUTRAL.npz    SMPL-X
+#       smplh/SMPLH_NEUTRAL.npz    SMPL-H (WHAM specifically needs SMPL-H)
 # ---------------------------------------------------------------------------
 
 VOLUME_NAME = "swingcue-pilot-models"
 
 if _MODAL_AVAILABLE:
-    # create_if_missing=True lets the first call from `modal deploy`
-    # auto-provision the Volume; subsequent calls reuse it. Read-only
-    # at inference time (mounted via @app.function(volumes=...)).
     model_volume = modal.Volume.from_name(
         VOLUME_NAME, create_if_missing=True,
     )
@@ -95,97 +91,107 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Secrets — never embedded in code; provisioned by Jason via:
-#   modal secret create smpl-research-creds USERNAME=... PASSWORD=...
-# SMPL/SMPL-X research-license credentials, fetched at Image build time
-# OR at setup_models() run time when downloading from smpl.is.tue.mpg.de.
+# WHAM commit pin (captured 2026-05-20).
+# Phase2b smoke results are reproducible from this SHA. Re-pin in
+# phase2c if upstream changes affect benchmark numbers.
 # ---------------------------------------------------------------------------
 
-SMPL_SECRET_NAME = "smpl-research-creds"
-
-if _MODAL_AVAILABLE:
-    smpl_credentials = modal.Secret.from_name(SMPL_SECRET_NAME)
-else:
-    smpl_credentials = None  # type: ignore
+WHAM_REPO = "https://github.com/yohanshin/WHAM.git"
+WHAM_COMMIT = "2b54f7797391c94876848b905ed875b154c4a295"
 
 
 # ---------------------------------------------------------------------------
-# WHAM Image — phase2a scaffold.
+# WHAM Image — phase2b deliverable.
 #
-# WHAM repo: https://github.com/yohanshin/WHAM
-# Trained on body7 (SMPL-H 16-beta), takes 2D keypoints + RGB video as
-# input, outputs SMPL parameters + 3D joint world coords.
+# Base: PyTorch 1.11.0 + CUDA 11.3 + cuDNN 8 (devel variant — needed
+# for DPVO's CUDA-extension compile step at install time). Python 3.9
+# is what comes in pytorch/pytorch:1.11.0 official images.
 #
-# Dependencies (from WHAM's environment.yml + pip requirements):
-#   torch 2.0.1 + torchvision 0.15.2 with CUDA 11.8
-#   smplx (SMPL/SMPL-X/SMPL-H model loader)
-#   joblib, yacs, pyyaml, scipy, opencv-python, ffmpeg-python
+# Why this stack: WHAM's official INSTALL.md specifies exactly
+# pytorch==1.11.0 + cudatoolkit=11.3 + python=3.9. DPVO's CUDA kernels
+# are written against this toolkit. Newer torch/cu118 likely fails
+# at DPVO compile time.
 #
-# A10G has 24 GB; WHAM peak ~6 GB so plenty of headroom. We use the
-# debian_slim base + apt_install git/ffmpeg for repo clone + video I/O.
+# CUDA 11.3 user-space + CUDA 12+ driver on Modal A10G: forward-
+# compatible by NVIDIA's driver model.
 #
-# Build time on Modal: ~5-10 min first time, cached afterward. Each
-# Image is ~5-10 GB stored.
+# Build time on Modal first run: ~10-15 min (DPVO compile dominates).
+# Cached afterward; rebuild only when this file changes.
 # ---------------------------------------------------------------------------
 
 if _MODAL_AVAILABLE:
     wham_image = (
-        modal.Image.debian_slim(python_version="3.11")
+        modal.Image.from_registry(
+            "pytorch/pytorch:1.11.0-cuda11.3-cudnn8-devel",
+            add_python="3.9",
+        )
         .apt_install(
             "git",
             "ffmpeg",
-            "libgl1",        # opencv runtime
-            "libglib2.0-0",  # opencv runtime
-            "libsm6",        # opencv runtime
-            "libxext6",      # opencv runtime
-            "libxrender1",   # opencv runtime
+            "libgl1",
+            "libglib2.0-0",
+            "libsm6",
+            "libxext6",
+            "libxrender1",
+            "build-essential",   # DPVO CUDA-ext compile
+            "ninja-build",       # PyTorch CUDA-ext build accel
         )
-        # CUDA 11.8 torch wheels — match WHAM's training env.
-        .pip_install(
-            "torch==2.0.1",
-            "torchvision==0.15.2",
-            index_url="https://download.pytorch.org/whl/cu118",
-        )
-        # WHAM's runtime deps. smplx pulls SMPL family model loader;
-        # SMPL weight files come from the Volume at inference time.
+        # WHAM runtime deps. smplx loads SMPL/SMPL-H/SMPL-X files from
+        # /models/body_models at inference time. gdown is needed inside
+        # the Image so setup_models can download from Google Drive.
         .pip_install(
             "smplx==0.1.28",
             "joblib==1.3.2",
             "yacs==0.1.8",
             "pyyaml>=6.0",
-            "scipy==1.11.4",
-            "opencv-python-headless==4.10.0.84",
+            "scipy==1.10.1",
+            "opencv-python-headless==4.8.1.78",
             "ffmpeg-python==0.2.0",
-            "numpy<2.0",     # WHAM uses np 1.x APIs
+            "numpy<2.0",
             "tqdm",
             "loguru",
+            "gdown==5.2.0",      # phase2b weight download
+            # Vision / pose deps WHAM imports transitively:
+            "chumpy==0.70",      # legacy SMPL dep, often required
+            "torchgeometry==0.1.2",
+            "einops==0.7.0",
+            "matplotlib==3.7.4",
+            "Pillow==10.2.0",
+            # ViT pose head submodule + HMR2A:
+            "timm==0.9.10",
         )
-        # Clone WHAM into the image. Pinning the commit means subsequent
-        # rebuilds are reproducible. TODO(phase2b): pin a specific
-        # release/commit before serious benchmarking.
+        # Clone WHAM at the pinned commit + init DPVO submodule.
+        # DPVO CUDA extensions compile at first import; the build deps
+        # above (build-essential + ninja + CUDA 11.3 devel headers) are
+        # what they need.
         .run_commands(
             "git clone https://github.com/yohanshin/WHAM.git /opt/wham",
-            # Provide /opt/wham in PYTHONPATH so `from lib...` imports
-            # used by WHAM's demo work without cwd gymnastics.
+            f"cd /opt/wham && git checkout {WHAM_COMMIT}",
+            "cd /opt/wham && git submodule update --init --recursive",
         )
-        .env({"PYTHONPATH": "/opt/wham:$PYTHONPATH"})
+        .env({
+            "PYTHONPATH": "/opt/wham:$PYTHONPATH",
+            # WHAM expects checkpoints/ in CWD; we symlink to Volume
+            # at function entry (see runners/wham_runner.py setup_workspace).
+            "WHAM_REPO": "/opt/wham",
+        })
+        # Modal 1.0 future-compat: explicit local source declarations
+        # replace implicit auto-mounting. Both modal_app and setup_models
+        # are imported inside the Image at runtime (e.g. setup_all_models
+        # references constants from modal_app), so list them here.
+        .add_local_python_source("modal_app")
+        .add_local_python_source("setup_models")
     )
 else:
     wham_image = None  # type: ignore
 
 
 # ---------------------------------------------------------------------------
-# Image registry — single dict so phase2c additions surface clearly and
-# the pilot CLI can iterate over "which images are currently defined".
+# Image registry — phase2c expands this with one entry per library.
 # ---------------------------------------------------------------------------
 
 IMAGES = {
     "wham": wham_image,
-    # phase2c additions:
-    # "human3r":   human3r_image,
-    # "smplest_x": smplest_x_image,
-    # "easymocap": easymocap_image,
-    # "smplify_x": smplify_x_image,
 }
 
 
@@ -193,8 +199,6 @@ IMAGES = {
 # Self-test — runs when this file is executed directly. NOT a Modal
 # deploy; just verifies the scaffold definitions are syntactically + API
 # valid against whatever Modal version is installed locally.
-#
-#   python -m python.pilot.modal_app
 # ---------------------------------------------------------------------------
 
 def _self_test() -> None:
@@ -204,13 +208,13 @@ def _self_test() -> None:
             "pip install -r python/pilot/requirements_pilot.txt"
         )
         return
-    print(f"[modal_app] APP_NAME           = {APP_NAME}")
-    print(f"[modal_app] VOLUME_NAME        = {VOLUME_NAME}")
-    print(f"[modal_app] SMPL_SECRET_NAME   = {SMPL_SECRET_NAME}")
-    print(f"[modal_app] images defined     = {list(IMAGES.keys())}")
-    print(f"[modal_app] app                = {app!r}")
-    print(f"[modal_app] model_volume       = {model_volume!r}")
-    print("[modal_app] scaffold OK — phase2b adds @app.function entries")
+    print(f"[modal_app] APP_NAME      = {APP_NAME}")
+    print(f"[modal_app] VOLUME_NAME   = {VOLUME_NAME}")
+    print(f"[modal_app] WHAM_COMMIT   = {WHAM_COMMIT}")
+    print(f"[modal_app] images        = {list(IMAGES.keys())}")
+    print(f"[modal_app] app           = {app!r}")
+    print(f"[modal_app] model_volume  = {model_volume!r}")
+    print("[modal_app] scaffold OK")
 
 
 if __name__ == "__main__":

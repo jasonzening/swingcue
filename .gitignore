@@ -70,3 +70,11 @@ python/benchmark/output/
 # Phase 1C — local-only doc zip + extracted spec working copies
 docs/files.zip
 docs/files/
+
+# Phase 2 (Track 2) — Modal pilot venv + local SMPL downloads.
+# Never committed; modal manages the venv install, SMPL weights are
+# research-license non-commercial files uploaded via `modal volume put`.
+.venv-pilot/
+local_models/
+local-body-models/
+python/pilot/output/
