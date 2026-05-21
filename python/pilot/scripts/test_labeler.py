@@ -27,8 +27,12 @@ from pathlib import Path
 
 # Import labeler module — must work without GUI.
 from ground_truth_labeler import (
+    GROUND_TRUTH_SCHEMA_VERSION,
     KEYPOINT_ORDER,
     KP_COLOR,
+    LABELER_VERSION,
+    SUPPORTED_SPORTS,
+    SUPPORTED_VIEWS,
     TkLabeler,
     save_labels,
     short_id,
@@ -41,6 +45,8 @@ TEST_IMAGE = Path("docs/PR-7_GROUND_TRUTH/frames/b3fea3f0_setup_f007.png")
 TEST_VIDEO_ID = "b3fea3f0-e248-44d7-a923-0bb43172b5bf"
 TEST_PHASE = "setup"
 TEST_FRAME = 7
+TEST_SPORT = "golf"
+TEST_VIEW = "face_on"
 
 # Synthetic click positions for the 5 keypoints (real WHAM frame-63
 # pixel coords from the prior diagnostic).
@@ -88,6 +94,8 @@ def run_tests() -> int:
         video_id=TEST_VIDEO_ID,
         phase=TEST_PHASE,
         frame_idx=TEST_FRAME,
+        sport=TEST_SPORT,
+        view=TEST_VIEW,
     )
     labeler.setup()
     _assert("A1", labeler.root is not None, "root window created")
@@ -97,6 +105,8 @@ def run_tests() -> int:
     _assert("A4", labeler._photo is not None, "PhotoImage holding image data")
     _assert("A5", labeler.canvas.find_all() != (),
             f"canvas has items (image must be drawn) — found {len(labeler.canvas.find_all())}")
+    _assert("A6", labeler.sport == TEST_SPORT, f"sport={labeler.sport!r}")
+    _assert("A7", labeler.view == TEST_VIEW, f"view={labeler.view!r}")
 
     # ── Stage B: click handler dispatches via public test entry ─────
     print()
@@ -165,9 +175,9 @@ def run_tests() -> int:
     _assert("F4", labeler.labels.get("neck_center") == (437, 457),
             "neck_center re-added")
 
-    # ── Stage G: save() round-trip ──────────────────────────────────
+    # ── Stage G: save() round-trip with v3 envelope ─────────────────
     print()
-    print("[Stage G] save_labels() JSON shape matches spec §9")
+    print("[Stage G] save_labels() JSON shape matches spec v3 §7")
     with tempfile.NamedTemporaryFile(
         suffix=".json", mode="w", delete=False, encoding="utf-8",
     ) as tf:
@@ -181,29 +191,60 @@ def run_tests() -> int:
             video_width=labeler.W,
             video_height=labeler.H,
             labels=labeler.labels,
+            sport=labeler.sport,
+            view=labeler.view,
         )
         _assert("G1", out_path.exists(), f"JSON written to {out_path}")
         payload = json.loads(out_path.read_text())
-        _assert("G2", payload.get("video_id") == TEST_VIDEO_ID,
+        # v3 envelope fields:
+        _assert("G2-schema", payload.get("schema_version") == "v3",
+                f"schema_version = {payload.get('schema_version')!r}")
+        _assert("G2-sport", payload.get("sport") == TEST_SPORT,
+                f"sport = {payload.get('sport')!r}")
+        _assert("G2-view", payload.get("view") == TEST_VIEW,
+                f"view = {payload.get('view')!r}")
+        _assert("G2-labeler_v", payload.get("labeler_version") == LABELER_VERSION,
+                f"labeler_version = {payload.get('labeler_version')!r}")
+        _assert(
+            "G2-labeled_at",
+            isinstance(payload.get("labeled_at"), str)
+            and payload["labeled_at"].endswith("Z")
+            and "T" in payload["labeled_at"],
+            f"labeled_at = {payload.get('labeled_at')!r} (expect ISO-8601 UTC)",
+        )
+        # v2 envelope fields still present:
+        _assert("G3-video_id", payload.get("video_id") == TEST_VIDEO_ID,
                 f"video_id = {payload.get('video_id')!r}")
-        _assert("G3", payload.get("phase") == TEST_PHASE,
+        _assert("G3-phase", payload.get("phase") == TEST_PHASE,
                 f"phase = {payload.get('phase')!r}")
-        _assert("G4", payload.get("frame_idx") == TEST_FRAME,
+        _assert("G3-frame_idx", payload.get("frame_idx") == TEST_FRAME,
                 f"frame_idx = {payload.get('frame_idx')}")
-        _assert("G5", payload.get("video_width") == 720
+        _assert("G3-dims",
+                payload.get("video_width") == 720
                 and payload.get("video_height") == 1280,
                 f"video_width/height = "
                 f"{payload.get('video_width')}/{payload.get('video_height')}")
         labels_block = payload.get("labels", {})
-        _assert("G6", set(labels_block.keys()) == set(KEYPOINT_ORDER),
+        _assert("G4-keys", set(labels_block.keys()) == set(KEYPOINT_ORDER),
                 f"labels keys = {sorted(labels_block.keys())}")
         for name, (x, y) in TEST_CLICKS:
             entry = labels_block.get(name, {})
-            _assert(f"G-{name}",
+            _assert(f"G5-{name}",
                     entry.get("x") == x and entry.get("y") == y,
                     f"labels[{name}] = {entry}")
     finally:
         out_path.unlink(missing_ok=True)
+
+    # ── Stage H: default_output_path matches spec v3 §7 layout ──────
+    print()
+    print("[Stage H] default_output_path layout per spec v3 §7")
+    p = default_output_path(TEST_VIDEO_ID, TEST_PHASE, TEST_SPORT, TEST_VIEW)
+    expected_suffix = f"docs/PR-7_GROUND_TRUTH/{TEST_SPORT}/b3fea3f0_setup_face_on.json"
+    p_posix = p.as_posix()
+    _assert("H1", p_posix.endswith(expected_suffix),
+            f"path = {p_posix} (expected to end with {expected_suffix})")
+    _assert("H2", TEST_SPORT in p.parts,
+            f"sport={TEST_SPORT} in path parts {p.parts}")
 
     # Cleanup — destroy root before we exit so Python can GC the
     # Tk interpreter; otherwise the process hangs on exit (Tk + Python

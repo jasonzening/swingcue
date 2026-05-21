@@ -73,13 +73,36 @@ KP_COLOR: dict[str, str] = {
 
 DEFAULT_OUTPUT_DIR = Path("docs/PR-7_GROUND_TRUTH")
 
+# Per spec v3 §7. Bumped from v2 (which didn't have schema_version) to
+# explicit v3. Future ground-truth schema changes bump this.
+GROUND_TRUTH_SCHEMA_VERSION = "v3"
+# Identifies this specific labeler implementation in the saved JSON.
+# v1 was the matplotlib labeler (never used in production); v2 is the
+# current Tkinter-based labeler. Per spec v3 §7 the schema asks for
+# "labeler_v2".
+LABELER_VERSION = "labeler_v2"
+
+# Allowed --sport values. Future plugins (tennis, ski, etc per spec
+# v3 §11) extend this. Keep golf as the default — first plugin per
+# spec v3 §5.
+SUPPORTED_SPORTS: tuple[str, ...] = ("golf",)
+# Allowed --view values per spec v3 §12. side / back / top are
+# explicitly out of MVP scope.
+SUPPORTED_VIEWS: tuple[str, ...] = ("face_on", "down_the_line")
+
 
 def short_id(video_id: str) -> str:
     return video_id.split("-")[0]
 
 
-def default_output_path(video_id: str, phase: str) -> Path:
-    return DEFAULT_OUTPUT_DIR / f"{short_id(video_id)}_{phase}.json"
+def default_output_path(video_id: str, phase: str, sport: str, view: str) -> Path:
+    """
+    Per spec v3 §7: docs/PR-7_GROUND_TRUTH/<sport>/<short_id>_<phase>_<view>.json
+    """
+    return (
+        DEFAULT_OUTPUT_DIR / sport
+        / f"{short_id(video_id)}_{phase}_{view}.json"
+    )
 
 
 def save_labels(
@@ -90,18 +113,31 @@ def save_labels(
     video_width: int,
     video_height: int,
     labels: dict[str, tuple[int, int]],
+    sport: str = "golf",
+    view: str = "face_on",
+    schema_version: str = GROUND_TRUTH_SCHEMA_VERSION,
+    labeler_version: str = LABELER_VERSION,
 ) -> None:
-    """Write the spec §9 JSON shape to disk."""
+    """Write the spec v3 §7 JSON shape to disk."""
+    from datetime import datetime, timezone
+
     payload = {
+        "schema_version": schema_version,
+        "sport": sport,
         "video_id": video_id,
         "phase": phase,
         "frame_idx": frame_idx,
+        "view": view,
         "video_width": video_width,
         "video_height": video_height,
         "labels": {
             name: {"x": int(x), "y": int(y)}
             for name, (x, y) in labels.items()
         },
+        "labeler_version": labeler_version,
+        # ISO-8601 UTC, second precision. Stamped by the labeler at
+        # save time so PR-7b sweep harness can sort labels by recency.
+        "labeled_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2))
@@ -130,11 +166,15 @@ class TkLabeler:
         video_id: str,
         phase: str,
         frame_idx: int,
+        sport: str = "golf",
+        view: str = "face_on",
     ):
         self.image_path = image_path
         self.video_id = video_id
         self.phase = phase
         self.frame_idx = frame_idx
+        self.sport = sport
+        self.view = view
         self.labels: dict[str, tuple[int, int]] = {}
         self.markers: dict[str, list[int]] = {}  # name -> [oval_id, text_id]
         self.saved: bool = False
@@ -185,7 +225,8 @@ class TkLabeler:
 
         self.root = tk.Tk()
         self.root.title(
-            f"PR-7 labeler — {self.video_id[:8]} {self.phase} f{self.frame_idx}"
+            f"PR-7 labeler — {self.sport}/{self.view}  "
+            f"{self.video_id[:8]} {self.phase} f{self.frame_idx}"
         )
 
         # Layout: title across top, image canvas + legend side-by-side
@@ -247,6 +288,7 @@ class TkLabeler:
             color = KP_COLOR.get(target, "#000000")
             self.title_label.config(
                 text=(
+                    f"{self.sport}/{self.view}  "
                     f"{self.video_id[:8]}  {self.phase}  frame={self.frame_idx}"
                     f"   →   click  {target}"
                 ),
@@ -388,9 +430,13 @@ def _interactive_label(
     phase: str,
     frame_idx: int,
     output_path: Path,
+    sport: str = "golf",
+    view: str = "face_on",
 ) -> dict[str, tuple[int, int]] | None:
-    """Backward-compat wrapper preserved for the existing main() call."""
-    return TkLabeler(image_path, video_id, phase, frame_idx).run()
+    """Wrapper around TkLabeler.run() for symmetry with main()."""
+    return TkLabeler(
+        image_path, video_id, phase, frame_idx, sport=sport, view=view,
+    ).run()
 
 
 def _test_label(test_clicks: str) -> dict[str, tuple[int, int]]:
@@ -420,8 +466,16 @@ def main() -> None:
     ap.add_argument("--frame", required=True, type=int, help="frame_idx in source video")
     ap.add_argument("--image", required=True, type=Path,
                     help="extracted frame PNG (from extract_phase_frames.py)")
+    # Per spec v3 §3 + §9 + §12: sport + view are required envelope
+    # fields. Sport defaults to golf (first plugin, spec v3 §5); view
+    # is required so labeler never silently mislabels a face_on as
+    # down_the_line or vice versa.
+    ap.add_argument("--sport", default="golf", choices=list(SUPPORTED_SPORTS),
+                    help="sport plugin name (default golf)")
+    ap.add_argument("--view", required=True, choices=list(SUPPORTED_VIEWS),
+                    help="camera view: face_on or down_the_line")
     ap.add_argument("--output", type=Path, default=None,
-                    help="defaults to docs/PR-7_GROUND_TRUTH/<short_id>_<phase>.json")
+                    help="defaults to docs/PR-7_GROUND_TRUTH/<sport>/<short_id>_<phase>_<view>.json")
     ap.add_argument("--test-clicks", default=None,
                     help='headless smoke-test: "x1,y1;x2,y2;x3,y3;x4,y4;x5,y5"')
     args = ap.parse_args()
@@ -429,7 +483,9 @@ def main() -> None:
     if not args.image.exists():
         raise SystemExit(f"image file not found: {args.image}")
 
-    output_path = args.output or default_output_path(args.video_id, args.phase)
+    output_path = args.output or default_output_path(
+        args.video_id, args.phase, args.sport, args.view,
+    )
 
     # Pull video dims from the image (the extracted frame matches the
     # source video resolution).
@@ -451,6 +507,7 @@ def main() -> None:
     else:
         result = _interactive_label(
             args.image, args.video_id, args.phase, args.frame, output_path,
+            sport=args.sport, view=args.view,
         )
         if result is None:
             print("[labeler] no labels collected — exit without save")
@@ -465,6 +522,8 @@ def main() -> None:
         video_width=img_w,
         video_height=img_h,
         labels=labels,
+        sport=args.sport,
+        view=args.view,
     )
     sz_b = output_path.stat().st_size
     print(f"[labeler] wrote {output_path} ({sz_b} bytes, {len(labels)} keypoints)")

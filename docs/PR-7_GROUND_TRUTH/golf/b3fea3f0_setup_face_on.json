@@ -1,7 +1,10 @@
 {
+  "schema_version": "v3",
+  "sport": "golf",
   "video_id": "b3fea3f0-e248-44d7-a923-0bb43172b5bf",
   "phase": "setup",
   "frame_idx": 7,
+  "view": "face_on",
   "video_width": 720,
   "video_height": 1280,
   "labels": {
@@ -25,5 +28,7 @@
       "x": 447,
       "y": 371
     }
-  }
+  },
+  "labeler_version": "labeler_v2",
+  "labeled_at": "2026-05-20T23:36:00Z"
 }
