@@ -120,10 +120,29 @@ def _setup_workspace() -> None:
 
 
 def _download_video(video_url: str, dst_path: str) -> None:
-    """Pull the source video onto local disk inside the Modal function."""
+    """
+    Pull the source video onto local disk inside the Modal function.
+
+    Stdlib urllib is strict about URL syntax: spaces in the path
+    (Supabase preserves original filenames like
+    "Video Project 6-miao.mp4") trigger `InvalidURL: URL can't contain
+    control characters`. Percent-encode the path component before the
+    request so urllib accepts it. Token-bearing query string is left
+    untouched (its `+`/`=`/`.` chars are already legal).
+    """
+    import urllib.parse
     import urllib.request
+
+    # Split URL into scheme://netloc/path?query so we can quote() only
+    # the path (and leave the JWT query parameters alone).
+    parts = urllib.parse.urlsplit(video_url)
+    safe_path = urllib.parse.quote(parts.path, safe="/")
+    encoded_url = urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, safe_path, parts.query, parts.fragment)
+    )
+
     print(f"[wham_runner] downloading video → {dst_path}")
-    urllib.request.urlretrieve(video_url, dst_path)
+    urllib.request.urlretrieve(encoded_url, dst_path)
     sz_mb = os.path.getsize(dst_path) / 1024 / 1024
     print(f"[wham_runner]   ({sz_mb:.2f} MB)")
 
@@ -184,13 +203,16 @@ if _MODAL_AVAILABLE:
             "--video", local_video,
             "--output_pth", f"{out_dir}/wham_output.pth",
             "--save_pkl",
-            "--visualize",  # writes the WHAM-native overlay too; useful
-                             # to compare against our PilotRunResult-based
-                             # render.
+            # --visualize intentionally OFF: that flag pulls in
+            # pytorch3d which has no py310+cu113+pyt1110 prebuilt wheel
+            # (would force a slow source build). We render our own
+            # 2D back-projection overlay locally from the joint output
+            # in PilotRunResult.frames[*].joint_centers_2d_projected.
         ]
         print(f"[wham_runner] running WHAM demo: {' '.join(demo_cmd)}")
         # Stream stdout/stderr so build/inference logs are visible in
-        # Modal's run output.
+        # Modal's run output. Always print both, regardless of exit
+        # code — a 0 exit doesn't guarantee the pkl was written.
         completed = subprocess.run(
             demo_cmd,
             cwd=WHAM_REPO_ROOT,
@@ -198,9 +220,12 @@ if _MODAL_AVAILABLE:
             capture_output=True,
             text=True,
         )
+        print(f"[wham_runner] demo stdout ({len(completed.stdout)} chars):")
         print(completed.stdout)
+        print(f"[wham_runner] demo stderr ({len(completed.stderr)} chars):")
+        print(completed.stderr)
+        print(f"[wham_runner] demo exit code: {completed.returncode}")
         if completed.returncode != 0:
-            print(f"[wham_runner] STDERR:\n{completed.stderr}")
             raise RuntimeError(
                 f"WHAM demo failed with exit {completed.returncode}"
             )
@@ -220,44 +245,135 @@ if _MODAL_AVAILABLE:
         # (could be 'demo.pkl' or '{video_id}.pkl') and parse accordingly.
         pkl_path = f"{out_dir}/wham_output.pkl"
         if not os.path.exists(pkl_path):
-            # Fall back: scan out_dir for any .pkl
-            pkls = [p for p in os.listdir(out_dir) if p.endswith(".pkl")]
-            if pkls:
-                pkl_path = os.path.join(out_dir, pkls[0])
+            # Fall back: scan the entire /opt/wham/output tree for any
+            # .pkl. WHAM may write outputs at a different path than the
+            # --output_pth arg (e.g. derived from video basename).
+            print(f"[wham_runner] {pkl_path} not present; scanning WHAM output tree:")
+            found_pkls: list[str] = []
+            for root, _dirs, files in os.walk(f"{WHAM_REPO_ROOT}/output"):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    sz_kb = os.path.getsize(fp) / 1024
+                    print(f"[wham_runner]   {sz_kb:>8.1f} KB  {fp}")
+                    if f.endswith(".pkl"):
+                        found_pkls.append(fp)
+            if found_pkls:
+                pkl_path = found_pkls[0]
                 print(f"[wham_runner] using pkl fallback: {pkl_path}")
             else:
-                raise RuntimeError(f"WHAM produced no .pkl under {out_dir}")
+                raise RuntimeError(
+                    f"WHAM produced no .pkl anywhere under "
+                    f"{WHAM_REPO_ROOT}/output (demo exit was 0 — output dir "
+                    f"layout differs from expected; check stdout/stderr above)"
+                )
 
         import joblib
         wham_out = joblib.load(pkl_path)
-        print(f"[wham_runner] wham_output keys: {list(wham_out.keys())}")
+        print(f"[wham_runner] wham_output top-level keys: {list(wham_out.keys())}")
 
-        # Translate WHAM joint output → PilotRunResult.frames.
-        # WHAM emits 24 SMPL joints; we keep 20 (drop hands + toes).
-        # SMPL_JOINT_INDEX_TO_NAME for the 20 we keep:
-        SMPL_TO_PILOT_NAME = {
+        # WHAM's pkl is keyed by track-id (one entry per detected person
+        # across the clip). For golf swings we expect exactly one
+        # person → take the first track. Each track value is a dict with
+        # the SMPL keys (pose, trans, betas, joints, frame_ids).
+        track_ids = sorted(wham_out.keys())
+        if not track_ids:
+            raise RuntimeError(f"WHAM pkl had no tracks: {pkl_path}")
+        primary_track_id = track_ids[0]
+        track = wham_out[primary_track_id]
+        print(
+            f"[wham_runner] using track_id={primary_track_id} of "
+            f"{len(track_ids)} total; track keys: {list(track.keys())}"
+        )
+
+        # Joint name → H36M-regressor index mapping (17 joints).
+        # H36M's joint order is well-documented and stable; WHAM's
+        # 31-joint J_regressor_wham has an undocumented ordering and
+        # produced anatomically-impossible mappings on the first try
+        # (e.g. "ankles" higher than "pelvis"). We trade off spine2/
+        # spine3 + feet (H36M doesn't have them) for cleaner anatomy.
+        # Foot positions can be inferred from ankle for overlay.
+        H36M_TO_PILOT_NAME = {
             0:  "pelvis",
-            3:  "spine1",
-            6:  "spine2",
-            9:  "spine3",
-            12: "neck",
-            15: "head",
-            16: "left_shoulder",   17: "right_shoulder",
-            18: "left_elbow",      19: "right_elbow",
-            20: "left_wrist",      21: "right_wrist",
-            1:  "left_hip",        2:  "right_hip",
-            4:  "left_knee",       5:  "right_knee",
-            7:  "left_ankle",      8:  "right_ankle",
-            10: "left_foot",       11: "right_foot",
+            7:  "spine1",          # H36M has 1 spine joint; spine2/3 not available
+            9:  "neck",
+            10: "head",
+            11: "left_shoulder",   14: "right_shoulder",
+            12: "left_elbow",      15: "right_elbow",
+            13: "left_wrist",      16: "right_wrist",
+            4:  "left_hip",        1:  "right_hip",
+            5:  "left_knee",       2:  "right_knee",
+            6:  "left_ankle",      3:  "right_ankle",
         }
 
-        joints_3d = wham_out.get("joints")
-        if joints_3d is None:
+        # WHAM doesn't emit pre-computed joint positions; it gives the
+        # full posed mesh vertices + SMPL params. Joints are derived by
+        # multiplying the WHAM joint regressor (24×6890) against the
+        # vertex array. The J_regressor_wham.npy file we downloaded
+        # into body_models is purpose-built for this.
+        import numpy as np
+        verts = track.get("verts")
+        if verts is None:
             raise RuntimeError(
-                f"WHAM pkl missing 'joints' field. keys={list(wham_out.keys())}"
+                f"WHAM track[{primary_track_id}] missing 'verts' field. "
+                f"keys={list(track.keys())}"
+            )
+        # verts shape: (T, 6890, 3) — posed mesh vertices in WHAM's
+        # output frame (camera-frame; pose_world + trans_world give the
+        # SLAM-grounded world frame variant).
+        verts = np.asarray(verts)
+        if verts.ndim != 3 or verts.shape[-1] != 3:
+            raise RuntimeError(
+                f"WHAM verts shape unexpected: {verts.shape} "
+                f"(expected (T, V, 3))"
             )
 
-        frame_ids = wham_out.get("frame_ids")
+        # Switched from J_regressor_wham (31 joints, undocumented order)
+        # to J_regressor_h36m (17 joints, well-known order) for cleaner
+        # anatomy. Both .npy files live in body_models from the WHAM
+        # extras tarball.
+        j_regressor_path = "/models/body_models/J_regressor_h36m.npy"
+        if not os.path.exists(j_regressor_path):
+            raise RuntimeError(
+                f"J_regressor_h36m.npy missing at {j_regressor_path} — "
+                f"setup_models extras step needs to run first"
+            )
+        J_regressor = np.load(j_regressor_path)
+        # Expected shape (24, 6890). Some variants store it as (6890, 24)
+        # or (J, V) where J may be != 24; handle both orientations.
+        if J_regressor.shape[1] == verts.shape[1]:
+            # (J, V) — canonical
+            pass
+        elif J_regressor.shape[0] == verts.shape[1]:
+            J_regressor = J_regressor.T
+        else:
+            raise RuntimeError(
+                f"J_regressor shape {J_regressor.shape} incompatible with "
+                f"verts shape {verts.shape} (need shared V dim)"
+            )
+        print(
+            f"[wham_runner] computing joints: "
+            f"J_regressor {J_regressor.shape} @ verts {verts.shape}"
+        )
+        # joints[t, j, d] = sum_v J_regressor[j, v] * verts[t, v, d]
+        joints_3d = np.einsum("jv,tvd->tjd", J_regressor, verts)
+        print(f"[wham_runner] derived joints shape: {joints_3d.shape}")
+
+        # DEBUG: dump all 31 joint xyz for frame[0] so the WHAM joint
+        # name ordering can be reverse-engineered. Print sorted by y
+        # (typically vertical) — lowest y = pelvis/ankles, highest = head.
+        # Standard SMPL convention: y is vertical (up positive in world
+        # frame; here in WHAM's camera frame, y direction depends on
+        # camera orientation). Either way, sorted-by-y gives a clear
+        # spatial profile.
+        debug_frame_idx = 0
+        f0_joints = joints_3d[debug_frame_idx]
+        idx_sorted = sorted(range(len(f0_joints)), key=lambda i: f0_joints[i][1])
+        print(f"[wham_runner] DEBUG frame[{debug_frame_idx}] all joints (sorted by y):")
+        for i in idx_sorted:
+            x, y, z = f0_joints[i]
+            print(f"[wham_runner]   idx={i:2d}  ({x:+7.3f}, {y:+7.3f}, {z:+7.3f})")
+
+        frame_ids = track.get("frame_ids")
         n_frames = len(joints_3d)
 
         # Read video metadata locally (ffprobe via opencv was apt-installed
@@ -272,10 +388,10 @@ if _MODAL_AVAILABLE:
 
         frames_out = []
         for i in range(n_frames):
-            joints_world = joints_3d[i]  # (24, 3) numpy
+            joints_world = joints_3d[i]  # (17, 3) numpy (H36M order)
             joint_centers_3d = {}
-            for smpl_idx, pilot_name in SMPL_TO_PILOT_NAME.items():
-                xyz = joints_world[smpl_idx].tolist()
+            for h36m_idx, pilot_name in H36M_TO_PILOT_NAME.items():
+                xyz = joints_world[h36m_idx].tolist()
                 joint_centers_3d[pilot_name] = xyz
             fi = int(frame_ids[i]) if frame_ids is not None else i
             frames_out.append({
@@ -289,8 +405,8 @@ if _MODAL_AVAILABLE:
                 # local render_overlay can fall back to verts-mean
                 # projection.
                 "joint_centers_2d_projected": None,
-                "smpl_betas":                wham_out.get("betas")[i].tolist()
-                                              if "betas" in wham_out else None,
+                "smpl_betas":                track["betas"][i].tolist()
+                                              if "betas" in track else None,
                 "smpl_pose":                 None,  # 24x3x3 too verbose; skip for smoke
             })
 
@@ -315,7 +431,8 @@ if _MODAL_AVAILABLE:
                 f"n_frames_wham={n_frames}",
                 f"n_native_frames={n_native}",
                 f"video_url={video_url[:80]}{'...' if len(video_url) > 80 else ''}",
-                f"smpl_to_pilot_dropped_keys=[L/R_hand_joints, L/R_toe_joints]",
+                f"j_regressor=J_regressor_h36m.npy (17 joints, H36M order)",
+                f"h36m_to_pilot_dropped_keys=[spine2,spine3,left_foot,right_foot]",
             ],
         }
         return result

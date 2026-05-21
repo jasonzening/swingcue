@@ -61,10 +61,46 @@ WHAM_WEIGHTS: tuple[tuple[str, str, int], ...] = (
     ("1i7kt9RlCCCNEW2aYaDWVr-G778JkLNcB", "wham_vit_w_3dpw.pth.tar",       400),
     ("19qkI-a6xuwob9_RFNSPWf1yWErwVVlks", "wham_vit_bedlam_w_3dpw.pth.tar", 400),
     ("1J6l8teyZrL0zFzHhzkC7efRhU0ZJ5G9Y", "hmr2a.ckpt",                    2000),
-    ("1kXTV4EYb-BI3H7J-bkR3Bc4gT9zfnHGT", "dpvo.pth",                       200),
+    # dpvo.pth is genuinely small (~13 MB) — DPVO transformer weights
+    # are tiny vs other WHAM subnets. Initial 200 MB pin was wrong.
+    # Keep a 5 MB floor + HTML-content sniff to catch Drive warning
+    # pages that happen to be larger than a few KB.
+    ("1kXTV4EYb-BI3H7J-bkR3Bc4gT9zfnHGT", "dpvo.pth",                         5),
     ("1zJ0KP23tXD42D47cw1Gs7zE2BA_V_ERo", "yolov8x.pt",                     130),
     ("1xyF7F3I7lWtdq82xmEPVQ5zl4HaasBso", "vitpose-h-multi-coco.pth",       800),
 )
+
+# WHAM-specific body_models extras tarball — separate from Jason's
+# SMPL/SMPL-X/SMPL-H uploads (those are smpl.is.tue.mpg.de research-
+# license content). This tarball contains WHAM-derived files:
+#   J_regressor_wham.npy   (24-joint regressor specific to WHAM's training)
+#   J_regressor_h36m.npy   (Human3.6M evaluation regressor)
+#   J_regressor_coco.npy   (COCO eval regressor)
+#   smpl_mean_params.npz   (initialization stats)
+#   ... + duplicate SMPL/SMPLH files (we overwrite, no harm)
+# Source: same fetch_demo_data.sh, gdrive_id 1pbmzRbWGgae6noDIyQOnohzaVnX_csUZ.
+# Extracts at /models/ which produces /models/dataset/body_models/...
+# inside the tar; we move into /models/body_models/ to match the
+# already-uploaded SMPL layout.
+BODY_MODELS_EXTRAS_GDRIVE_ID = "1pbmzRbWGgae6noDIyQOnohzaVnX_csUZ"
+BODY_MODELS_EXTRAS_TARBALL = "/tmp/_wham_body_models_extras.tar.gz"
+# Sentinel file present after a successful extract — skip re-download
+# on idempotent re-runs.
+BODY_MODELS_EXTRAS_SENTINEL = "/models/body_models/J_regressor_wham.npy"
+
+
+def _looks_like_html(path: str) -> bool:
+    """Sniff first 512 bytes for HTML markers — catches Drive virus-scan
+    warning pages that masquerade as the real download. Real PyTorch
+    checkpoints start with `PK\\x03\\x04` (zip magic) or torch.save
+    binary headers; YOLO .pt is also a zip. HTML pages start with
+    `<html`, `<!DOCTYPE`, or `<meta`."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(512).lower()
+    except OSError:
+        return False
+    return any(marker in head for marker in (b"<html", b"<!doctype", b"<meta http"))
 
 WHAM_TARGET_DIR = "/models/wham"
 BODY_MODELS_DIR = "/models/body_models"  # populated by `modal volume put`
@@ -183,6 +219,96 @@ def _extract_smplh_generic(zip_path: str) -> int:
     return extracted
 
 
+def _ensure_body_models_extras() -> None:
+    """
+    Download + extract WHAM's body_models extras tarball.
+
+    Idempotent: if J_regressor_wham.npy already exists at the canonical
+    path, skip everything. Otherwise gdown the tarball, extract under
+    /tmp, and move the contents into /models/body_models/. The tarball's
+    internal layout is `dataset/body_models/...` so we strip the
+    `dataset/` prefix when moving.
+    """
+    import shutil
+    import tarfile
+
+    if os.path.exists(BODY_MODELS_EXTRAS_SENTINEL):
+        print(
+            f"[setup_models] body_models extras already extracted "
+            f"({BODY_MODELS_EXTRAS_SENTINEL}); skip"
+        )
+        return
+
+    # Download. The extras tarball is genuinely small (~900 KB —
+    # mostly small .npy regressor matrices). Floor of 0.1 MB (100 KB)
+    # catches HTML virus-scan pages (~3-10 KB) and empty/truncated
+    # downloads while accepting the legit ~900 KB tarball. _gdown_one's
+    # HTML content sniff is a second layer of defense.
+    _gdown_one(
+        BODY_MODELS_EXTRAS_GDRIVE_ID,
+        BODY_MODELS_EXTRAS_TARBALL,
+        min_size_mb=0.1,  # _gdown_one accepts float for this small file
+    )
+
+    # Extract under /tmp, then graft into /models/body_models/.
+    extract_dir = "/tmp/_wham_extras_extracted"
+    os.makedirs(extract_dir, exist_ok=True)
+    print(f"[setup_models] extracting {BODY_MODELS_EXTRAS_TARBALL} → {extract_dir}")
+    with tarfile.open(BODY_MODELS_EXTRAS_TARBALL) as tar:
+        tar.extractall(extract_dir)
+
+    # Find the body_models/ subdir within whatever WHAM's tarball wrapped.
+    # Common layouts seen:
+    #   extract_dir/dataset/body_models/...
+    #   extract_dir/body_models/...
+    candidates = (
+        os.path.join(extract_dir, "dataset", "body_models"),
+        os.path.join(extract_dir, "body_models"),
+    )
+    src = next((c for c in candidates if os.path.isdir(c)), None)
+    if src is None:
+        # Fall back: walk and find J_regressor_wham.npy's parent.
+        for root, _, files in os.walk(extract_dir):
+            if "J_regressor_wham.npy" in files:
+                src = root
+                break
+    if src is None:
+        raise RuntimeError(
+            f"WHAM extras tarball had unexpected layout; "
+            f"no body_models/ subdir found under {extract_dir}"
+        )
+
+    # Graft files into BODY_MODELS_DIR. Skip files that would clobber a
+    # canonical SMPL/SMPLH/SMPLX upload from Jason (we trust his
+    # license-clean copies over the WHAM-bundled duplicates).
+    SKIP_PREFIXES = ("smpl/SMPL_", "smplh/SMPLH_", "smplx/SMPLX_")
+    grafted = 0
+    skipped = 0
+    for root, _, files in os.walk(src):
+        rel_root = os.path.relpath(root, src)
+        for fname in files:
+            rel_path = os.path.normpath(os.path.join(rel_root, fname)).replace("\\", "/")
+            if any(rel_path.startswith(p) for p in SKIP_PREFIXES):
+                skipped += 1
+                continue
+            src_file = os.path.join(root, fname)
+            dst_file = os.path.join(BODY_MODELS_DIR, rel_path)
+            os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+            shutil.copy2(src_file, dst_file)
+            grafted += 1
+    print(
+        f"[setup_models] body_models extras: grafted {grafted} files, "
+        f"skipped {skipped} SMPL/SMPLH/SMPLX duplicates"
+    )
+
+    # Cleanup.
+    shutil.rmtree(extract_dir, ignore_errors=True)
+    try:
+        os.unlink(BODY_MODELS_EXTRAS_TARBALL)
+    except OSError:
+        pass
+
+
 def _extract_all_body_archives() -> None:
     """
     Scan BODY_MODELS_DIR/{smpl,smplh,smplx}/ for *.zip files Jason
@@ -235,30 +361,81 @@ def _extract_all_body_archives() -> None:
 # ---------------------------------------------------------------------------
 
 def _gdown_one(gdrive_id: str, dst: str, min_size_mb: int) -> None:
+    """
+    Download from Google Drive with two-attempt fallback (API → CLI).
+
+    Some Drive files (dpvo.pth observed 2026-05-20) return the virus-
+    scan warning HTML page from the API path without raising — gdown
+    silently writes a ~10-200 MB HTML page. We validate size after
+    EACH attempt and treat undersized as a soft failure, retrying via
+    the CLI with --fuzzy which handles the confirm-token dance more
+    aggressively.
+    """
     import gdown
+
+    # If a prior attempt left a bad partial here, nuke it first so
+    # gdown doesn't get confused by an existing path.
+    if os.path.exists(dst):
+        sz_mb = os.path.getsize(dst) / 1024 / 1024
+        if sz_mb < min_size_mb:
+            print(
+                f"[setup_models]   removing prior bad partial: "
+                f"{sz_mb:.1f} MB < {min_size_mb} MB"
+            )
+            os.unlink(dst)
+
+    def _size_mb() -> float:
+        return os.path.getsize(dst) / 1024 / 1024 if os.path.exists(dst) else 0.0
+
     url = f"https://drive.google.com/uc?id={gdrive_id}&export=download&confirm=t"
-    print(f"[setup_models] gdown {gdrive_id} → {dst}")
+
+    # Attempt 1: gdown Python API.
+    print(f"[setup_models] gdown API {gdrive_id} → {dst}")
     try:
         gdown.download(url, dst, quiet=False, fuzzy=True)
     except Exception as e:
-        # Fallback: try the CLI form, which has its own confirm-token
-        # handling for large files.
-        print(f"[setup_models] gdown API failed ({e}); retrying via CLI")
-        subprocess.run(
-            ["gdown", "--id", gdrive_id, "--output", dst, "--fuzzy"],
-            check=True,
-        )
+        print(f"[setup_models]   API exception: {e!r}")
 
-    if not os.path.exists(dst):
-        raise RuntimeError(f"gdown produced no file at {dst}")
-    sz_mb = os.path.getsize(dst) / 1024 / 1024
-    print(f"[setup_models]   downloaded: {sz_mb:.1f} MB")
-    if sz_mb < min_size_mb:
-        raise RuntimeError(
-            f"gdown wrote {sz_mb:.1f} MB but expected ≥ {min_size_mb} MB — "
-            f"likely a Drive virus-scan HTML page, not the model file. "
-            f"Manual re-fetch needed for {gdrive_id}."
+    sz_mb = _size_mb()
+    is_html = _looks_like_html(dst) if sz_mb > 0 else False
+    if sz_mb >= min_size_mb and not is_html:
+        print(f"[setup_models]   downloaded via API: {sz_mb:.1f} MB")
+        return
+    if sz_mb > 0:
+        reason = "looks like HTML virus-scan page" if is_html else (
+            f"undersized {sz_mb:.1f} MB < {min_size_mb} MB"
         )
+        print(f"[setup_models]   API failed: {reason} — retrying via CLI")
+        os.unlink(dst)
+
+    # Attempt 2: gdown CLI with --fuzzy.
+    print(f"[setup_models] gdown CLI {gdrive_id} → {dst}")
+    subprocess.run(
+        ["gdown", "--id", gdrive_id, "--output", dst, "--fuzzy"],
+        check=True,
+    )
+
+    sz_mb = _size_mb()
+    is_html = _looks_like_html(dst) if sz_mb > 0 else False
+    if sz_mb >= min_size_mb and not is_html:
+        print(f"[setup_models]   downloaded via CLI: {sz_mb:.1f} MB")
+        return
+
+    # Both attempts failed — hard fail with diagnostic.
+    if is_html:
+        msg = (
+            f"gdown CLI also returned HTML (likely virus-scan page) "
+            f"for {gdrive_id}. Manual re-fetch needed — try opening "
+            f"https://drive.google.com/file/d/{gdrive_id}/view in a "
+            f"browser, accept the warning, then upload via "
+            f"`modal volume put`."
+        )
+    else:
+        msg = (
+            f"gdown wrote {sz_mb:.1f} MB but expected ≥ {min_size_mb} MB "
+            f"after both API + CLI attempts for {gdrive_id}."
+        )
+    raise RuntimeError(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -326,11 +503,13 @@ if _MODAL_AVAILABLE:
                 print(f"[setup_models] skip (already present, ≥ {min_size_mb} MB): {filename}")
                 continue
             _gdown_one(gdrive_id, dst, min_size_mb)
+            # Commit per-file so a later download failure doesn't lose
+            # the GB of WHAM weights we already pulled. Volume commits
+            # are cheap and idempotent.
+            model_volume.commit()
+            print(f"[setup_models]   ↻ Volume committed after {filename}")
 
-        # Commit Volume — without this the next inference function sees
-        # an empty Volume.
-        model_volume.commit()
-        print("[setup_models] Volume committed")
+        print("[setup_models] all WHAM weights downloaded + committed")
 
         # Cross-check SMPL upload (Jason's `modal volume put` step).
         # Two-phase: (a) extract zip archives if any, (b) verify
@@ -349,6 +528,9 @@ if _MODAL_AVAILABLE:
             # (a) Extract any *.zip archives in subdirs to canonical names.
             print("[setup_models] extracting body-model archives (idempotent)")
             _extract_all_body_archives()
+            # (a2) Download + extract WHAM-specific body_models extras
+            # (J_regressor_wham.npy etc.) if not already present.
+            _ensure_body_models_extras()
             # Commit Volume changes — extracted files only persist if we
             # commit before the function returns.
             model_volume.commit()
