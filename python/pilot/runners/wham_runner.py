@@ -393,6 +393,25 @@ if _MODAL_AVAILABLE:
             for h36m_idx, pilot_name in H36M_TO_PILOT_NAME.items():
                 xyz = joints_world[h36m_idx].tolist()
                 joint_centers_3d[pilot_name] = xyz
+
+            # ── PR-7a.2 chirality normalization (upper-body arm chain) ──
+            # WHAM emits H36M-ordered joints. Per PR-7a.2 cross-pair
+            # diagnostic, WHAM's H36M upper-body (shoulder/elbow/wrist)
+            # uses anatomy convention (golfer-anat-left = image-RIGHT for
+            # a face-on camera), but lower-body (hip/knee/ankle) AND our
+            # ground-truth labels both use image-orientation convention
+            # (left = image-LEFT). Without this normalization, downstream
+            # fitting tries to encode the convention mismatch as huge
+            # body-local offset vectors. Swap the arm chain so all WHAM
+            # joints match the GT image-orientation convention.
+            for left, right in (
+                ("left_shoulder", "right_shoulder"),
+                ("left_elbow",    "right_elbow"),
+                ("left_wrist",    "right_wrist"),
+            ):
+                joint_centers_3d[left], joint_centers_3d[right] = (
+                    joint_centers_3d[right], joint_centers_3d[left],
+                )
             fi = int(frame_ids[i]) if frame_ids is not None else i
             frames_out.append({
                 "ts":                       round(fi / fps_native, 3),

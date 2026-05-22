@@ -1,0 +1,101 @@
+{
+  "head_crown": {
+    "index": 411,
+    "xyz": [
+      -0.00011176200496265665,
+      0.5555177927017212,
+      0.006299180444329977
+    ],
+    "rule": "argmax y over full mesh"
+  },
+  "throat_midpoint": {
+    "index": 444,
+    "xyz": [
+      1.428901668987237e-06,
+      0.540662407875061,
+      0.07170233130455017
+    ],
+    "rule": "midline, y in [0.30, 0.55], z>0.02 anterior; argmax y"
+  },
+  "c7": {
+    "index": 414,
+    "xyz": [
+      -0.00021158701565582305,
+      0.5498929619789124,
+      -0.02777371183037758
+    ],
+    "rule": "midline, y in [0.20, 0.55], z<-0.02 posterior; argmax y"
+  },
+  "acromion_left": {
+    "index": 4721,
+    "xyz": [
+      -0.1368926614522934,
+      0.27917543053627014,
+      -0.00560774328187108
+    ],
+    "rule": "side=left, |x| in [0.13, 0.22] (torso width \u2014 not arm), y in [0.23, 0.32], |z|<0.10; argmax y (top of shoulder pad)"
+  },
+  "acromion_right": {
+    "index": 1238,
+    "xyz": [
+      0.13927285373210907,
+      0.2828928828239441,
+      -0.005252079106867313
+    ],
+    "rule": "side=right, |x| in [0.13, 0.22] (torso width \u2014 not arm), y in [0.23, 0.32], |z|<0.10; argmax y (top of shoulder pad)"
+  },
+  "greater_trochanter_left": {
+    "index": 6375,
+    "xyz": [
+      -0.16624203324317932,
+      -0.14817234873771667,
+      0.012732740491628647
+    ],
+    "rule": "side=left, y in [-0.15, 0.05]; argmax|min x (most lateral)"
+  },
+  "greater_trochanter_right": {
+    "index": 2915,
+    "xyz": [
+      0.16330617666244507,
+      -0.1470576375722885,
+      0.020842943340539932
+    ],
+    "rule": "side=right, y in [-0.15, 0.05]; argmax|min x (most lateral)"
+  },
+  "lateral_epicondyle_left": {
+    "index": 4447,
+    "xyz": [
+      -0.16955924034118652,
+      -0.5010735392570496,
+      0.049009837210178375
+    ],
+    "rule": "side=left, y in [-0.80, -0.50]; argmax|min x (most lateral)"
+  },
+  "lateral_epicondyle_right": {
+    "index": 959,
+    "xyz": [
+      0.16562002897262573,
+      -0.5008931159973145,
+      0.05200390890240669
+    ],
+    "rule": "side=right, y in [-0.80, -0.50]; argmax|min x (most lateral)"
+  },
+  "lateral_malleolus_left": {
+    "index": 6749,
+    "xyz": [
+      -0.1614212691783905,
+      -1.1478341817855835,
+      0.07691695541143417
+    ],
+    "rule": "side=left, y in [-1.15, -0.95]; argmax|min x (most lateral)"
+  },
+  "lateral_malleolus_right": {
+    "index": 3348,
+    "xyz": [
+      0.16000238060951233,
+      -1.1457602977752686,
+      0.07491110265254974
+    ],
+    "rule": "side=right, y in [-1.15, -0.95]; argmax|min x (most lateral)"
+  }
+}
