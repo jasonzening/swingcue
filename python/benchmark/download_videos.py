@@ -30,9 +30,10 @@ import httpx
 # a735cc7d + 5bbcfbc8 are additional samples — pick any two if
 # these IDs aren't available in your DB, and update this list.
 DEFAULT_VIDEO_IDS: tuple[str, ...] = (
-    "b3fea3f0-e248-44d7-a923-0bb43172b5bf",
-    "a735cc7d",  # TODO(jason): full UUID needed if downloading
-    "5bbcfbc8",  # TODO(jason): full UUID needed if downloading
+    "b3fea3f0-e248-44d7-a923-0bb43172b5bf",   # face_on calibration video
+    "a735cc7d-1d4d-4b73-870f-30dca5c4aac0",   # face_on
+    "5bbcfbc8-49b9-4fc4-8b0e-a34c5427aa62",   # face_on
+    "b32e0f21-2656-473c-aa87-e1eaf6e1221f",   # down_the_line (filename: downtheline-4miao.mp4)
 )
 
 BUCKET = "swing-videos"

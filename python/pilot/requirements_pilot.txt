@@ -1,0 +1,29 @@
+# Phase 2 bone-center pilot — LOCAL DEV dependencies.
+#
+# These are the deps Jason installs in a venv on his laptop to run
+# Modal CLI commands (modal token new, modal deploy, modal volume create,
+# modal run setup_models.py). They are NOT installed inside the Modal
+# Images themselves — those have their own dependency trees defined per
+# library in modal_app.py.
+#
+# Recommended setup (separate from .venv-benchmark and from production):
+#
+#   python3.11 -m venv .venv-pilot
+#   .venv-pilot\Scripts\Activate.ps1     # (PowerShell on Windows)
+#   pip install -r python/pilot/requirements_pilot.txt
+#   modal token new                       # browser login, writes ~/.modal.toml
+#
+# After that, scaffold sanity-check:
+#
+#   python -m python.pilot.modal_app
+
+# Modal client. Server-side enforces a minimum version that moves
+# forward over time — `0.77.0` (resolved 2026-05-20) was already
+# rejected with "Version 0.77.0 of modal is deprecated". Bumping the
+# floor to >=1.0 keeps us on the actively-supported line; no upper
+# bound so future deprecations resolve via `pip install --upgrade`.
+modal>=1.0
+
+# httpx for video download fetch (mirrors python/benchmark/requirements_benchmark.txt
+# convention; not strictly needed for phase2a but reserved for phase2b).
+httpx>=0.27,<1.0
