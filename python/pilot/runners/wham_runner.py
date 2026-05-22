@@ -164,6 +164,7 @@ if _MODAL_AVAILABLE:
         video_id: str,
         video_url: str,
         primary_checkpoint: str = "wham_vit_w_3dpw.pth.tar",
+        save_smpl_params: bool = False,   # PR-7a.5 probe opt-in (default OFF)
     ) -> dict:
         """
         Run WHAM on one video and return the joint-center timeline.
@@ -426,12 +427,22 @@ if _MODAL_AVAILABLE:
                 "joint_centers_2d_projected": None,
                 "smpl_betas":                track["betas"][i].tolist()
                                               if "betas" in track else None,
-                "smpl_pose":                 None,  # 24x3x3 too verbose; skip for smoke
+                # PR-7a.5: pose + trans saved only when save_smpl_params=True.
+                # pose adds ~1.7 KB/frame (24*3*3 floats), trans adds 24 bytes/frame.
+                "smpl_pose":  (
+                    track["pose"][i].tolist()
+                    if save_smpl_params and "pose" in track else None
+                ),
+                "smpl_trans": (
+                    track["trans"][i].tolist()
+                    if save_smpl_params and "trans" in track else None
+                ),
             })
 
         result = {
             "video_id":     video_id,
             "runner":       "wham",
+            "_wham_runner_version": "7a5",   # PR-7a.5 schema marker
             "video_width":  video_w,
             "video_height": video_h,
             "fps_native":   round(fps_native, 2),
@@ -454,6 +465,44 @@ if _MODAL_AVAILABLE:
                 f"h36m_to_pilot_dropped_keys=[spine2,spine3,left_foot,right_foot]",
             ],
         }
+
+        # ── PR-7a.5: opt-in SMPL params packing (verts to .npz sidecar) ──
+        # When save_smpl_params=True, pack (verts, pose, trans, betas) into
+        # a compressed .npz blob and ship as base64 string in the result
+        # dict. Modal returns it across the wire; local_entrypoint pops +
+        # writes to python/pilot/output/wham/<id>/smpl_params.npz.
+        #
+        # Default OFF — production runs unchanged.
+        if save_smpl_params and "verts" in track:
+            import base64
+            import io
+            verts_arr = np.asarray(track["verts"], dtype=np.float32)
+            pose_arr  = np.asarray(track["pose"],  dtype=np.float32) if "pose"  in track else None
+            trans_arr = np.asarray(track["trans"], dtype=np.float32) if "trans" in track else None
+            betas_arr = np.asarray(track["betas"], dtype=np.float32) if "betas" in track else None
+            buf = io.BytesIO()
+            np.savez_compressed(
+                buf, verts=verts_arr,
+                **({"pose":  pose_arr}  if pose_arr  is not None else {}),
+                **({"trans": trans_arr} if trans_arr is not None else {}),
+                **({"betas": betas_arr} if betas_arr is not None else {}),
+            )
+            raw_npz_bytes = buf.getvalue()
+            # Size log BEFORE encoding — if Modal hangs we can tell
+            # size-related from inference-related.
+            print(f"[wham_runner] smpl_params npz raw size = "
+                  f"{len(raw_npz_bytes) / 1024 / 1024:.1f} MB")
+            encoded = base64.b64encode(raw_npz_bytes).decode("ascii")
+            print(f"[wham_runner] smpl_params b64-encoded size = "
+                  f"{len(encoded) / 1024 / 1024:.1f} MB")
+            result["smpl_params_npz_b64"] = encoded
+            result["smpl_params_shapes"] = {
+                "verts": list(verts_arr.shape),
+                **({"pose":  list(pose_arr.shape)}  if pose_arr  is not None else {}),
+                **({"trans": list(trans_arr.shape)} if trans_arr is not None else {}),
+                **({"betas": list(betas_arr.shape)} if betas_arr is not None else {}),
+            }
+
         return result
 
 
@@ -468,26 +517,48 @@ if _MODAL_AVAILABLE:
         video_id: str,
         video_url: str,
         primary_checkpoint: str = "wham_vit_w_3dpw.pth.tar",
+        save_smpl_params: bool = False,
     ) -> None:
         """
         Local driver: invokes run_wham on Modal, then writes the result
         JSON to python/pilot/output/wham/<video_id>/joint_centers_3d.json.
+
+        PR-7a.5: when save_smpl_params=True, also pops the SMPL params
+        blob from the result dict and writes it as a .npz sidecar at
+        python/pilot/output/wham/<video_id>/smpl_params.npz.
         """
+        import base64
         import json
         from pathlib import Path
 
-        print(f"[wham_runner] invoking run_wham on Modal for {video_id}")
+        print(f"[wham_runner] invoking run_wham on Modal for {video_id} "
+              f"(save_smpl_params={save_smpl_params})")
         result = run_wham.remote(
             video_id=video_id,
             video_url=video_url,
             primary_checkpoint=primary_checkpoint,
+            save_smpl_params=save_smpl_params,
         )
         out_dir = Path(f"python/pilot/output/wham/{video_id}")
         out_dir.mkdir(parents=True, exist_ok=True)
+
+        # PR-7a.5: pop the SMPL params blob BEFORE JSON dump (too large
+        # to inline). Sidecar .npz lands next to joint_centers_3d.json.
+        npz_b64 = result.pop("smpl_params_npz_b64", None)
+        shapes  = result.pop("smpl_params_shapes", None)
+
         out_path = out_dir / "joint_centers_3d.json"
         out_path.write_text(json.dumps(result, indent=2))
         sz_kb = out_path.stat().st_size / 1024
         print(f"[wham_runner] wrote {out_path} ({sz_kb:.1f} KB)")
+
+        if npz_b64 is not None:
+            npz_bytes = base64.b64decode(npz_b64)
+            npz_path = out_dir / "smpl_params.npz"
+            npz_path.write_bytes(npz_bytes)
+            sz_mb = npz_path.stat().st_size / 1024 / 1024
+            print(f"[wham_runner] wrote {npz_path} "
+                  f"({sz_mb:.1f} MB) shapes={shapes}")
         print(
             f"[wham_runner] next: render 2D overlay via "
             f"python -m pilot.runners._overlay {video_id}"

@@ -73,9 +73,14 @@ def _sign_url(supa_url: str, key: str, path: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        sys.exit("usage: run_wham_one.py <video_id>")
-    video_id = sys.argv[1]
+    # Trivial CLI: positional <video_id> + optional --save-smpl-params flag.
+    # Avoid argparse here so the existing call signature
+    # (`python run_wham_one.py <video_id>`) keeps working.
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    save_smpl_params = "--save-smpl-params" in sys.argv[1:]
+    if not args:
+        sys.exit("usage: run_wham_one.py <video_id> [--save-smpl-params]")
+    video_id = args[0]
 
     _load_env_local(REPO_ROOT / ".env.local")
     supa_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "").rstrip("/")
@@ -99,9 +104,12 @@ def main() -> None:
         "--video-id", video_id,
         "--video-url", signed_url,
     ]
+    if save_smpl_params:
+        cmd.append("--save-smpl-params")
     # Do NOT print the full cmd (would echo signed URL). Print scrubbed.
     print(f"[run_wham_one] exec: {cmd[0]} run wham_runner.py::run_wham_local "
-          f"--video-id {video_id} --video-url <signed:redacted>")
+          f"--video-id {video_id} --video-url <signed:redacted>"
+          f"{' --save-smpl-params' if save_smpl_params else ''}")
     # Force UTF-8 for the subprocess: modal CLI emits checkmarks that
     # blow up Windows' default GBK/CP936 console codec.
     sub_env = os.environ.copy()

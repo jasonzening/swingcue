@@ -1,25 +1,34 @@
 """
-probe_smpl_vertex_landmarks.py — local-only rendering + measurement
-script for the PR-7a.4 SMPL vertex sampling probe.
+probe_smpl_vertex_landmarks.py (PR-7a.5 — fresh) — measure SMPL vertex
+sampling vs current PR-7a fitted-offset anchors against Jason's GT
+labels on b3fea3f0 face_on.
+
+Supersedes yesterday's stub which couldn't run because verts were
+unavailable locally. With PR-7a.5 wham_runner.py patch + Modal cycle
+saving smpl_params.npz, this script now has real data to compare.
 
 Inputs (all read-only):
-  - docs/PR-7a4_PROBE/smpl_landmark_indices.json
-        (output of probe_derive_smpl_landmarks.py)
-  - python/pilot/output/wham/<video_id>/verts_at_frames.json
-        (output of probe_extract_verts_modal.py)
-  - docs/PR-7a_OFFLINE_OUTPUT/<short_id>_<view>_corrected.json
-        (current PR-7a corrected timeline)
-  - docs/PR-7_GROUND_TRUTH/golf/<short_id>_<phase>_<view>.json
-        (Jason's GT labels)
-  - python/benchmark/test_videos/<video_id>.mp4
-        (source video for frame extraction)
+  python/pilot/output/wham/b3fea3f0-*/smpl_params.npz
+    └─ from PR-7a.5-patched wham_runner with --save-smpl-params
+  docs/PR-7a4_PROBE/smpl_landmark_indices.json
+    └─ vertex indices derived from SMPL T-pose (yesterday)
+  docs/PR-7a_OFFLINE_OUTPUT/b3fea3f0_face_on_corrected.json
+    └─ current PR-7a corrected anchors
+  docs/PR-7_GROUND_TRUTH/golf/b3fea3f0_{setup,impact,finish}_face_on.json
+    └─ Jason's red dots
+  python/benchmark/test_videos/b3fea3f0-*.mp4
+    └─ source video for background frame
 
-Outputs (probe-only — never touches motion_correction):
-  - docs/PR-7a4_PROBE/<short_id>_<view>_<phase>_compare.png
-        (one per frame: source + OLD anchors + NEW vertex samples + GT dots)
-  - docs/PR-7a4_PROBE/distance_to_gt.csv
+Outputs:
+  docs/PR-7a5_PROBE/b3fea3f0_face_on_{setup,impact,finish}_compare.png
+  docs/PR-7a5_PROBE/distance_to_gt.csv
+  stdout: PROBE PASS / FAIL acceptance summary
 
-PASS/FAIL acceptance reported to stdout at end.
+PASS gate (per PR-7a.5 spec):
+  - acromion vertex closer to GT than PR-7a anchor on >= 2 of 3 frames
+  - knee/ankle/foot vertices visibly on lateral anatomy (visual, PNG)
+  - no L/R confusion across frames
+  - no projection blowouts (all 2D coords within image bounds)
 """
 from __future__ import annotations
 
@@ -34,159 +43,151 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "python"))
-from motion_correction.engine.projection import (
+from motion_correction.engine.projection import (  # noqa: E402
     default_intrinsics, project_xyz_to_uv,
 )
 
-PROBE_DIR = REPO_ROOT / "docs" / "PR-7a4_PROBE"
+# ── Paths ───────────────────────────────────────────────────────────
+VIDEO_ID = "b3fea3f0-e248-44d7-a923-0bb43172b5bf"
+SHORT    = VIDEO_ID.split("-")[0]
+VIEW     = "face_on"
+PROBE_DIR = REPO_ROOT / "docs" / "PR-7a5_PROBE"
+INDICES   = REPO_ROOT / "docs" / "PR-7a4_PROBE" / "smpl_landmark_indices.json"
+WHAM_DIR  = REPO_ROOT / "python" / "pilot" / "output" / "wham" / VIDEO_ID
+COR_JSON  = (REPO_ROOT / "docs" / "PR-7a_OFFLINE_OUTPUT"
+             / f"{SHORT}_{VIEW}_corrected.json")
 GT_DIR    = REPO_ROOT / "docs" / "PR-7_GROUND_TRUTH" / "golf"
-COR_DIR   = REPO_ROOT / "docs" / "PR-7a_OFFLINE_OUTPUT"
-WHAM_DIR  = REPO_ROOT / "python" / "pilot" / "output" / "wham"
-VIDEOS    = REPO_ROOT / "python" / "benchmark" / "test_videos"
+VIDEO_MP4 = REPO_ROOT / "python" / "benchmark" / "test_videos" / f"{VIDEO_ID}.mp4"
 
-
-# Mapping from GT label key → SMPL landmark name + corresponding PR-7a
-# coaching_anchors_2d key (when present).
-GT_TO_VERTEX = {
-    "left_shoulder":  "acromion_left",
-    "right_shoulder": "acromion_right",
-    "left_hip":       "greater_trochanter_left",
-    "right_hip":      "greater_trochanter_right",
-    "neck_center":    "throat_midpoint",
-}
-GT_TO_PR7A_ANCHOR = {
-    "left_shoulder":  "left_shoulder_visual",
-    "right_shoulder": "right_shoulder_visual",
-    "left_hip":       "left_hip_visual",
-    "right_hip":      "right_hip_visual",
-    "neck_center":    "neck_visual",
+# ── Landmark→GT/anchor mapping ──────────────────────────────────────
+LANDMARK_MAP: dict[str, tuple[str | None, str | None]] = {
+    "acromion_left":              ("left_shoulder",  "left_shoulder_visual"),
+    "acromion_right":             ("right_shoulder", "right_shoulder_visual"),
+    "greater_trochanter_left":    ("left_hip",       "left_hip_visual"),
+    "greater_trochanter_right":   ("right_hip",      "right_hip_visual"),
+    "throat_midpoint":            ("neck_center",    "neck_visual"),
+    # NEW landmarks (no GT, no PR-7a anchor — visual sanity only).
+    "head_crown":                 (None, None),
+    "c7":                         (None, None),
+    "lateral_epicondyle_left":    (None, None),
+    "lateral_epicondyle_right":   (None, None),
+    "lateral_malleolus_left":     (None, None),
+    "lateral_malleolus_right":    (None, None),
 }
 
-# Render config.
-COLOR_PR7A_ANCHOR = (255,   0, 255)   # magenta — OLD PR-7a corrected
-COLOR_VERTEX      = (255, 255,   0)   # cyan — NEW SMPL vertex sample
-COLOR_GT          = (  0,   0, 255)   # red — Jason's GT label
-COLOR_RAW_DOT     = (180, 180, 180)   # grey — raw WHAM 2D projection (faint)
+# Render colors (BGR).
+COLOR_PR7A_OLD = (255,   0, 255)   # magenta — old PR-7a corrected
+COLOR_VERTEX   = (255, 255,   0)   # cyan — new SMPL vertex
+COLOR_GT       = (  0,   0, 255)   # red — Jason GT
 
 
 def dist(a, b) -> float:
     return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2)
 
 
-def extract_video_frame(video_path: Path, frame_idx: int) -> np.ndarray:
-    cap = cv2.VideoCapture(str(video_path))
+def extract_video_frame(path: Path, frame_idx: int) -> np.ndarray:
+    cap = cv2.VideoCapture(str(path))
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
     ok, frame = cap.read()
     cap.release()
     if not ok:
-        raise RuntimeError(f"can't read frame {frame_idx} from {video_path}")
+        raise RuntimeError(f"can't read frame {frame_idx} from {path}")
     return frame
 
 
 def render_one_frame(
-    *,
-    video_path: Path,
-    frame_idx: int,
-    phase: str,
-    view: str,
-    verts_3d: np.ndarray,         # (6890, 3)
-    landmark_indices: dict[str, dict],
-    pr7a_anchors: dict[str, list | None],
-    gt_labels: dict[str, dict],
-    intrinsics: dict[str, float],
+    *, frame_idx: int, phase: str,
+    verts_3d: np.ndarray,
+    landmarks: dict,
+    pr7a_anchors: dict,
+    gt_labels: dict,
+    intrinsics: dict,
     out_png: Path,
 ) -> list[dict]:
-    """
-    Render one comparison frame and return per-landmark rows for the CSV.
-    """
-    img = extract_video_frame(video_path, frame_idx)
+    img = extract_video_frame(VIDEO_MP4, frame_idx)
     H, W = img.shape[:2]
     fx, fy, cx, cy = intrinsics["fx"], intrinsics["fy"], intrinsics["cx"], intrinsics["cy"]
-
     rows: list[dict] = []
-    for gt_key, vertex_name in GT_TO_VERTEX.items():
-        gt = gt_labels.get(gt_key)
-        if gt is None:
-            continue
-        gt_xy = (float(gt["x"]), float(gt["y"]))
 
-        # NEW: project the candidate SMPL vertex.
-        info = landmark_indices.get(vertex_name)
-        new_xy = None
-        if info is not None:
-            vert_idx = int(info["index"])
-            v3 = verts_3d[vert_idx].tolist()
-            new_xy = project_xyz_to_uv(v3, fx, fy, cx, cy)
-
-        # OLD: PR-7a corrected coaching anchor at this frame.
-        old_xy = pr7a_anchors.get(GT_TO_PR7A_ANCHOR.get(gt_key, ""))
-
-        old_d = dist(old_xy, gt_xy) if old_xy else None
-        new_d = dist(new_xy, gt_xy) if new_xy else None
-
-        # Draw lines from each candidate to GT for visual distance.
-        if new_xy is not None:
-            cv2.line(img, (int(round(new_xy[0])), int(round(new_xy[1]))),
-                     (int(round(gt_xy[0])), int(round(gt_xy[1]))),
-                     COLOR_VERTEX, 1, cv2.LINE_AA)
-            cv2.circle(img, (int(round(new_xy[0])), int(round(new_xy[1]))),
-                       8, COLOR_VERTEX, 2, cv2.LINE_AA)
-        if old_xy is not None:
-            cv2.line(img, (int(round(old_xy[0])), int(round(old_xy[1]))),
-                     (int(round(gt_xy[0])), int(round(gt_xy[1]))),
-                     COLOR_PR7A_ANCHOR, 1, cv2.LINE_AA)
-            cv2.circle(img, (int(round(old_xy[0])), int(round(old_xy[1]))),
-                       7, COLOR_PR7A_ANCHOR, -1, cv2.LINE_AA)
-        cv2.circle(img, (int(round(gt_xy[0])), int(round(gt_xy[1]))),
-                   6, COLOR_GT, -1, cv2.LINE_AA)
-        cv2.circle(img, (int(round(gt_xy[0])), int(round(gt_xy[1]))),
-                   7, (0, 0, 0), 1, cv2.LINE_AA)
-
-        rows.append({
-            "frame_idx":   frame_idx,
-            "phase":       phase,
-            "landmark":    gt_key,
-            "vertex_name": vertex_name,
-            "vertex_index": info["index"] if info else None,
-            "gt_2d_x":     gt_xy[0], "gt_2d_y": gt_xy[1],
-            "old_anchor_x": old_xy[0] if old_xy else None,
-            "old_anchor_y": old_xy[1] if old_xy else None,
-            "new_vertex_x": new_xy[0] if new_xy else None,
-            "new_vertex_y": new_xy[1] if new_xy else None,
-            "old_dist_px": old_d,
-            "new_dist_px": new_d,
-            "improvement_px": (
-                old_d - new_d if (old_d is not None and new_d is not None) else None
-            ),
-        })
-
-    # Additionally project the lateral knee + lateral ankle landmarks
-    # (no GT to compare against, but visual sanity).
-    for extra_name in ("lateral_epicondyle_left", "lateral_epicondyle_right",
-                        "lateral_malleolus_left", "lateral_malleolus_right"):
-        info = landmark_indices.get(extra_name)
+    for vname, (gt_key, anchor_key) in LANDMARK_MAP.items():
+        info = landmarks.get(vname)
         if info is None:
             continue
-        v3 = verts_3d[int(info["index"])].tolist()
-        uv = project_xyz_to_uv(v3, fx, fy, cx, cy)
-        if uv is not None:
-            cv2.circle(img, (int(round(uv[0])), int(round(uv[1]))),
-                       7, COLOR_VERTEX, 2, cv2.LINE_AA)
-            cv2.putText(img, extra_name.split("_", 2)[2][:1] + "_" + extra_name.split("_")[0][0],
-                        (int(round(uv[0])) + 10, int(round(uv[1])) + 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 3, cv2.LINE_AA)
-            cv2.putText(img, extra_name.split("_", 2)[2][:1] + "_" + extra_name.split("_")[0][0],
-                        (int(round(uv[0])) + 10, int(round(uv[1])) + 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, COLOR_VERTEX, 1, cv2.LINE_AA)
+        vidx = int(info["index"])
+        v3 = verts_3d[vidx].tolist()
+        new_uv = project_xyz_to_uv(v3, fx, fy, cx, cy)
+        in_bounds = (
+            new_uv is not None
+            and 0 <= new_uv[0] < W and 0 <= new_uv[1] < H
+        )
+        old_uv = pr7a_anchors.get(anchor_key) if anchor_key else None
+        gt_xy = None
+        if gt_key:
+            g = gt_labels.get(gt_key)
+            if g and "x" in g and "y" in g:
+                gt_xy = (float(g["x"]), float(g["y"]))
 
-    # Header bar with legend.
+        old_d = dist(old_uv, gt_xy) if (old_uv and gt_xy) else None
+        new_d = dist(new_uv, gt_xy) if (new_uv and gt_xy) else None
+        improvement = (
+            old_d - new_d if (old_d is not None and new_d is not None) else None
+        )
+
+        # ── Draw ──
+        if new_uv and in_bounds:
+            x, y = int(round(new_uv[0])), int(round(new_uv[1]))
+            cv2.rectangle(img, (x - 7, y - 7), (x + 7, y + 7),
+                          COLOR_VERTEX, 2, cv2.LINE_AA)
+            # Tiny label for new landmarks (no GT).
+            if gt_key is None:
+                short_label = vname.replace("lateral_", "").replace("_", "")[:6]
+                cv2.putText(img, short_label, (x + 9, y + 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(img, short_label, (x + 9, y + 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, COLOR_VERTEX, 1, cv2.LINE_AA)
+        if old_uv:
+            ox, oy = int(round(old_uv[0])), int(round(old_uv[1]))
+            cv2.circle(img, (ox, oy), 7, COLOR_PR7A_OLD, -1, cv2.LINE_AA)
+        if gt_xy:
+            gx, gy = int(round(gt_xy[0])), int(round(gt_xy[1]))
+            cv2.circle(img, (gx, gy), 6, COLOR_GT, -1, cv2.LINE_AA)
+            cv2.circle(img, (gx, gy), 7, (0, 0, 0), 1, cv2.LINE_AA)
+        if new_uv and in_bounds and gt_xy:
+            cv2.line(img, (int(new_uv[0]), int(new_uv[1])),
+                     (int(gt_xy[0]), int(gt_xy[1])),
+                     COLOR_VERTEX, 1, cv2.LINE_AA)
+        if old_uv and gt_xy:
+            cv2.line(img, (int(old_uv[0]), int(old_uv[1])),
+                     (int(gt_xy[0]), int(gt_xy[1])),
+                     COLOR_PR7A_OLD, 1, cv2.LINE_AA)
+
+        rows.append({
+            "frame_idx":     frame_idx,
+            "phase":         phase,
+            "landmark":      vname,
+            "vertex_index":  vidx,
+            "in_bounds":     bool(in_bounds),
+            "gt_key":        gt_key,
+            "gt_2d_x":       gt_xy[0] if gt_xy else None,
+            "gt_2d_y":       gt_xy[1] if gt_xy else None,
+            "old_anchor_key": anchor_key,
+            "old_anchor_x":  old_uv[0] if old_uv else None,
+            "old_anchor_y":  old_uv[1] if old_uv else None,
+            "new_vertex_x":  new_uv[0] if new_uv else None,
+            "new_vertex_y":  new_uv[1] if new_uv else None,
+            "old_dist_px":   old_d,
+            "new_dist_px":   new_d,
+            "improvement_px": improvement,
+        })
+
+    # Title + legend
     cv2.rectangle(img, (0, 0), (W, 42), (40, 40, 40), -1)
-    title = f"{view} / {phase} / frame {frame_idx}"
-    cv2.putText(img, title, (10, 28), cv2.FONT_HERSHEY_SIMPLEX,
-                0.75, (255, 255, 255), 2, cv2.LINE_AA)
-    cv2.putText(img, "magenta=PR-7a anchor  cyan=SMPL vertex  red=GT",
-                (W - 480, 28), cv2.FONT_HERSHEY_SIMPLEX,
-                0.55, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(img, f"PR-7a.5 probe — {VIEW} / {phase} / frame {frame_idx}",
+                (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                (255, 255, 255), 2, cv2.LINE_AA)
+    legend = "magenta=PR-7a anchor  cyan square=SMPL vertex  red=GT"
+    cv2.putText(img, legend, (W - 480, 28), cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out_png), img)
@@ -194,66 +195,50 @@ def render_one_frame(
 
 
 def main() -> None:
-    landmarks = json.loads((PROBE_DIR / "smpl_landmark_indices.json").read_text())
-    # b3fea3f0 (face_on) — 5 GT-labeled frames.
-    video_id = "b3fea3f0-e248-44d7-a923-0bb43172b5bf"
-    short = video_id.split("-")[0]
-    view = "face_on"
-    verts_sidecar = WHAM_DIR / video_id / "verts_at_frames.json"
-    if not verts_sidecar.exists():
-        sys.exit(f"[probe] verts sidecar missing: {verts_sidecar}\n"
-                  "Run probe_extract_verts_modal.py first.")
-    verts_data = json.loads(verts_sidecar.read_text())
+    # Load .npz
+    npz_path = WHAM_DIR / "smpl_params.npz"
+    if not npz_path.exists():
+        sys.exit(f"[probe] missing {npz_path}")
+    npz = np.load(npz_path)
+    verts = npz["verts"]
+    print(f"[probe] loaded verts shape={verts.shape} dtype={verts.dtype} "
+          f"file={npz_path.stat().st_size / 1024 / 1024:.1f} MB")
 
-    pr7a = json.loads(
-        (COR_DIR / f"{short}_{view}_corrected.json").read_text()
-    )
+    raw_json = json.loads((WHAM_DIR / "joint_centers_3d.json").read_text())
+    schema_ver = raw_json.get("_wham_runner_version", "(missing)")
+    print(f"[probe] _wham_runner_version = {schema_ver}")
+
+    frame_ids = [int(f["frame_idx"]) for f in raw_json["frames"]]
+    fi_to_row = {fi: i for i, fi in enumerate(frame_ids)}
+
+    landmarks = json.loads(INDICES.read_text())
+    pr7a = json.loads(COR_JSON.read_text())
     pr7a_by_frame = {int(f["frame_idx"]): f for f in pr7a["frames"]}
-
-    W = int(verts_data["video_width"])
-    H = int(verts_data["video_height"])
+    W = int(raw_json["video_width"])
+    H = int(raw_json["video_height"])
     intr = default_intrinsics(W, H)
 
-    video_path = VIDEOS / f"{video_id}.mp4"
-    if not video_path.exists():
-        sys.exit(f"[probe] missing video: {video_path}")
-
     csv_rows: list[dict] = []
-    for fi_str, payload in verts_data["verts_at_frames"].items():
-        frame_idx = int(fi_str)
-        verts_3d = np.asarray(payload["verts"], dtype=np.float32)
-        # Find matching GT label file.
-        gt_files = list(GT_DIR.glob(f"{short}_*_{view}.json"))
-        gt_for_this_frame = None
-        for p in gt_files:
-            d = json.loads(p.read_text())
-            if int(d["frame_idx"]) == frame_idx:
-                gt_for_this_frame = d
-                break
-        if gt_for_this_frame is None:
-            print(f"[probe] no GT label for frame {frame_idx} — skipping")
+    for phase in ("setup", "impact", "finish"):
+        gt = json.loads((GT_DIR / f"{SHORT}_{phase}_{VIEW}.json").read_text())
+        fi = int(gt["frame_idx"])
+        if fi not in fi_to_row:
+            print(f"[probe] frame {fi} not in WHAM output — skip")
             continue
-        phase = gt_for_this_frame["phase"]
-        pr7a_frame = pr7a_by_frame.get(frame_idx, {})
-        pr7a_anchors = pr7a_frame.get("coaching_anchors_2d", {})
-
-        out_png = PROBE_DIR / f"{short}_{view}_{phase}_frame{frame_idx}_compare.png"
-        print(f"[probe] rendering {out_png.name}")
-        rows = render_one_frame(
-            video_path=video_path,
-            frame_idx=frame_idx,
-            phase=phase,
-            view=view,
-            verts_3d=verts_3d,
-            landmark_indices=landmarks,
+        verts_3d = verts[fi_to_row[fi]]
+        cor_frame = pr7a_by_frame.get(fi, {})
+        pr7a_anchors = cor_frame.get("coaching_anchors_2d", {})
+        out_png = PROBE_DIR / f"{SHORT}_{VIEW}_{phase}_compare.png"
+        print(f"[probe] rendering {out_png.name} (frame {fi})")
+        csv_rows.extend(render_one_frame(
+            frame_idx=fi, phase=phase,
+            verts_3d=verts_3d, landmarks=landmarks,
             pr7a_anchors=pr7a_anchors,
-            gt_labels=gt_for_this_frame["labels"],
+            gt_labels=gt["labels"],
             intrinsics=intr,
             out_png=out_png,
-        )
-        csv_rows.extend(rows)
+        ))
 
-    # Write CSV.
     csv_path = PROBE_DIR / "distance_to_gt.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as f:
         if csv_rows:
@@ -261,51 +246,74 @@ def main() -> None:
             w.writeheader()
             w.writerows(csv_rows)
     print(f"[probe] wrote {csv_path}")
-    print()
 
-    # ── Acceptance summary ──────────────────────────────────────────
+    # ── Acceptance ──
+    print()
     print("=" * 78)
-    print("PROBE ACCEPTANCE — aggregate per landmark class")
+    print("PR-7a.5 PROBE ACCEPTANCE")
     print("=" * 78)
-    print(f"{'landmark':<18s} {'n':>3s}  {'old_mean':>9s}  {'new_mean':>9s}  "
-          f"{'beats_old':>10s}  {'verdict':>10s}")
-    print("-" * 78)
-    by_landmark: dict[str, list[dict]] = {}
+    by_lm: dict[str, list[dict]] = {}
     for r in csv_rows:
-        by_landmark.setdefault(r["landmark"], []).append(r)
-    pass_count = 0
-    total_count = 0
-    for name, rows in sorted(by_landmark.items()):
-        olds = [r["old_dist_px"] for r in rows
-                if r["old_dist_px"] is not None and r["new_dist_px"] is not None]
-        news = [r["new_dist_px"] for r in rows
-                if r["old_dist_px"] is not None and r["new_dist_px"] is not None]
-        if not olds:
-            continue
+        if r["old_dist_px"] is not None and r["new_dist_px"] is not None:
+            by_lm.setdefault(r["landmark"], []).append(r)
+    print(f"\n{'landmark':<28s} {'n':>3s}  {'old_mean':>9s}  {'new_mean':>9s}  "
+          f"{'beats':>8s}")
+    print("-" * 78)
+    acromion_beats = {"acromion_left": 0, "acromion_right": 0}
+    acromion_n = {"acromion_left": 0, "acromion_right": 0}
+    for name, rows in sorted(by_lm.items()):
+        olds = [r["old_dist_px"] for r in rows]
+        news = [r["new_dist_px"] for r in rows]
         old_mean = sum(olds) / len(olds)
         new_mean = sum(news) / len(news)
-        beats = sum(1 for r in rows
-                    if r["old_dist_px"] is not None
-                    and r["new_dist_px"] is not None
-                    and r["new_dist_px"] < r["old_dist_px"])
-        # PASS criterion per spec: new closer than old on >= 3 of 4 frames
-        # (for shoulders). Other landmarks: report only.
-        verdict = ""
-        if name in ("left_shoulder", "right_shoulder"):
-            total_count += 1
-            n = len(olds)
-            need = (n * 3 + 3) // 4   # ceil(0.75 * n)
-            if beats >= need:
-                verdict = "PASS"
-                pass_count += 1
-            else:
-                verdict = "FAIL"
-        print(f"  {name:<18s} {len(olds):>3d}  {old_mean:>9.2f}  {new_mean:>9.2f}  "
-              f"{beats}/{len(olds):>4s}  {verdict:>10s}")
+        beats = sum(1 for r in rows if r["new_dist_px"] < r["old_dist_px"])
+        if name in acromion_beats:
+            acromion_beats[name] = beats
+            acromion_n[name] = len(rows)
+        print(f"  {name:<28s} {len(rows):>3d}  {old_mean:>9.2f}  {new_mean:>9.2f}  "
+              f"{beats}/{len(rows)}")
+
+    out_of_bounds = sum(1 for r in csv_rows if not r["in_bounds"])
+
+    # L/R consistency check.
+    left_x: dict[int, float] = {}
+    right_x: dict[int, float] = {}
+    for r in csv_rows:
+        if r["landmark"] == "acromion_left" and r["new_vertex_x"] is not None:
+            left_x[r["frame_idx"]] = r["new_vertex_x"]
+        if r["landmark"] == "acromion_right" and r["new_vertex_x"] is not None:
+            right_x[r["frame_idx"]] = r["new_vertex_x"]
+    print()
+    print("L/R x-coord per frame (acromion vertices):")
+    for fi in sorted(set(left_x) | set(right_x)):
+        lx = left_x.get(fi, None)
+        rx = right_x.get(fi, None)
+        ord_str = ""
+        if lx is not None and rx is not None:
+            ord_str = f"  L<R? {lx < rx}"
+        print(f"  frame {fi:>3d}  L={lx}  R={rx}{ord_str}")
 
     print()
-    print(f"Shoulder PASS: {pass_count}/{total_count} sides "
-          f"(both = strong PASS; 1 of 2 = mixed; 0 = FAIL)")
+    acromion_l_pass = acromion_beats.get("acromion_left", 0) >= 2
+    acromion_r_pass = acromion_beats.get("acromion_right", 0) >= 2
+    bounds_pass = out_of_bounds == 0
+    print(f"acromion_left:  {acromion_beats.get('acromion_left',0)}/"
+          f"{acromion_n.get('acromion_left',0)} new<old "
+          f"(gate >=2) → {'PASS' if acromion_l_pass else 'FAIL'}")
+    print(f"acromion_right: {acromion_beats.get('acromion_right',0)}/"
+          f"{acromion_n.get('acromion_right',0)} new<old "
+          f"(gate >=2) → {'PASS' if acromion_r_pass else 'FAIL'}")
+    print(f"projection bounds: {out_of_bounds} out-of-bounds → "
+          f"{'PASS' if bounds_pass else 'FAIL'}")
+    print()
+    overall = acromion_l_pass and acromion_r_pass and bounds_pass
+    print(f"FINAL: {'PROBE PASS (acromion + bounds)' if overall else 'PROBE FAIL'}")
+    print(f"       knee/ankle/foot landmarks: REVIEW PNGs visually")
+    print()
+    for phase in ("setup", "impact", "finish"):
+        p = PROBE_DIR / f"{SHORT}_{VIEW}_{phase}_compare.png"
+        if p.exists():
+            print(f"  → {p}")
 
 
 if __name__ == "__main__":
