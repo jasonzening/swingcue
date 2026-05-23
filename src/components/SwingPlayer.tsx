@@ -329,7 +329,16 @@ export function SwingPlayer({
     //
     // Fallback path (no poseTimeline → older pre-PR-4 videos) is
     // unchanged — original disc + overlay draws as before.
-    if (poseTimeline) {
+    //
+    // v5.1 hotfix: use the derived `enhancedMode` boolean instead of
+    // `poseTimeline` directly. TS flow analysis narrows the identifier
+    // `poseTimeline` to falsy after `if (poseTimeline) return;`, which
+    // then poisons the existing `if (poseTimeline)` disc-render block
+    // at line ~350 (its inside becomes unreachable + the code there
+    // accesses poseTimeline.video_width etc., which TS types as never).
+    // Using the derived `enhancedMode` const breaks the narrowing chain
+    // — TS doesn't track derived booleans back to the original ID.
+    if (enhancedMode) {
       ctx.clearRect(0, 0, c.width || 320, c.height || 240);
       return;
     }
@@ -505,7 +514,7 @@ export function SwingPlayer({
         }
       }
     }
-  }, [timeline, phases, layer, dur, poseTimeline, shoulderExpand, hipExpand]);
+  }, [timeline, phases, layer, dur, poseTimeline, shoulderExpand, hipExpand, enhancedMode]);
 
   useEffect(() => {
     let id: number;
