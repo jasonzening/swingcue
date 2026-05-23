@@ -1,26 +1,30 @@
 'use client';
 
 /**
- * CoachingAnchorOverlay — PR-7c-frontend-v4 simplification.
+ * CoachingAnchorOverlay — PR-7c-frontend-v7 body-axis geometric shift.
  *
- * Final visual: 5 magenta dots only.
- *   - head    (derived: midpoint of shoulders, shifted up 10% of torso)
- *   - left_shoulder, right_shoulder, left_hip, right_hip (MediaPipe direct)
+ * Final visual: 5 magenta dots.
+ *   - head           = MediaPipe nose direct (v7 — was derived neck in v4)
+ *   - left_shoulder  = MediaPipe glenohumeral, shifted up+out toward acromion
+ *   - right_shoulder = MediaPipe glenohumeral, shifted up+out toward acromion
+ *   - left_hip       = MediaPipe hip socket, shifted up+out toward outer hip
+ *   - right_hip      = MediaPipe hip socket, shifted up+out toward outer hip
  *
- * v3 elements REMOVED in v4: head halo ellipse, shoulder/hip occlusion
- * fallback (2 fallback center dots + 2 horizontal guide lines).
- * Per Jason's review of v3 production b32e0f21:
- *   - Halo should be a single dot anchored at cervical spine
- *     (golf coaching = detect head/neck stability)
- *   - Occlusion fallback read as visual clutter, not coaching value
+ * MediaPipe COCO shoulder/hip keypoints are anatomical interior joint
+ * centers — by definition inside the visible body silhouette. v7
+ * applies a deterministic, phase-invariant geometric correction in a
+ * body-axis-relative frame (see `computeVisualAnchors` in
+ * poseTimelineAnchors.ts) so the dots land on the outer silhouette
+ * coaches reason about.
  *
- * Visibility (unified, no phase-dependent branching):
- *   - 4 direct dots: hide if MediaPipe `coord.xy === null` OR
- *     `confidence < 0.3` (ANCHOR_DOT_CONFIDENCE_MIN)
- *   - Head dot: hide if any of the 4 torso source coords is null
- *     OR if both shoulder confidences < 0.5
+ * Tuning: 4 ratios + 1 stability threshold in `VISUAL_ANCHOR_CONFIG`
+ * (poseTimelineAnchors.ts) — single source of truth.
  *
- * Architecture (unchanged from v2/v3):
+ * Visibility (unified, no per-dot special-case):
+ *   - All 5 dots use the same `applyDot` helper:
+ *     hide if `RawKeypoint.xy === null` OR `confidence < 0.3`.
+ *
+ * Architecture (unchanged from v2..v6):
  *   - SVG viewBox in video native px, preserveAspectRatio xMidYMid meet
  *   - Per-frame imperative setAttribute via rAF loop
  *   - One-shot syncs on loadedmetadata + seeked
@@ -33,9 +37,8 @@ import type { PhaseMarkers, PoseTimeline } from '@/types/analysis';
 import { getCurrentPhase } from '@/lib/overlay/playerSync';
 import {
   poseRawAnchorsAtTime,
-  computeNeckCenter,
+  computeVisualAnchors,
   ANCHOR_DOT_CONFIDENCE_MIN,
-  HIGH_CONFIDENCE_THRESHOLD,
   type RawKeypoint,
 } from '@/lib/coaching/poseTimelineAnchors';
 import { computeAnchorOpacity } from '@/lib/coaching/phaseOpacity';
@@ -105,36 +108,18 @@ export function CoachingAnchorOverlay({
         return;
       }
 
-      // 4 direct dots: hide if null OR conf < 0.3.
-      applyDot(dotRefs.current.left_shoulder,  anchors.left_shoulder,  phaseOp);
-      applyDot(dotRefs.current.right_shoulder, anchors.right_shoulder, phaseOp);
-      applyDot(dotRefs.current.left_hip,       anchors.left_hip,       phaseOp);
-      applyDot(dotRefs.current.right_hip,      anchors.right_hip,      phaseOp);
-
-      // Head dot: derived from torso. Hide if geometry uncomputable OR
-      // both shoulders < 0.5 confidence (derived midpoint unreliable).
-      const headEl = dotRefs.current.head;
-      if (headEl) {
-        const bothShouldersLowConf =
-          anchors.left_shoulder.confidence < HIGH_CONFIDENCE_THRESHOLD
-          && anchors.right_shoulder.confidence < HIGH_CONFIDENCE_THRESHOLD;
-        const headCenter = bothShouldersLowConf
-          ? null
-          : computeNeckCenter(
-              anchors.left_shoulder,
-              anchors.right_shoulder,
-              anchors.left_hip,
-              anchors.right_hip,
-            );
-        if (!headCenter) {
-          headEl.setAttribute('visibility', 'hidden');
-        } else {
-          headEl.setAttribute('cx', String(headCenter.x));
-          headEl.setAttribute('cy', String(headCenter.y));
-          headEl.setAttribute('opacity', String(phaseOp * DOT_OPACITY_MULT));
-          headEl.setAttribute('visibility', 'visible');
-        }
-      }
+      // PR-7c-frontend-v7: shift MediaPipe interior joints (glenohumeral,
+      // hip socket) outward toward the visible body silhouette via a
+      // body-axis-relative geometric correction. All 5 anchors now flow
+      // through the same `applyDot` helper with the < 0.3 confidence
+      // gate. Head = direct MediaPipe nose (no longer derived).
+      // Tuning happens in VISUAL_ANCHOR_CONFIG (poseTimelineAnchors.ts).
+      const visual = computeVisualAnchors(anchors);
+      applyDot(dotRefs.current.left_shoulder,  visual.left_shoulder,  phaseOp);
+      applyDot(dotRefs.current.right_shoulder, visual.right_shoulder, phaseOp);
+      applyDot(dotRefs.current.left_hip,       visual.left_hip,       phaseOp);
+      applyDot(dotRefs.current.right_hip,      visual.right_hip,      phaseOp);
+      applyDot(dotRefs.current.head,           visual.head,           phaseOp);
     };
 
     // Continuous rAF loop.
