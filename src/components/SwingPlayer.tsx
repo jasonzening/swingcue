@@ -316,6 +316,24 @@ export function SwingPlayer({
     setCurTime(t);
     setPhase(getCurrentPhase(phases, t, d));
 
+    // PR-7c-frontend-v5: in enhanced mode (poseTimeline present), the
+    // magenta SVG layer (CoachingAnchorOverlay) is the primary visual.
+    // Clear any prior canvas content and skip the PR-3 overlay + PR-5
+    // disc draw pipeline entirely. State updates above still run so the
+    // scrub bar / phase badge / time display continue to work.
+    //
+    // Without this gate, the canvas drawing rAF kept painting
+    // "Current/Target/Path" disc visualization under the SVG layer,
+    // producing visible 2 horizontal bars + 2 green ellipses + spine
+    // line on body in enhanced mode.
+    //
+    // Fallback path (no poseTimeline → older pre-PR-4 videos) is
+    // unchanged — original disc + overlay draws as before.
+    if (poseTimeline) {
+      ctx.clearRect(0, 0, c.width || 320, c.height || 240);
+      return;
+    }
+
     // PR-5: filter PR-3 timeline ellipses; disc geometry is now computed
     // frame-level from pose_timeline_2d below. Non-ellipse elements
     // (dots, lines, labels, badges, arrows, curves, zones) still render
