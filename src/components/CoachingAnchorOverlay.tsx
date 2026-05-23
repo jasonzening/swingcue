@@ -39,6 +39,7 @@ import {
   poseRawAnchorsAtTime,
   computeVisualAnchors,
   ANCHOR_DOT_CONFIDENCE_MIN,
+  VISUAL_ANCHOR_CONFIG,
   type RawKeypoint,
 } from '@/lib/coaching/poseTimelineAnchors';
 import { computeAnchorOpacity } from '@/lib/coaching/phaseOpacity';
@@ -47,15 +48,28 @@ type Props = {
   poseTimeline: PoseTimeline;
   phaseMarkers: PhaseMarkers;
   videoEl: HTMLVideoElement | null;
+  /** PR-7c-frontend-v8 tune-mode: override the 4 production ratios
+   * with live slider state. Production mode omits this prop. */
+  tuningRatios?: Partial<typeof VISUAL_ANCHOR_CONFIG>;
+  /** PR-7c-frontend-v8 tune-mode: render 4 raw MediaPipe shoulder/hip
+   * dots in green at lower opacity as a "before" reference, so the
+   * user can visually compare raw vs shifted while dragging sliders. */
+  showRawDots?: boolean;
 };
 
 const MAGENTA = '#FF00FF';
+// PR-7c-frontend-v8: raw "before" dots in tune mode use a contrasting
+// neon green so the magenta shifted dots remain the primary visual.
+const GREEN_RAW = '#00FF88';
 const DOT_STROKE = 'rgba(0,0,0,0.5)';
 const DOT_RADIUS = 5;
 const DOT_STROKE_WIDTH = 1;
 
 // Per spec §1: "opacity × 0.7" for the dot style.
 const DOT_OPACITY_MULT = 0.7;
+// PR-7c-frontend-v8: raw dots render at half the magenta opacity so
+// they read as a secondary reference, not the primary signal.
+const RAW_DOT_OPACITY_MULT = 0.35;
 
 type DotName =
   | 'head'
@@ -72,12 +86,33 @@ const DOT_NAMES: readonly DotName[] = [
   'right_hip',
 ];
 
+/** PR-7c-frontend-v8: raw "before" dots in tune mode show only the 4
+ * torso joints (head has no raw-vs-shifted distinction — it's nose
+ * direct in both raw and visual). */
+type RawDotName =
+  | 'left_shoulder'
+  | 'right_shoulder'
+  | 'left_hip'
+  | 'right_hip';
+
+const RAW_DOT_NAMES: readonly RawDotName[] = [
+  'left_shoulder',
+  'right_shoulder',
+  'left_hip',
+  'right_hip',
+];
+
 export function CoachingAnchorOverlay({
   poseTimeline,
   phaseMarkers,
   videoEl,
+  tuningRatios,
+  showRawDots,
 }: Props) {
   const dotRefs = useRef<Partial<Record<DotName, SVGCircleElement | null>>>({});
+  // PR-7c-frontend-v8: separate refs for the optional raw "before" dots.
+  // Only populated when showRawDots is true (tune mode).
+  const rawDotRefs = useRef<Partial<Record<RawDotName, SVGCircleElement | null>>>({});
 
   const videoWidth = poseTimeline.video_width;
   const videoHeight = poseTimeline.video_height;
@@ -105,6 +140,12 @@ export function CoachingAnchorOverlay({
           const el = dotRefs.current[name];
           if (el) el.setAttribute('visibility', 'hidden');
         }
+        if (showRawDots) {
+          for (const name of RAW_DOT_NAMES) {
+            const el = rawDotRefs.current[name];
+            if (el) el.setAttribute('visibility', 'hidden');
+          }
+        }
         return;
       }
 
@@ -114,12 +155,27 @@ export function CoachingAnchorOverlay({
       // through the same `applyDot` helper with the < 0.3 confidence
       // gate. Head = direct MediaPipe nose (no longer derived).
       // Tuning happens in VISUAL_ANCHOR_CONFIG (poseTimelineAnchors.ts).
-      const visual = computeVisualAnchors(anchors);
+      //
+      // PR-7c-frontend-v8: `tuningRatios` (optional, tune mode) overrides
+      // the production VISUAL_ANCHOR_CONFIG so the magenta dots animate
+      // live as the user drags sliders. Undefined in production.
+      const visual = computeVisualAnchors(anchors, tuningRatios);
       applyDot(dotRefs.current.left_shoulder,  visual.left_shoulder,  phaseOp);
       applyDot(dotRefs.current.right_shoulder, visual.right_shoulder, phaseOp);
       applyDot(dotRefs.current.left_hip,       visual.left_hip,       phaseOp);
       applyDot(dotRefs.current.right_hip,      visual.right_hip,      phaseOp);
       applyDot(dotRefs.current.head,           visual.head,           phaseOp);
+
+      // PR-7c-frontend-v8: raw "before" dots — green, lower opacity.
+      // Same < 0.3 confidence gate as the magenta dots. Only renders
+      // in tune mode.
+      if (showRawDots) {
+        const rawOp = phaseOp * (RAW_DOT_OPACITY_MULT / DOT_OPACITY_MULT);
+        applyDot(rawDotRefs.current.left_shoulder,  anchors.left_shoulder,  rawOp);
+        applyDot(rawDotRefs.current.right_shoulder, anchors.right_shoulder, rawOp);
+        applyDot(rawDotRefs.current.left_hip,       anchors.left_hip,       rawOp);
+        applyDot(rawDotRefs.current.right_hip,      anchors.right_hip,      rawOp);
+      }
     };
 
     // Continuous rAF loop.
@@ -140,7 +196,7 @@ export function CoachingAnchorOverlay({
       videoEl.removeEventListener('loadedmetadata', draw);
       videoEl.removeEventListener('seeked', draw);
     };
-  }, [videoEl, poseTimeline, phaseMarkers, videoWidth, videoHeight]);
+  }, [videoEl, poseTimeline, phaseMarkers, videoWidth, videoHeight, tuningRatios, showRawDots]);
 
   return (
     <svg
@@ -155,6 +211,19 @@ export function CoachingAnchorOverlay({
         pointerEvents: 'none',
       }}
     >
+      {/* Raw "before" dots rendered FIRST so the magenta shifted dots
+          paint on top in tune mode (showRawDots only). */}
+      {showRawDots && RAW_DOT_NAMES.map((name) => (
+        <circle
+          key={`raw-${name}`}
+          ref={(el) => { rawDotRefs.current[name] = el; }}
+          r={DOT_RADIUS}
+          fill={GREEN_RAW}
+          stroke={DOT_STROKE}
+          strokeWidth={DOT_STROKE_WIDTH}
+          visibility="hidden"
+        />
+      ))}
       {DOT_NAMES.map((name) => (
         <circle
           key={name}

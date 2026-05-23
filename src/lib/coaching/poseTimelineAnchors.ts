@@ -194,7 +194,16 @@ export function poseRawAnchorsAtTime(
  */
 export function computeVisualAnchors(
   raw: Record<MediaPipeAnchorName, RawKeypoint>,
+  // PR-7c-frontend-v8: optional ratio overrides for the in-browser
+  // tuning panel (?tune=anchors). Production callers omit this arg and
+  // use VISUAL_ANCHOR_CONFIG. The tuning panel + overlay in tune mode
+  // both pass live slider values via this arg, so the shifted dots
+  // animate in real time as the user drags ratios.
+  overrideConfig?: Partial<typeof VISUAL_ANCHOR_CONFIG>,
 ): VisualAnchors {
+  const C = overrideConfig
+    ? { ...VISUAL_ANCHOR_CONFIG, ...overrideConfig }
+    : VISUAL_ANCHOR_CONFIG;
   const { left_shoulder, right_shoulder, left_hip, right_hip, nose } = raw;
 
   // Edge case 1: any torso joint missing — pass-through (head = nose).
@@ -215,7 +224,7 @@ export function computeVisualAnchors(
   const spine_len = Math.hypot(spine_x, spine_y);
 
   // Edge case 2: degenerate body axis — pass-through.
-  if (spine_len < VISUAL_ANCHOR_CONFIG.MIN_BODY_AXIS_LEN_PX) {
+  if (spine_len < C.MIN_BODY_AXIS_LEN_PX) {
     return { left_shoulder, right_shoulder, left_hip, right_hip, head: nose };
   }
 
@@ -244,7 +253,6 @@ export function computeVisualAnchors(
     ];
   };
 
-  const C = VISUAL_ANCHOR_CONFIG;
   return {
     left_shoulder: {
       xy: shift(

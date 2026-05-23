@@ -47,10 +47,20 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { renderFrame } from '@/lib/overlay/OverlayRenderer';
 import { getOverlayAtTime, getCurrentPhase, formatTime } from '@/lib/overlay/playerSync';
 import type { OverlayElement, OverlayTimeline, PhaseMarkers, PoseTimeline } from '@/types/analysis';
 import { SkeletonOverlay } from '@/components/SkeletonOverlay';
+
+// PR-7c-frontend-v8: lazy-load the tuning panel so its ~5KB chunk is
+// only fetched when `?tune=anchors` is in the URL. Production users
+// never download it.
+const AnchorTuningPanel = dynamic(
+  () => import('./AnchorTuningPanel').then((m) => ({ default: m.AnchorTuningPanel })),
+  { ssr: false },
+);
 // PR-7c-frontend-v2: enhanced coaching overlay — sourced from
 // production MediaPipe pose_timeline_2d (the same data feeding
 // SkeletonOverlay). Auto-enabled whenever poseTimeline is present.
@@ -269,6 +279,20 @@ export function SwingPlayer({
   // analyzed video). Replaces the v1 Supabase-Storage corrected-timeline
   // fetch which was per-video opt-in.
   const enhancedMode = !!poseTimeline;
+
+  // PR-7c-frontend-v8: `?tune=anchors` opt-in tuning mode. When active,
+  // mounts AnchorTuningPanel with live sliders for the 4 visual-anchor
+  // ratios and feeds them into CoachingAnchorOverlay via tuningRatios
+  // (overrides VISUAL_ANCHOR_CONFIG defaults). Production behavior is
+  // unchanged when the URL param is absent.
+  const searchParams = useSearchParams();
+  const tuneMode = searchParams?.get('tune') === 'anchors';
+  const [tuningRatios, setTuningRatios] = useState({
+    SHOULDER_UP_RATIO:  0.10,
+    SHOULDER_OUT_RATIO: 0.05,
+    HIP_UP_RATIO:       0.04,
+    HIP_OUT_RATIO:      0.06,
+  });
 
   // PR-5 hotfix: per-disc rolling state so atan2 wrap-around (±π
   // boundary crossings between adjacent frames) doesn't make the
@@ -620,11 +644,25 @@ export function SwingPlayer({
             poseTimeline={poseTimeline}
             phaseMarkers={phases}
             videoEl={videoRef.current}
+            tuningRatios={tuneMode ? tuningRatios : undefined}
+            showRawDots={tuneMode}
           />
         )}
 
         {/* PR-7c-frontend: badge — only visible in enhanced mode. */}
-        {enhancedMode && <EnhancedCoachingBadge />}
+        {enhancedMode && !tuneMode && <EnhancedCoachingBadge />}
+
+        {/* PR-7c-frontend-v8: tuning panel (?tune=anchors only). */}
+        {tuneMode && (
+          <AnchorTuningPanel
+            videoEl={videoRef.current}
+            poseTimeline={poseTimeline}
+            phaseMarkers={phases}
+            durationSec={dur}
+            ratios={tuningRatios}
+            onRatiosChange={setTuningRatios}
+          />
+        )}
 
         {/* Badges */}
         <div className="sp-badges">
