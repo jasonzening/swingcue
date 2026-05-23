@@ -51,14 +51,11 @@ import { renderFrame } from '@/lib/overlay/OverlayRenderer';
 import { getOverlayAtTime, getCurrentPhase, formatTime } from '@/lib/overlay/playerSync';
 import type { OverlayElement, OverlayTimeline, PhaseMarkers, PoseTimeline } from '@/types/analysis';
 import { SkeletonOverlay } from '@/components/SkeletonOverlay';
-// PR-7c-frontend: enhanced coaching overlay — conditional on a
-// CorrectedTimeline JSON existing in Supabase Storage for this video.
+// PR-7c-frontend-v2: enhanced coaching overlay — sourced from
+// production MediaPipe pose_timeline_2d (the same data feeding
+// SkeletonOverlay). Auto-enabled whenever poseTimeline is present.
 import { CoachingAnchorOverlay } from '@/components/CoachingAnchorOverlay';
 import { EnhancedCoachingBadge } from '@/components/EnhancedCoachingBadge';
-import {
-  fetchCorrectedTimeline,
-  type CorrectedTimeline,
-} from '@/lib/coaching/correctedTimeline';
 // PR-5: frame-level disc geometry from PR-4 pose_timeline_2d.
 // PR-5.9: `frameAt` kept (deprecated) for any out-of-tree consumer;
 // SwingPlayer now uses `interpolatedFrame` for continuous tracking.
@@ -112,13 +109,6 @@ interface Props {
   // (when present) as small blue dots alongside the final keypoints.
   // URL-sourced (?debug=pose) by the result page.
   debugMode?: 'pose';
-  // PR-7c-frontend: video UUID for Supabase-Storage corrected-timeline
-  // lookup. When provided AND a JSON exists at
-  // corrected-timelines/<videoId>.json, the player switches to enhanced
-  // mode: SkeletonOverlay hides + CoachingAnchorOverlay mounts + badge
-  // appears. When undefined or fetch returns null, current behavior
-  // (MediaPipe SkeletonOverlay) is unchanged. Option I demo mode.
-  videoId?: string;
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
@@ -255,8 +245,6 @@ export function SwingPlayer({
   hipExpand = HIP_EXPAND_DEFAULT,
   // PR-5.9 Task 5: debug overlay mode forwarded to SkeletonOverlay.
   debugMode,
-  // PR-7c-frontend: enhanced coaching overlay opt-in by videoId.
-  videoId,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -276,13 +264,11 @@ export function SwingPlayer({
   // disabled when poseTimeline is null.
   const [skeletonOn, setSkeletonOn] = useState(false);
 
-  // PR-7c-frontend: corrected-timeline lookup. null = no JSON found,
-  // pending/absent → fallback to existing MediaPipe overlay. When set,
-  // SwingPlayer enters "enhanced coaching" mode: SkeletonOverlay hides
-  // + CoachingAnchorOverlay mounts + badge visible.
-  const [correctedTimeline, setCorrectedTimeline] =
-    useState<CorrectedTimeline | null>(null);
-  const enhancedMode = correctedTimeline !== null;
+  // PR-7c-frontend-v2: enhanced overlay auto-enabled whenever production
+  // MediaPipe pose_timeline_2d is available (= essentially every PR-4-
+  // analyzed video). Replaces the v1 Supabase-Storage corrected-timeline
+  // fetch which was per-video opt-in.
+  const enhancedMode = !!poseTimeline;
 
   // PR-5 hotfix: per-disc rolling state so atan2 wrap-around (±π
   // boundary crossings between adjacent frames) doesn't make the
@@ -546,24 +532,6 @@ export function SwingPlayer({
     };
   }, [syncCanvas, videoUrl]);
 
-  // PR-7c-frontend: best-effort CorrectedTimeline fetch from Supabase
-  // public Storage bucket. 404 / parse fail / abort → null → existing
-  // MediaPipe path stays in charge. No errors propagate. Abort on
-  // unmount or videoId change.
-  useEffect(() => {
-    if (!videoId) {
-      setCorrectedTimeline(null);
-      return;
-    }
-    const ctrl = new AbortController();
-    fetchCorrectedTimeline(videoId, ctrl.signal).then((t) => {
-      if (!ctrl.signal.aborted) setCorrectedTimeline(t);
-    });
-    return () => {
-      ctrl.abort();
-    };
-  }, [videoId]);
-
   /* ── Controls ── */
   const togglePlay = () => {
     const v = videoRef.current;
@@ -635,12 +603,14 @@ export function SwingPlayer({
           />
         )}
 
-        {/* PR-7c-frontend: enhanced coaching anchors. Mounted only when
-            a CorrectedTimeline JSON exists for this video in Supabase
-            Storage. Replaces the MediaPipe SkeletonOverlay visually. */}
-        {enhancedMode && correctedTimeline && (
+        {/* PR-7c-frontend-v2: enhanced coaching anchors sourced from
+            production MediaPipe pose_timeline_2d. Mounted whenever
+            poseTimeline is available — replaces the MediaPipe
+            SkeletonOverlay visually but reads the SAME underlying data. */}
+        {enhancedMode && poseTimeline && (
           <CoachingAnchorOverlay
-            timeline={correctedTimeline}
+            poseTimeline={poseTimeline}
+            phaseMarkers={phases}
             videoEl={videoRef.current}
           />
         )}

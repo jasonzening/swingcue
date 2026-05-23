@@ -223,9 +223,6 @@ export default function ResultPage() {
           shoulderExpand={expandFactors.shoulder}
           hipExpand={expandFactors.hip}
           debugMode={debugMode}
-          // PR-7c-frontend: enables enhanced coaching overlay lookup
-          // for this videoId. No-op when no JSON exists in Storage.
-          videoId={videoId}
         />
       ) : (
         <div className="no-vid"><p>Video loading…</p></div>
