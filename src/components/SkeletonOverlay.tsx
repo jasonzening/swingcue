@@ -54,6 +54,11 @@ type Props = {
   // second dot set in blue so the smoothing effect is visible. Silently
   // disabled when raw_keypoints is absent (legacy v1 videos).
   debugMode?: 'pose';
+  // PR-7c-frontend: when true, the parent has detected an "enhanced
+  // coaching" CorrectedTimeline for this video and is rendering
+  // CoachingAnchorOverlay in our place. Early-return null so the
+  // MediaPipe skeleton doesn't double-up with the magenta anchors.
+  hidden?: boolean;
 };
 
 // PR-5.8A: keypoints whose draw position becomes the expanded value.
@@ -88,7 +93,13 @@ export function SkeletonOverlay({
   shoulderExpand = SHOULDER_EXPAND_DEFAULT,
   hipExpand = HIP_EXPAND_DEFAULT,
   debugMode,
+  hidden = false,
 }: Props) {
+  // PR-7c-frontend: when `hidden=true`, the parent has switched to the
+  // enhanced-coaching CoachingAnchorOverlay. We must still call all
+  // hooks (React rules) but the rAF effect short-circuits and we
+  // return null from the render path so no SVG mounts. The early
+  // return goes AFTER all hooks; the effect bails internally.
   const dotRefs = useRef<Partial<Record<CocoKeypointName, SVGCircleElement | null>>>({});
   const edgeRefs = useRef<Array<SVGLineElement | null>>([]);
   // PR-5.9 Task 5: parallel raw-dot refs, mounted only when debugMode active.
@@ -98,6 +109,8 @@ export function SkeletonOverlay({
 
   useEffect(() => {
     if (!videoEl) return;
+    // PR-7c-frontend: skip the rAF loop when parent has hidden us.
+    if (hidden) return;
 
     // Single draw step — used by both the continuous rAF loop AND the
     // PR-5 §5.5 one-shot syncs (mount + loadedmetadata + seeked). Extracted
@@ -236,7 +249,11 @@ export function SkeletonOverlay({
       videoEl.removeEventListener('loadedmetadata', draw);
       videoEl.removeEventListener('seeked', draw);
     };
-  }, [videoEl, timeline, shoulderExpand, hipExpand, debugOn]);
+  }, [videoEl, timeline, shoulderExpand, hipExpand, debugOn, hidden]);
+
+  // PR-7c-frontend: render gate after all hooks. Hooks above still ran,
+  // useEffect bailed early on hidden=true above.
+  if (hidden) return null;
 
   return (
     <svg
