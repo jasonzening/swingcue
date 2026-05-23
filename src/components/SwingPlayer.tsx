@@ -668,44 +668,63 @@ export function SwingPlayer({
             );
           })()}
         </div>
-        <div className="sp-layer-badge">{layerBadgeText()}</div>
+        {/* PR-7c-frontend: hide PR-5 disc/skeleton chrome in enhanced
+            mode. The disc canvas is inert (SkeletonOverlay hidden),
+            so layer-badge / skel-toggle / legend all label things
+            that no longer render. */}
+        {!enhancedMode && (
+          <div className="sp-layer-badge">{layerBadgeText()}</div>
+        )}
 
         {/* PR-4: skeleton toggle. Disabled when no timeline data — older
-            videos predate PR-4 (re-analyze to enable). */}
-        <button
-          type="button"
-          className={`sp-skel-toggle ${skeletonOn ? 'sp-skel-on' : ''} ${!poseTimeline ? 'sp-skel-disabled' : ''}`}
-          onClick={() => poseTimeline && setSkeletonOn(o => !o)}
-          disabled={!poseTimeline}
-          title={poseTimeline ? 'Toggle skeleton overlay' : 'Re-analyze this swing to enable skeleton view'}
-          aria-label="Toggle skeleton overlay"
-        >
-          🦴
-        </button>
+            videos predate PR-4 (re-analyze to enable).
+            PR-7c-frontend: hidden in enhanced mode (toggle is a visual
+            no-op since SkeletonOverlay returns null via hidden=true). */}
+        {!enhancedMode && (
+          <button
+            type="button"
+            className={`sp-skel-toggle ${skeletonOn ? 'sp-skel-on' : ''} ${!poseTimeline ? 'sp-skel-disabled' : ''}`}
+            onClick={() => poseTimeline && setSkeletonOn(o => !o)}
+            disabled={!poseTimeline}
+            title={poseTimeline ? 'Toggle skeleton overlay' : 'Re-analyze this swing to enable skeleton view'}
+            aria-label="Toggle skeleton overlay"
+          >
+            🦴
+          </button>
+        )}
 
-        {/* Legend */}
-        <div className="sp-legend">
-          <span className="leg-r">● Current</span>
-          <span className="leg-g">● Target</span>
-          <span className="leg-y">● Path</span>
-        </div>
+        {/* Legend — disc color key (Current/Target/Path).
+            PR-7c-frontend: hidden in enhanced mode where disc doesn't
+            render. Visible in fallback mode for existing users. */}
+        {!enhancedMode && (
+          <div className="sp-legend">
+            <span className="leg-r">● Current</span>
+            <span className="leg-g">● Target</span>
+            <span className="leg-y">● Path</span>
+          </div>
+        )}
 
         <div className="sp-tap" onClick={togglePlay} />
       </div>
 
-      {/* ══ LAYER TOGGLE ══ */}
-      <div className="sp-layers">
-        {LAYERS.map(({ key, icon, label }) => (
-          <button
-            key={key}
-            className={`sp-lb ${layer === key ? 'sp-lb-on' : ''}`}
-            onClick={() => setLayer(key)}
-          >
-            <span className="sp-lb-icon">{icon}</span>
-            <span className="sp-lb-text">{label}</span>
-          </button>
-        ))}
-      </div>
+      {/* ══ LAYER TOGGLE ══
+          PR-7c-frontend: hidden in enhanced mode. setLayer() gates
+          disc-layer rendering which is inert when CoachingAnchorOverlay
+          owns the visual. Visible in fallback mode for existing users. */}
+      {!enhancedMode && (
+        <div className="sp-layers">
+          {LAYERS.map(({ key, icon, label }) => (
+            <button
+              key={key}
+              className={`sp-lb ${layer === key ? 'sp-lb-on' : ''}`}
+              onClick={() => setLayer(key)}
+            >
+              <span className="sp-lb-icon">{icon}</span>
+              <span className="sp-lb-text">{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ══ CONTROLS ══ */}
       <div className="sp-ctrl">
