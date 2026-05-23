@@ -20,7 +20,7 @@
  * so the chunk is only fetched when the URL param is present.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import type { PhaseMarkers, PoseTimeline } from '@/types/analysis';
 import { getCurrentPhase } from '@/lib/overlay/playerSync';
 import {
@@ -170,7 +170,7 @@ export function AnchorTuningPanel({
   }
 
   const handleSlider = (key: keyof Ratios) =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       const next = parseFloat(e.target.value);
       onRatiosChange({ ...ratios, [key]: next });
     };
@@ -253,7 +253,7 @@ function SliderRow({
 }: {
   label: string;
   value: number;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange: (e: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
     <div style={sliderRowStyle}>
@@ -327,7 +327,7 @@ function findClosestFrameIdx(timeline: PoseTimeline, t: number): number {
 
 // ── Inline styles (single source, no separate CSS file) ────────────
 
-const panelStyle: React.CSSProperties = {
+const panelStyle: CSSProperties = {
   position: 'absolute',
   top: 16,
   right: 16,
@@ -347,7 +347,7 @@ const panelStyle: React.CSSProperties = {
   boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
 };
 
-const titleStyle: React.CSSProperties = {
+const titleStyle: CSSProperties = {
   fontSize: 12,
   fontWeight: 700,
   letterSpacing: 1,
@@ -356,90 +356,90 @@ const titleStyle: React.CSSProperties = {
   fontFamily: 'inherit',
 };
 
-const noDataStyle: React.CSSProperties = {
+const noDataStyle: CSSProperties = {
   color: 'rgba(255,255,255,0.5)',
   fontStyle: 'italic',
   padding: '6px 0',
 };
 
-const sliderRowStyle: React.CSSProperties = {
+const sliderRowStyle: CSSProperties = {
   marginBottom: 8,
 };
 
-const sliderLabelRowStyle: React.CSSProperties = {
+const sliderLabelRowStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'baseline',
   marginBottom: 2,
 };
 
-const sliderLabelStyle: React.CSSProperties = {
+const sliderLabelStyle: CSSProperties = {
   fontSize: 11,
   color: 'rgba(255,255,255,0.85)',
 };
 
-const sliderValueStyle: React.CSSProperties = {
+const sliderValueStyle: CSSProperties = {
   fontSize: 12,
   color: '#FF00FF',
   fontWeight: 600,
 };
 
-const sliderInputStyle: React.CSSProperties = {
+const sliderInputStyle: CSSProperties = {
   width: '100%',
   accentColor: '#FF00FF',
   cursor: 'pointer',
 };
 
-const separatorStyle: React.CSSProperties = {
+const separatorStyle: CSSProperties = {
   height: 1,
   background: 'rgba(255,255,255,0.15)',
   margin: '10px 0',
 };
 
-const separatorThinStyle: React.CSSProperties = {
+const separatorThinStyle: CSSProperties = {
   height: 1,
   background: 'rgba(255,255,255,0.08)',
   margin: '6px 0',
 };
 
-const debugBlockStyle: React.CSSProperties = {
+const debugBlockStyle: CSSProperties = {
   fontSize: 11,
 };
 
-const debugRowStyle: React.CSSProperties = {
+const debugRowStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'baseline',
   marginBottom: 3,
 };
 
-const debugValStyle: React.CSSProperties = {
+const debugValStyle: CSSProperties = {
   color: 'rgba(255,255,255,0.95)',
   fontVariantNumeric: 'tabular-nums',
 };
 
-const anchorRowStyle: React.CSSProperties = {
+const anchorRowStyle: CSSProperties = {
   marginTop: 6,
 };
 
-const anchorNameStyle: React.CSSProperties = {
+const anchorNameStyle: CSSProperties = {
   fontSize: 11,
   color: '#FF00FF',
   fontWeight: 600,
   marginBottom: 1,
 };
 
-const anchorLineStyle: React.CSSProperties = {
+const anchorLineStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   paddingLeft: 8,
 };
 
-const anchorLabelStyle: React.CSSProperties = {
+const anchorLabelStyle: CSSProperties = {
   color: 'rgba(255,255,255,0.55)',
 };
 
-const copyBtnStyle: React.CSSProperties = {
+const copyBtnStyle: CSSProperties = {
   width: '100%',
   padding: '8px 12px',
   background: 'rgba(255, 0, 255, 0.18)',
