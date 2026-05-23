@@ -103,45 +103,45 @@ export async function fetchCorrectedTimeline(
 }
 
 /**
- * Find the frame at (or just before) the given ts. Linear scan with
- * an optional hint — playback typically advances by 1 frame per
- * requestAnimationFrame, so the hint hits in O(1).
+ * Find the frame at (or just before) the given ts via binary search.
  *
- * Returns null if the timeline has no frames or ts is before the
- * first frame.
+ * Stateless O(log n) lookup — mirrors `interpolatedFrame` in
+ * src/lib/disc/frameAt.ts (the proven helper SkeletonOverlay uses).
+ * No carried hint state — cannot poison itself across calls.
+ *
+ * Earlier (broken) implementation used a forward-only linear scan
+ * from a stateful hintIdxRef. If the first lookup happened at a ts
+ * past the last frame (e.g. video element preloaded at
+ * currentTime=duration before component mount), subsequent lookups
+ * scanned forward from `last`, found no frame matching, and fell
+ * through to return `frames[last]` permanently → anchors frozen.
+ *
+ * Edge cases:
+ *   - empty timeline → null
+ *   - ts <= frames[0].ts → frames[0]
+ *   - ts >= frames[last].ts → frames[last]
  */
 export function frameAtTime(
   timeline: CorrectedTimeline,
   ts: number,
-  hintIdx?: number,
 ): { frame: CorrectedFrame; idx: number } | null {
   const frames = timeline.frames;
   if (frames.length === 0) return null;
-  if (ts < frames[0].ts) return null;
-
-  // Hint path: if the hint frame's ts <= queried ts and the next frame's
-  // ts > queried ts, hint is correct. Else fall to scan.
-  if (
-    hintIdx !== undefined
-    && hintIdx >= 0
-    && hintIdx < frames.length
-    && frames[hintIdx].ts <= ts
-    && (hintIdx === frames.length - 1 || frames[hintIdx + 1].ts > ts)
-  ) {
-    return { frame: frames[hintIdx], idx: hintIdx };
-  }
-
-  // Linear scan from hint forward (most common: hint is 1-2 frames behind).
-  const start = hintIdx !== undefined && hintIdx >= 0 ? hintIdx : 0;
-  for (let i = start; i < frames.length; i++) {
-    const next = frames[i + 1];
-    if (frames[i].ts <= ts && (next === undefined || next.ts > ts)) {
-      return { frame: frames[i], idx: i };
-    }
-  }
-  // Past the end → return last frame.
+  if (ts <= frames[0].ts) return { frame: frames[0], idx: 0 };
   const last = frames.length - 1;
-  return { frame: frames[last], idx: last };
+  if (ts >= frames[last].ts) return { frame: frames[last], idx: last };
+  // Binary search: first idx whose ts is > queried ts. Guaranteed
+  // to land at lo > 0 by the edge checks above.
+  let lo = 0;
+  let hi = last;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (frames[mid].ts <= ts) lo = mid + 1;
+    else hi = mid;
+  }
+  // We want the frame BEFORE the first ts > queried.
+  const idx = lo - 1;
+  return { frame: frames[idx], idx };
 }
 
 /**

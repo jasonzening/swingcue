@@ -56,28 +56,31 @@ const ANCHOR_STROKE_WIDTH = 1;
 
 export function CoachingAnchorOverlay({ timeline, videoEl }: Props) {
   const circleRefs = useRef<Partial<Record<CoachingAnchorName, SVGCircleElement | null>>>({});
-  const hintIdxRef = useRef<number>(0);
-
-  // Cache once per timeline — re-computed only when timeline identity changes.
-  const finishStartTs = findFinishStartTs(timeline);
-  const durationSec = timeline.duration_sec;
 
   useEffect(() => {
     if (!videoEl) return;
 
+    // PR-7c-frontend hotfix: inline these inside the effect to
+    // eliminate dep-array churn risk on parent re-renders. Recomputed
+    // exactly when the effect itself re-fires (videoEl or timeline
+    // identity changes).
+    const durationSec = timeline.duration_sec;
+    const finishStartTs = findFinishStartTs(timeline);
+
     const draw = () => {
       const t = videoEl.currentTime;
-      const lookup = frameAtTime(timeline, t, hintIdxRef.current);
+      // PR-7c-frontend hotfix: frameAtTime is now stateless binary
+      // search (no hint). Cannot get poisoned across calls.
+      const lookup = frameAtTime(timeline, t);
       if (lookup === null) {
-        // ts before first sample (e.g. paused at 0 with offset clip) →
-        // hide all anchors; they'll reappear on the next frame in range.
+        // Empty timeline (shouldn't happen — validated at fetch time)
+        // → hide all anchors defensively.
         for (const name of COACHING_ANCHOR_NAMES_RENDER) {
           const el = circleRefs.current[name];
           if (el) el.setAttribute('visibility', 'hidden');
         }
         return;
       }
-      hintIdxRef.current = lookup.idx;
       const frame = lookup.frame;
       const opacity = computeAnchorOpacity({
         phase: frame.phase,
@@ -124,7 +127,7 @@ export function CoachingAnchorOverlay({ timeline, videoEl }: Props) {
       videoEl.removeEventListener('loadedmetadata', draw);
       videoEl.removeEventListener('seeked', draw);
     };
-  }, [videoEl, timeline, durationSec, finishStartTs]);
+  }, [videoEl, timeline]);
 
   return (
     <svg
