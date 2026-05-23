@@ -304,11 +304,11 @@ export function SwingPlayer({
   /* ── Render loop ── */
   const renderTick = useCallback(() => {
     const v = videoRef.current;
-    const c = canvasRef.current;
-    if (!v || !c) return;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
+    if (!v) return;
 
+    // State updates run in BOTH modes (enhanced + fallback) so the
+    // scrub bar, time display, and phase badge keep working in
+    // enhanced mode where the <canvas> is unmounted by the JSX gate.
     const t = v.currentTime;
     const d = v.duration || dur || 1;
 
@@ -316,32 +316,13 @@ export function SwingPlayer({
     setCurTime(t);
     setPhase(getCurrentPhase(phases, t, d));
 
-    // PR-7c-frontend-v5: in enhanced mode (poseTimeline present), the
-    // magenta SVG layer (CoachingAnchorOverlay) is the primary visual.
-    // Clear any prior canvas content and skip the PR-3 overlay + PR-5
-    // disc draw pipeline entirely. State updates above still run so the
-    // scrub bar / phase badge / time display continue to work.
-    //
-    // Without this gate, the canvas drawing rAF kept painting
-    // "Current/Target/Path" disc visualization under the SVG layer,
-    // producing visible 2 horizontal bars + 2 green ellipses + spine
-    // line on body in enhanced mode.
-    //
-    // Fallback path (no poseTimeline → older pre-PR-4 videos) is
-    // unchanged — original disc + overlay draws as before.
-    //
-    // v5.1 hotfix: use the derived `enhancedMode` boolean instead of
-    // `poseTimeline` directly. TS flow analysis narrows the identifier
-    // `poseTimeline` to falsy after `if (poseTimeline) return;`, which
-    // then poisons the existing `if (poseTimeline)` disc-render block
-    // at line ~350 (its inside becomes unreachable + the code there
-    // accesses poseTimeline.video_width etc., which TS types as never).
-    // Using the derived `enhancedMode` const breaks the narrowing chain
-    // — TS doesn't track derived booleans back to the original ID.
-    if (enhancedMode) {
-      ctx.clearRect(0, 0, c.width || 320, c.height || 240);
-      return;
-    }
+    // PR-7c-frontend-v6: canvas draws only run in fallback mode. In
+    // enhanced mode the JSX gate (`{!enhancedMode && <canvas .../>}`)
+    // unmounts the canvas → canvasRef.current is null → bail here.
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
 
     // PR-5: filter PR-3 timeline ellipses; disc geometry is now computed
     // frame-level from pose_timeline_2d below. Non-ellipse elements
@@ -514,7 +495,7 @@ export function SwingPlayer({
         }
       }
     }
-  }, [timeline, phases, layer, dur, poseTimeline, shoulderExpand, hipExpand, enhancedMode]);
+  }, [timeline, phases, layer, dur, poseTimeline, shoulderExpand, hipExpand]);
 
   useEffect(() => {
     let id: number;
@@ -613,7 +594,7 @@ export function SwingPlayer({
           onLoadedMetadata={syncCanvas}
           onLoadedData={syncCanvas}
         />
-        <canvas ref={canvasRef} className="sp-cvs" />
+        {!enhancedMode && <canvas ref={canvasRef} className="sp-cvs" />}
 
         {/* PR-4: skeleton overlay (toggle, default off).
             PR-7c-frontend: hidden when enhanced mode is active so the
