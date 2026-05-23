@@ -1,36 +1,31 @@
 'use client';
 
 /**
- * CoachingAnchorOverlay — PR-7c-frontend-v3 visual refinement.
+ * CoachingAnchorOverlay — PR-7c-frontend-v4 simplification.
  *
- * v2 (frozen): 5 magenta dots tracking nose + shoulders + hips from
- * production MediaPipe pose_timeline_2d. Confirmed working post the
- * frameAtTime hotfix.
+ * Final visual: 5 magenta dots only.
+ *   - head    (derived: midpoint of shoulders, shifted up 10% of torso)
+ *   - left_shoulder, right_shoulder, left_hip, right_hip (MediaPipe direct)
  *
- * v3 elevates "debug dot tracker" to "coaching visual system":
- *   1. Head dot → stable head halo derived from torso anchors.
- *      Rationale: MediaPipe nose drifts on head turn at top phase.
- *      Halo center = shoulder midpoint shifted up 15% of torso length.
- *      Ellipse rx/ry sized to shoulder half-width.
- *   2. Per-anchor confidence gating (< 0.5 hide).
- *      Non-setup phases additionally fall back to disc/ring center
- *      + horizontal guide line when EITHER L/R confidence drops.
- *   3. Visual hierarchy:
- *      - Individual dots: small (r=5), opacity × 0.7 (secondary)
- *      - Halo + disc/ring centers + guide lines: full phase opacity (primary)
+ * v3 elements REMOVED in v4: head halo ellipse, shoulder/hip occlusion
+ * fallback (2 fallback center dots + 2 horizontal guide lines).
+ * Per Jason's review of v3 production b32e0f21:
+ *   - Halo should be a single dot anchored at cervical spine
+ *     (golf coaching = detect head/neck stability)
+ *   - Occlusion fallback read as visual clutter, not coaching value
  *
- * Architecture (unchanged from v2):
+ * Visibility (unified, no phase-dependent branching):
+ *   - 4 direct dots: hide if MediaPipe `coord.xy === null` OR
+ *     `confidence < 0.3` (ANCHOR_DOT_CONFIDENCE_MIN)
+ *   - Head dot: hide if any of the 4 torso source coords is null
+ *     OR if both shoulder confidences < 0.5
+ *
+ * Architecture (unchanged from v2/v3):
  *   - SVG viewBox in video native px, preserveAspectRatio xMidYMid meet
  *   - Per-frame imperative setAttribute via rAF loop
  *   - One-shot syncs on loadedmetadata + seeked
  *   - Phase mapping: getCurrentPhase (single source of truth with badge)
  *   - Frame lookup: interpolatedFrame (smooth lerp)
- *
- * SVG element count: 8 max per frame
- *   - 4 dots (L/R shoulder, L/R hip)
- *   - 1 head halo (ellipse, stroke only)
- *   - 2 fallback markers (shoulder disc center, hip ring center)
- *   - 2 guide lines (shoulder horizontal, hip horizontal)
  */
 
 import { useEffect, useRef } from 'react';
@@ -38,9 +33,8 @@ import type { PhaseMarkers, PoseTimeline } from '@/types/analysis';
 import { getCurrentPhase } from '@/lib/overlay/playerSync';
 import {
   poseRawAnchorsAtTime,
-  computeShoulderCenter,
-  computeHipCenter,
-  computeHeadHalo,
+  computeNeckCenter,
+  ANCHOR_DOT_CONFIDENCE_MIN,
   HIGH_CONFIDENCE_THRESHOLD,
   type RawKeypoint,
 } from '@/lib/coaching/poseTimelineAnchors';
@@ -55,20 +49,24 @@ type Props = {
 const MAGENTA = '#FF00FF';
 const DOT_STROKE = 'rgba(0,0,0,0.5)';
 const DOT_RADIUS = 5;
-const CENTER_RADIUS = 6;
-const HALO_STROKE_WIDTH = 2;
 const DOT_STROKE_WIDTH = 1;
-const GUIDE_LINE_WIDTH = 1;
 
-// Opacity multipliers applied on top of phaseOpacity:
-const DOT_OPACITY_MULT    = 0.7;   // secondary visual
-const HALO_OPACITY_MULT   = 0.8;   // primary visual (slight cap)
-const CENTER_OPACITY_MULT = 1.0;   // primary, full phase opacity
-const GUIDE_OPACITY_MULT  = 0.6;   // subtle reference
+// Per spec §1: "opacity × 0.7" for the dot style.
+const DOT_OPACITY_MULT = 0.7;
 
-type DotName = 'left_shoulder' | 'right_shoulder' | 'left_hip' | 'right_hip';
+type DotName =
+  | 'head'
+  | 'left_shoulder'
+  | 'right_shoulder'
+  | 'left_hip'
+  | 'right_hip';
+
 const DOT_NAMES: readonly DotName[] = [
-  'left_shoulder', 'right_shoulder', 'left_hip', 'right_hip',
+  'head',
+  'left_shoulder',
+  'right_shoulder',
+  'left_hip',
+  'right_hip',
 ];
 
 export function CoachingAnchorOverlay({
@@ -76,16 +74,7 @@ export function CoachingAnchorOverlay({
   phaseMarkers,
   videoEl,
 }: Props) {
-  // 4 dot refs
   const dotRefs = useRef<Partial<Record<DotName, SVGCircleElement | null>>>({});
-  // Halo ref (ellipse)
-  const haloRef = useRef<SVGEllipseElement | null>(null);
-  // Fallback marker refs
-  const shoulderCenterRef = useRef<SVGCircleElement | null>(null);
-  const hipCenterRef      = useRef<SVGCircleElement | null>(null);
-  // Guide line refs
-  const shoulderGuideRef = useRef<SVGLineElement | null>(null);
-  const hipGuideRef      = useRef<SVGLineElement | null>(null);
 
   const videoWidth = poseTimeline.video_width;
   const videoHeight = poseTimeline.video_height;
@@ -106,107 +95,49 @@ export function CoachingAnchorOverlay({
         durationSec: safeDuration,
         finishStartTs: phaseMarkers.finishTime,
       });
-      const isSetup = phase === 'setup';
 
       const anchors = poseRawAnchorsAtTime(poseTimeline, t);
       if (!anchors) {
-        // Empty timeline / before first sample — hide everything.
-        hideAll();
+        for (const name of DOT_NAMES) {
+          const el = dotRefs.current[name];
+          if (el) el.setAttribute('visibility', 'hidden');
+        }
         return;
       }
 
-      const shL = anchors.left_shoulder;
-      const shR = anchors.right_shoulder;
-      const hipL = anchors.left_hip;
-      const hipR = anchors.right_hip;
+      // 4 direct dots: hide if null OR conf < 0.3.
+      applyDot(dotRefs.current.left_shoulder,  anchors.left_shoulder,  phaseOp);
+      applyDot(dotRefs.current.right_shoulder, anchors.right_shoulder, phaseOp);
+      applyDot(dotRefs.current.left_hip,       anchors.left_hip,       phaseOp);
+      applyDot(dotRefs.current.right_hip,      anchors.right_hip,      phaseOp);
 
-      // ── Decide visibility ────────────────────────────────────
-      // Individual dot: visible iff non-null AND (setup OR conf >= 0.5).
-      const showShL = isVisibleDot(shL, isSetup);
-      const showShR = isVisibleDot(shR, isSetup);
-      const showHipL = isVisibleDot(hipL, isSetup);
-      const showHipR = isVisibleDot(hipR, isSetup);
-
-      // Fallback: when not setup AND EITHER side fails confidence,
-      // hide BOTH dots and show disc/ring center + guide line instead.
-      const shoulderEitherLowConf =
-        shL.confidence < HIGH_CONFIDENCE_THRESHOLD
-        || shR.confidence < HIGH_CONFIDENCE_THRESHOLD;
-      const hipEitherLowConf =
-        hipL.confidence < HIGH_CONFIDENCE_THRESHOLD
-        || hipR.confidence < HIGH_CONFIDENCE_THRESHOLD;
-
-      const showShoulderFallback = !isSetup && shoulderEitherLowConf;
-      const showHipFallback      = !isSetup && hipEitherLowConf;
-
-      // Suppress individual dots when fallback is active.
-      const finalShowShL = showShL && !showShoulderFallback;
-      const finalShowShR = showShR && !showShoulderFallback;
-      const finalShowHipL = showHipL && !showHipFallback;
-      const finalShowHipR = showHipR && !showHipFallback;
-
-      // ── Dots ─────────────────────────────────────────────────
-      applyDot(dotRefs.current.left_shoulder,  shL,  finalShowShL,  phaseOp);
-      applyDot(dotRefs.current.right_shoulder, shR,  finalShowShR,  phaseOp);
-      applyDot(dotRefs.current.left_hip,       hipL, finalShowHipL, phaseOp);
-      applyDot(dotRefs.current.right_hip,      hipR, finalShowHipR, phaseOp);
-
-      // ── Head halo ────────────────────────────────────────────
-      // Per spec: hide entirely if BOTH shoulder confidences < 0.5.
-      // Halo geometry also requires all 4 torso coords non-null.
-      const haloEl = haloRef.current;
-      if (haloEl) {
+      // Head dot: derived from torso. Hide if geometry uncomputable OR
+      // both shoulders < 0.5 confidence (derived midpoint unreliable).
+      const headEl = dotRefs.current.head;
+      if (headEl) {
         const bothShouldersLowConf =
-          shL.confidence < HIGH_CONFIDENCE_THRESHOLD
-          && shR.confidence < HIGH_CONFIDENCE_THRESHOLD;
-        const halo =
-          bothShouldersLowConf
-            ? null
-            : computeHeadHalo(shL, shR, hipL, hipR);
-        if (halo === null) {
-          haloEl.setAttribute('visibility', 'hidden');
+          anchors.left_shoulder.confidence < HIGH_CONFIDENCE_THRESHOLD
+          && anchors.right_shoulder.confidence < HIGH_CONFIDENCE_THRESHOLD;
+        const headCenter = bothShouldersLowConf
+          ? null
+          : computeNeckCenter(
+              anchors.left_shoulder,
+              anchors.right_shoulder,
+              anchors.left_hip,
+              anchors.right_hip,
+            );
+        if (!headCenter) {
+          headEl.setAttribute('visibility', 'hidden');
         } else {
-          haloEl.setAttribute('cx', String(halo.cx));
-          haloEl.setAttribute('cy', String(halo.cy));
-          haloEl.setAttribute('rx', String(halo.rx));
-          haloEl.setAttribute('ry', String(halo.ry));
-          haloEl.setAttribute('opacity', String(phaseOp * HALO_OPACITY_MULT));
-          haloEl.setAttribute('visibility', 'visible');
+          headEl.setAttribute('cx', String(headCenter.x));
+          headEl.setAttribute('cy', String(headCenter.y));
+          headEl.setAttribute('opacity', String(phaseOp * DOT_OPACITY_MULT));
+          headEl.setAttribute('visibility', 'visible');
         }
       }
-
-      // ── Shoulder fallback (disc center + guide line) ─────────
-      const shCenter = showShoulderFallback
-        ? computeShoulderCenter(shL, shR)
-        : null;
-      applyCenter(shoulderCenterRef.current, shCenter, phaseOp);
-      applyGuideLine(
-        shoulderGuideRef.current, shCenter, videoWidth, phaseOp,
-      );
-
-      // ── Hip fallback (ring center + guide line) ──────────────
-      const hipCenter = showHipFallback
-        ? computeHipCenter(hipL, hipR)
-        : null;
-      applyCenter(hipCenterRef.current, hipCenter, phaseOp);
-      applyGuideLine(
-        hipGuideRef.current, hipCenter, videoWidth, phaseOp,
-      );
     };
 
-    const hideAll = () => {
-      for (const name of DOT_NAMES) {
-        const el = dotRefs.current[name];
-        if (el) el.setAttribute('visibility', 'hidden');
-      }
-      haloRef.current?.setAttribute('visibility', 'hidden');
-      shoulderCenterRef.current?.setAttribute('visibility', 'hidden');
-      hipCenterRef.current?.setAttribute('visibility', 'hidden');
-      shoulderGuideRef.current?.setAttribute('visibility', 'hidden');
-      hipGuideRef.current?.setAttribute('visibility', 'hidden');
-    };
-
-    // Continuous rAF loop — mirrors SkeletonOverlay / v2.
+    // Continuous rAF loop.
     let raf = 0;
     const loop = () => {
       draw();
@@ -239,48 +170,6 @@ export function CoachingAnchorOverlay({
         pointerEvents: 'none',
       }}
     >
-      {/* Guide lines — render before centers so dots/circles draw above them */}
-      <line
-        ref={(el) => { shoulderGuideRef.current = el; }}
-        stroke={MAGENTA}
-        strokeWidth={GUIDE_LINE_WIDTH}
-        visibility="hidden"
-      />
-      <line
-        ref={(el) => { hipGuideRef.current = el; }}
-        stroke={MAGENTA}
-        strokeWidth={GUIDE_LINE_WIDTH}
-        visibility="hidden"
-      />
-
-      {/* Head halo — stroke-only ellipse */}
-      <ellipse
-        ref={(el) => { haloRef.current = el; }}
-        fill="none"
-        stroke={MAGENTA}
-        strokeWidth={HALO_STROKE_WIDTH}
-        visibility="hidden"
-      />
-
-      {/* Fallback center markers */}
-      <circle
-        ref={(el) => { shoulderCenterRef.current = el; }}
-        r={CENTER_RADIUS}
-        fill={MAGENTA}
-        stroke={DOT_STROKE}
-        strokeWidth={DOT_STROKE_WIDTH}
-        visibility="hidden"
-      />
-      <circle
-        ref={(el) => { hipCenterRef.current = el; }}
-        r={CENTER_RADIUS}
-        fill={MAGENTA}
-        stroke={DOT_STROKE}
-        strokeWidth={DOT_STROKE_WIDTH}
-        visibility="hidden"
-      />
-
-      {/* 4 individual anchor dots */}
       {DOT_NAMES.map((name) => (
         <circle
           key={name}
@@ -298,60 +187,22 @@ export function CoachingAnchorOverlay({
 
 // ── Helpers (pure, no React) ─────────────────────────────────────
 
-function isVisibleDot(kp: RawKeypoint, isSetup: boolean): boolean {
-  if (!kp.xy) return false;
-  if (isSetup) return true;  // setup: null-check only, no conf gate
-  return kp.confidence >= HIGH_CONFIDENCE_THRESHOLD;
-}
-
+/**
+ * Render a single direct anchor dot (shoulder/hip).
+ * Hides when MediaPipe coord is null OR confidence below the v4 gate.
+ */
 function applyDot(
   el: SVGCircleElement | null | undefined,
   kp: RawKeypoint,
-  show: boolean,
   phaseOp: number,
 ): void {
   if (!el) return;
-  if (!show || !kp.xy) {
+  if (!kp.xy || kp.confidence < ANCHOR_DOT_CONFIDENCE_MIN) {
     el.setAttribute('visibility', 'hidden');
     return;
   }
   el.setAttribute('cx', String(kp.xy[0]));
   el.setAttribute('cy', String(kp.xy[1]));
   el.setAttribute('opacity', String(phaseOp * DOT_OPACITY_MULT));
-  el.setAttribute('visibility', 'visible');
-}
-
-function applyCenter(
-  el: SVGCircleElement | null,
-  center: { x: number; y: number } | null,
-  phaseOp: number,
-): void {
-  if (!el) return;
-  if (!center) {
-    el.setAttribute('visibility', 'hidden');
-    return;
-  }
-  el.setAttribute('cx', String(center.x));
-  el.setAttribute('cy', String(center.y));
-  el.setAttribute('opacity', String(phaseOp * CENTER_OPACITY_MULT));
-  el.setAttribute('visibility', 'visible');
-}
-
-function applyGuideLine(
-  el: SVGLineElement | null,
-  center: { x: number; y: number } | null,
-  videoWidth: number,
-  phaseOp: number,
-): void {
-  if (!el) return;
-  if (!center) {
-    el.setAttribute('visibility', 'hidden');
-    return;
-  }
-  el.setAttribute('x1', '0');
-  el.setAttribute('y1', String(center.y));
-  el.setAttribute('x2', String(videoWidth));
-  el.setAttribute('y2', String(center.y));
-  el.setAttribute('opacity', String(phaseOp * GUIDE_OPACITY_MULT));
   el.setAttribute('visibility', 'visible');
 }
