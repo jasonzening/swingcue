@@ -79,15 +79,15 @@ type Props = {
   onRatiosChange: (next: Ratios) => void;
 };
 
-// v9.1: bumped from v9's 0.40 paired range — Jason still hit max
-// during cross-phase tuning.
+// v9.2: bumped from v9.1's 0.60 paired range — UX-hit cap during
+// cross-frame tuning even though most settled values < 0.30.
 const PAIRED_MIN = 0;
-const PAIRED_MAX = 0.60;
+const PAIRED_MAX = 0.80;
 const PAIRED_STEP = 0.005;
 
-// v9.1: bumped from v9's ±0.40 head range — same reason.
-const HEAD_MIN = -0.60;
-const HEAD_MAX = 0.60;
+// v9.2: bumped from v9.1's ±0.60 head range — same reason.
+const HEAD_MIN = -0.80;
+const HEAD_MAX = 0.80;
 const HEAD_STEP = 0.005;
 
 type DebugFrame = {
@@ -405,7 +405,7 @@ export function AnchorTuningPanel({
     <div className="atp-panel" style={panelStyle}>
       {renderHeader()}
 
-      <SectionLabel label="L SHOULDER  (0 → 0.60)" />
+      <SectionLabel label="L SHOULDER  (0 → 0.80)" />
       <SliderRow label="UP"  value={ratios.LEFT_SHOULDER_UP}  onChange={handleSlider('LEFT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.LEFT_SHOULDER_OUT} onChange={handleSlider('LEFT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
@@ -421,7 +421,7 @@ export function AnchorTuningPanel({
       <SliderRow label="UP"  value={ratios.RIGHT_HIP_UP}  onChange={handleSlider('RIGHT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.RIGHT_HIP_OUT} onChange={handleSlider('RIGHT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="HEAD  (bipolar ±0.60)" />
+      <SectionLabel label="HEAD  (bipolar ±0.80)" />
       <SliderRow label="UP"  value={ratios.HEAD_UP}  onChange={handleSlider('HEAD_UP')}  min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
       <SliderRow label="OUT" value={ratios.HEAD_OUT} onChange={handleSlider('HEAD_OUT')} min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
 

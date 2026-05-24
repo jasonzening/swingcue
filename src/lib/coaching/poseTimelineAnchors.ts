@@ -183,62 +183,108 @@ export interface AnchorKeyframe {
  * matches v8.1 production behavior — no regression).
  */
 export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
-  // b32e0f21 — Jason's 5 hand-tuned snapshots from v8.1.1 panel
-  // (Copy outputs aggregated 2026-05-23).
+  // b32e0f21 — Jason's 9 hand-tuned keyframes (v9.2, 2026-05-23).
+  // Adds frames 21, 49, 54, 58 to the v9 baseline of 5 (0, 34, 45,
+  // 47, 55). Production overlay lerps between these 9 points to
+  // get smooth phase-aware anchors across the swing.
   'b32e0f21-2656-473c-aa87-e1eaf6e1221f': [
     {
       frame_idx: 0,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP: 0.075,  LEFT_SHOULDER_OUT: 0.000,
+        LEFT_SHOULDER_UP:  0.085, LEFT_SHOULDER_OUT:  0.000,
         RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.015,
-        LEFT_HIP_UP: 0.090,       LEFT_HIP_OUT: 0.020,
-        RIGHT_HIP_UP: 0.020,      RIGHT_HIP_OUT: 0.000,
-        HEAD_UP: 0.250,           HEAD_OUT: 0.185,
+        LEFT_HIP_UP:       0.090, LEFT_HIP_OUT:       0.000,
+        RIGHT_HIP_UP:      0.025, RIGHT_HIP_OUT:      0.000,
+        HEAD_UP:           0.310, HEAD_OUT:           0.185,
+      },
+    },
+    {
+      frame_idx: 21,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP:  0.000, LEFT_SHOULDER_OUT:  0.145,
+        RIGHT_SHOULDER_UP: 0.006, RIGHT_SHOULDER_OUT: 0.055,
+        LEFT_HIP_UP:       0.190, LEFT_HIP_OUT:       0.000,
+        RIGHT_HIP_UP:      0.015, RIGHT_HIP_OUT:      0.000,
+        HEAD_UP:           0.385, HEAD_OUT:           0.155,
       },
     },
     {
       frame_idx: 34,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP: 0.050,  LEFT_SHOULDER_OUT: 0.090,
-        RIGHT_SHOULDER_UP: 0.020, RIGHT_SHOULDER_OUT: 0.080,
-        LEFT_HIP_UP: 0.110,       LEFT_HIP_OUT: 0.055,
-        RIGHT_HIP_UP: 0.040,      RIGHT_HIP_OUT: 0.065,
-        HEAD_UP: 0.225,           HEAD_OUT: 0.055,
+        LEFT_SHOULDER_UP:  0.055, LEFT_SHOULDER_OUT:  0.055,
+        RIGHT_SHOULDER_UP: 0.010, RIGHT_SHOULDER_OUT: 0.080,
+        LEFT_HIP_UP:       0.135, LEFT_HIP_OUT:       0.005,
+        RIGHT_HIP_UP:      0.040, RIGHT_HIP_OUT:      0.065,
+        HEAD_UP:           0.250, HEAD_OUT:           0.055,
       },
     },
     {
       frame_idx: 45,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP: 0.030,  LEFT_SHOULDER_OUT: 0.065,
-        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.050,
-        LEFT_HIP_UP: 0.145,       LEFT_HIP_OUT: 0.000,
-        RIGHT_HIP_UP: 0.040,      RIGHT_HIP_OUT: 0.035,
-        HEAD_UP: 0.250,           HEAD_OUT: 0.090,
+        LEFT_SHOULDER_UP:  0.000, LEFT_SHOULDER_OUT:  0.000,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.015,
+        LEFT_HIP_UP:       0.185, LEFT_HIP_OUT:       0.000,
+        RIGHT_HIP_UP:      0.000, RIGHT_HIP_OUT:      0.000,
+        HEAD_UP:           0.390, HEAD_OUT:           0.090,
       },
     },
     {
       frame_idx: 47,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP: 0.105,  LEFT_SHOULDER_OUT: 0.110,
-        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.010,
-        LEFT_HIP_UP: 0.145,       LEFT_HIP_OUT: 0.000,
-        RIGHT_HIP_UP: 0.160,      RIGHT_HIP_OUT: 0.000,
-        HEAD_UP: 0.250,           HEAD_OUT: 0.105,
+        LEFT_SHOULDER_UP:  0.115, LEFT_SHOULDER_OUT:  0.165,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
+        LEFT_HIP_UP:       0.215, LEFT_HIP_OUT:       0.000,
+        RIGHT_HIP_UP:      0.095, RIGHT_HIP_OUT:      0.040,
+        HEAD_UP:           0.415, HEAD_OUT:           0.085,
+      },
+    },
+    {
+      frame_idx: 49,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP:  0.110, LEFT_SHOULDER_OUT:  0.100,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
+        LEFT_HIP_UP:       0.170, LEFT_HIP_OUT:       0.170,
+        RIGHT_HIP_UP:      0.080, RIGHT_HIP_OUT:      0.030,
+        HEAD_UP:           0.415, HEAD_OUT:           0.095,
+      },
+    },
+    {
+      frame_idx: 54,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP:  0.110, LEFT_SHOULDER_OUT:  0.100,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
+        LEFT_HIP_UP:       0.170, LEFT_HIP_OUT:       0.170,
+        RIGHT_HIP_UP:      0.080, RIGHT_HIP_OUT:      0.030,
+        HEAD_UP:           0.360, HEAD_OUT:          -0.025,
       },
     },
     {
       frame_idx: 55,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP: 0.060,  LEFT_SHOULDER_OUT: 0.105,
-        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.075,
-        LEFT_HIP_UP: 0.050,       LEFT_HIP_OUT: 0.100,
-        RIGHT_HIP_UP: 0.065,      RIGHT_HIP_OUT: 0.075,
-        HEAD_UP: 0.250,           HEAD_OUT: -0.080,
+        LEFT_SHOULDER_UP:  0.065, LEFT_SHOULDER_OUT:  0.125,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.025,
+        LEFT_HIP_UP:       0.060, LEFT_HIP_OUT:       0.095,
+        RIGHT_HIP_UP:      0.035, RIGHT_HIP_OUT:      0.070,
+        HEAD_UP:           0.290, HEAD_OUT:          -0.095,
+      },
+    },
+    {
+      frame_idx: 58,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP:  0.090, LEFT_SHOULDER_OUT:  0.050,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.010,
+        LEFT_HIP_UP:       0.110, LEFT_HIP_OUT:       0.130,
+        RIGHT_HIP_UP:      0.045, RIGHT_HIP_OUT:      0.110,
+        HEAD_UP:           0.155, HEAD_OUT:          -0.200,
       },
     },
   ],
