@@ -59,10 +59,11 @@ const PAIRED_MIN = 0;
 const PAIRED_MAX = 0.25;
 const PAIRED_STEP = 0.005;
 
-// Head sliders are BIPOLAR: -0.10 to +0.10. Negative = down/one-side,
+// Head sliders are BIPOLAR: -0.25 to +0.25 (extended from v8.1's ±0.10
+// after Jason hit max during setup tuning). Negative = down/one-side,
 // positive = up/other-side. Center 0.0 = nose direct.
-const HEAD_MIN = -0.10;
-const HEAD_MAX = 0.10;
+const HEAD_MIN = -0.25;
+const HEAD_MAX = 0.25;
 const HEAD_STEP = 0.005;
 
 /** Frame display info — null fields when video/pose isn't ready yet. */
@@ -219,8 +220,58 @@ export function AnchorTuningPanel({
 
   const handleCopy = async () => {
     const fmt = (n: number) => n.toFixed(3);
+
+    // v8.1.1: extract video_id from /result/[id] URL pathname.
+    // Panel is lazy-loaded via next/dynamic with ssr:false so window
+    // is always defined when handleCopy fires.
+    const videoId =
+      typeof window !== 'undefined'
+        ? window.location.pathname.split('/').filter(Boolean).pop() ?? 'unknown'
+        : 'unknown';
+    const t = videoEl ? videoEl.currentTime : 0;
+
+    // Per-anchor lines: raw "x.x, y.y" with 1-decimal MediaPipe precision +
+    // conf, then "→ x, y" with rounded tuned coords. Head shows "nose" prefix
+    // so its raw source is unambiguous.
+    const anchorLine = (
+      name: string,
+      pair: DebugFrame['anchors'] extends Record<string, infer V> | null ? V : never,
+      headNoseLabel = false,
+    ): string => {
+      const raw = pair.raw
+        ? `(${pair.raw[0].toFixed(1)}, ${pair.raw[1].toFixed(1)}) conf=${pair.raw[2].toFixed(2)}`
+        : '—';
+      const shifted = pair.shifted
+        ? `(${Math.round(pair.shifted[0])}, ${Math.round(pair.shifted[1])})`
+        : '—';
+      const prefix = headNoseLabel ? 'nose ' : '';
+      return `//   ${name.padEnd(6)} ${prefix}${raw}  →  ${shifted}`;
+    };
+
+    const a = debug.anchors;
+    const anchorBlock = a
+      ? [
+          anchorLine('L_sh',  a.left_shoulder),
+          anchorLine('R_sh',  a.right_shoulder),
+          anchorLine('L_hip', a.left_hip),
+          anchorLine('R_hip', a.right_hip),
+          anchorLine('Head',  a.head, true),
+        ].join('\n')
+      : '//   (no pose data at this frame)';
+
     const text =
-      '// Tuned values (paste into VISUAL_ANCHOR_CONFIG):\n'
+      '// ────────────────────────────────────────────────\n'
+      + '// SwingCue Anchor Tuning Snapshot\n'
+      + '// ────────────────────────────────────────────────\n'
+      + `// video_id:  ${videoId}\n`
+      + `// frame:     ${debug.frameIdx ?? '—'} / ${debug.totalFrames ?? '—'}  (t=${t.toFixed(3)}s)\n`
+      + `// phase:     ${debug.phase}\n`
+      + `// spine_len: ${debug.spineLen != null ? Math.round(debug.spineLen) + ' px' : '—'}\n`
+      + '//\n'
+      + '// Anchor positions at this frame (raw → v8 tuned):\n'
+      + anchorBlock + '\n'
+      + '//\n'
+      + '// Tuned ratios (paste into VISUAL_ANCHOR_CONFIG):\n'
       + `  LEFT_SHOULDER_UP:    ${fmt(ratios.LEFT_SHOULDER_UP)},\n`
       + `  LEFT_SHOULDER_OUT:   ${fmt(ratios.LEFT_SHOULDER_OUT)},\n`
       + `  RIGHT_SHOULDER_UP:   ${fmt(ratios.RIGHT_SHOULDER_UP)},\n`
@@ -275,7 +326,7 @@ export function AnchorTuningPanel({
       <SliderRow label="UP"  value={ratios.RIGHT_HIP_UP}  onChange={handleSlider('RIGHT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.RIGHT_HIP_OUT} onChange={handleSlider('RIGHT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="HEAD  (bipolar ±0.10)" />
+      <SectionLabel label="HEAD  (bipolar ±0.25)" />
       <SliderRow label="UP"  value={ratios.HEAD_UP}  onChange={handleSlider('HEAD_UP')}  min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
       <SliderRow label="OUT" value={ratios.HEAD_OUT} onChange={handleSlider('HEAD_OUT')} min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
 
