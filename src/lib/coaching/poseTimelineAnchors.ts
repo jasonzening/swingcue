@@ -183,17 +183,24 @@ export interface AnchorKeyframe {
  * matches v8.1 production behavior — no regression).
  */
 export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
-  // b32e0f21 — Jason's 9 hand-tuned keyframes (v9.2, 2026-05-23).
-  // Adds frames 21, 49, 54, 58 to the v9 baseline of 5 (0, 34, 45,
-  // 47, 55). Production overlay lerps between these 9 points to
-  // get smooth phase-aware anchors across the swing.
+  // b32e0f21 — Jason's final refined 9 keyframes (v9.3, 2026-05-24).
+  // Closes PR-7c-frontend. Production overlay lerps these 9 points
+  // across the full swing for smooth phase-aware coaching anchors.
+  //
+  // Key refinements from v9.2 baseline:
+  //   - f=21:  L_SH_OUT 0.145 → 0.195, R_HIP_UP 0.015 → 0.100
+  //   - f=34:  L_HIP_UP 0.135 → 0.015 (major), R_HIP_OUT 0.065 → 0.015
+  //   - f=45:  L_SH_UP 0 → 0.050, L_HIP_UP 0.185 → 0.205
+  //   - f=47:  R_SH_OUT 0 → 0.055, L_HIP_OUT 0 → 0.175 (major)
+  //   - f=49:  most values reduced for smoother lerp into f=54
+  //   - f=54:  R_HIP swap (UP 0.080 → 0.010, OUT 0.030 → 0.065)
   'b32e0f21-2656-473c-aa87-e1eaf6e1221f': [
     {
       frame_idx: 0,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP:  0.085, LEFT_SHOULDER_OUT:  0.000,
-        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.015,
+        LEFT_SHOULDER_UP:  0.070, LEFT_SHOULDER_OUT:  0.000,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
         LEFT_HIP_UP:       0.090, LEFT_HIP_OUT:       0.000,
         RIGHT_HIP_UP:      0.025, RIGHT_HIP_OUT:      0.000,
         HEAD_UP:           0.310, HEAD_OUT:           0.185,
@@ -203,10 +210,10 @@ export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
       frame_idx: 21,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP:  0.000, LEFT_SHOULDER_OUT:  0.145,
-        RIGHT_SHOULDER_UP: 0.006, RIGHT_SHOULDER_OUT: 0.055,
-        LEFT_HIP_UP:       0.190, LEFT_HIP_OUT:       0.000,
-        RIGHT_HIP_UP:      0.015, RIGHT_HIP_OUT:      0.000,
+        LEFT_SHOULDER_UP:  0.000, LEFT_SHOULDER_OUT:  0.195,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.055,
+        LEFT_HIP_UP:       0.115, LEFT_HIP_OUT:       0.000,
+        RIGHT_HIP_UP:      0.100, RIGHT_HIP_OUT:      0.035,
         HEAD_UP:           0.385, HEAD_OUT:           0.155,
       },
     },
@@ -216,8 +223,8 @@ export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
         ...DEFAULT_RATIOS,
         LEFT_SHOULDER_UP:  0.055, LEFT_SHOULDER_OUT:  0.055,
         RIGHT_SHOULDER_UP: 0.010, RIGHT_SHOULDER_OUT: 0.080,
-        LEFT_HIP_UP:       0.135, LEFT_HIP_OUT:       0.005,
-        RIGHT_HIP_UP:      0.040, RIGHT_HIP_OUT:      0.065,
+        LEFT_HIP_UP:       0.015, LEFT_HIP_OUT:       0.000,
+        RIGHT_HIP_UP:      0.015, RIGHT_HIP_OUT:      0.015,
         HEAD_UP:           0.250, HEAD_OUT:           0.055,
       },
     },
@@ -225,10 +232,10 @@ export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
       frame_idx: 45,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP:  0.000, LEFT_SHOULDER_OUT:  0.000,
-        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.015,
-        LEFT_HIP_UP:       0.185, LEFT_HIP_OUT:       0.000,
-        RIGHT_HIP_UP:      0.000, RIGHT_HIP_OUT:      0.000,
+        LEFT_SHOULDER_UP:  0.050, LEFT_SHOULDER_OUT:  0.030,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
+        LEFT_HIP_UP:       0.205, LEFT_HIP_OUT:       0.000,
+        RIGHT_HIP_UP:      0.005, RIGHT_HIP_OUT:      0.000,
         HEAD_UP:           0.390, HEAD_OUT:           0.090,
       },
     },
@@ -236,10 +243,10 @@ export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
       frame_idx: 47,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP:  0.115, LEFT_SHOULDER_OUT:  0.165,
-        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
-        LEFT_HIP_UP:       0.215, LEFT_HIP_OUT:       0.000,
-        RIGHT_HIP_UP:      0.095, RIGHT_HIP_OUT:      0.040,
+        LEFT_SHOULDER_UP:  0.095, LEFT_SHOULDER_OUT:  0.165,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.055,
+        LEFT_HIP_UP:       0.170, LEFT_HIP_OUT:       0.175,
+        RIGHT_HIP_UP:      0.080, RIGHT_HIP_OUT:      0.040,
         HEAD_UP:           0.415, HEAD_OUT:           0.085,
       },
     },
@@ -247,10 +254,10 @@ export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
       frame_idx: 49,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP:  0.110, LEFT_SHOULDER_OUT:  0.100,
+        LEFT_SHOULDER_UP:  0.050, LEFT_SHOULDER_OUT:  0.045,
         RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
-        LEFT_HIP_UP:       0.170, LEFT_HIP_OUT:       0.170,
-        RIGHT_HIP_UP:      0.080, RIGHT_HIP_OUT:      0.030,
+        LEFT_HIP_UP:       0.140, LEFT_HIP_OUT:       0.125,
+        RIGHT_HIP_UP:      0.035, RIGHT_HIP_OUT:      0.015,
         HEAD_UP:           0.415, HEAD_OUT:           0.095,
       },
     },
@@ -260,8 +267,8 @@ export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
         ...DEFAULT_RATIOS,
         LEFT_SHOULDER_UP:  0.110, LEFT_SHOULDER_OUT:  0.100,
         RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
-        LEFT_HIP_UP:       0.170, LEFT_HIP_OUT:       0.170,
-        RIGHT_HIP_UP:      0.080, RIGHT_HIP_OUT:      0.030,
+        LEFT_HIP_UP:       0.140, LEFT_HIP_OUT:       0.125,
+        RIGHT_HIP_UP:      0.010, RIGHT_HIP_OUT:      0.065,
         HEAD_UP:           0.360, HEAD_OUT:          -0.025,
       },
     },
@@ -280,10 +287,10 @@ export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
       frame_idx: 58,
       ratios: {
         ...DEFAULT_RATIOS,
-        LEFT_SHOULDER_UP:  0.090, LEFT_SHOULDER_OUT:  0.050,
-        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.010,
-        LEFT_HIP_UP:       0.110, LEFT_HIP_OUT:       0.130,
-        RIGHT_HIP_UP:      0.045, RIGHT_HIP_OUT:      0.110,
+        LEFT_SHOULDER_UP:  0.085, LEFT_SHOULDER_OUT:  0.035,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.000,
+        LEFT_HIP_UP:       0.110, LEFT_HIP_OUT:       0.100,
+        RIGHT_HIP_UP:      0.045, RIGHT_HIP_OUT:      0.075,
         HEAD_UP:           0.155, HEAD_OUT:          -0.200,
       },
     },
