@@ -79,15 +79,15 @@ type Props = {
   onRatiosChange: (next: Ratios) => void;
 };
 
-// v9: bumped from v8.1's 0-0.25 paired range. Jason hit max during top
-// phase tuning on shoulder/hip out ratios.
+// v9.1: bumped from v9's 0.40 paired range — Jason still hit max
+// during cross-phase tuning.
 const PAIRED_MIN = 0;
-const PAIRED_MAX = 0.40;
+const PAIRED_MAX = 0.60;
 const PAIRED_STEP = 0.005;
 
-// v9: bumped from v8.1.1's ±0.25. Jason saturated multiple HEAD values.
-const HEAD_MIN = -0.40;
-const HEAD_MAX = 0.40;
+// v9.1: bumped from v9's ±0.40 head range — same reason.
+const HEAD_MIN = -0.60;
+const HEAD_MAX = 0.60;
 const HEAD_STEP = 0.005;
 
 type DebugFrame = {
@@ -278,11 +278,37 @@ export function AnchorTuningPanel({
 
   // ── Frame navigation ───────────────────────────────────────────
 
+  /** v9.1: frame_idx → time fallback chain. Priority order:
+   *   1. frame.ts directly from poseTimeline.frames (always present
+   *      and correct in production data)
+   *   2. fps_sampled (= 30 for current production videos)
+   *   3. fps_native (often null in DB for older videos)
+   *   4. Hardcoded 30 fps default
+   *
+   * Defensive — current production data always has frame.ts so path
+   * 1 wins. Fallbacks exist in case of future schema changes or older
+   * timelines missing ts. */
+  const frameIdxToTime = (frameIdx: number): number | null => {
+    if (!poseTimeline?.frames) return null;
+    if (frameIdx < 0 || frameIdx >= poseTimeline.frames.length) return null;
+    const frame = poseTimeline.frames[frameIdx];
+    if (typeof frame?.ts === 'number') return frame.ts;
+    const fps = poseTimeline.fps_sampled;
+    if (typeof fps === 'number' && fps > 0) return frameIdx / fps;
+    return frameIdx / 30;
+  };
+
+  /** v9.1: hardened seek — pause first (avoid racing playback), set
+   * currentTime, attach a no-op 'seeked' listener to nudge browsers
+   * that defer repaint on paused-video seek. */
   const seekToFrame = (idx: number) => {
     if (!videoEl || !poseTimeline) return;
     const clamped = Math.max(0, Math.min(idx, poseTimeline.frames.length - 1));
-    const ts = poseTimeline.frames[clamped]?.ts;
-    if (ts != null) videoEl.currentTime = ts;
+    const t = frameIdxToTime(clamped);
+    if (t == null) return;
+    videoEl.pause();
+    videoEl.addEventListener('seeked', () => { /* force frame commit */ }, { once: true });
+    videoEl.currentTime = t;
   };
 
   const handleJumpGo = () => {
@@ -379,7 +405,7 @@ export function AnchorTuningPanel({
     <div className="atp-panel" style={panelStyle}>
       {renderHeader()}
 
-      <SectionLabel label="L SHOULDER  (0 → 0.40)" />
+      <SectionLabel label="L SHOULDER  (0 → 0.60)" />
       <SliderRow label="UP"  value={ratios.LEFT_SHOULDER_UP}  onChange={handleSlider('LEFT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.LEFT_SHOULDER_OUT} onChange={handleSlider('LEFT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
@@ -395,7 +421,7 @@ export function AnchorTuningPanel({
       <SliderRow label="UP"  value={ratios.RIGHT_HIP_UP}  onChange={handleSlider('RIGHT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.RIGHT_HIP_OUT} onChange={handleSlider('RIGHT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="HEAD  (bipolar ±0.40)" />
+      <SectionLabel label="HEAD  (bipolar ±0.60)" />
       <SliderRow label="UP"  value={ratios.HEAD_UP}  onChange={handleSlider('HEAD_UP')}  min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
       <SliderRow label="OUT" value={ratios.HEAD_OUT} onChange={handleSlider('HEAD_OUT')} min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
 
