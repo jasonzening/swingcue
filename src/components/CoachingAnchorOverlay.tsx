@@ -61,9 +61,14 @@ const MAGENTA = '#FF00FF';
 // PR-7c-frontend-v8: raw "before" dots in tune mode use a contrasting
 // neon green so the magenta shifted dots remain the primary visual.
 const GREEN_RAW = '#00FF88';
-const DOT_STROKE = 'rgba(0,0,0,0.5)';
-const DOT_RADIUS = 5;
-const DOT_STROKE_WIDTH = 1;
+// PR-7c-frontend-v8.1: white stroke (was black 50%) for high contrast
+// on dark video frames + bright skin tones. Bigger radius + magenta
+// drop-shadow glow ensure dots remain visible above tuning-panel area.
+const DOT_STROKE = 'rgba(255,255,255,0.9)';
+const DOT_RADIUS = 7;
+const DOT_STROKE_WIDTH = 2;
+const DOT_GLOW_FILTER = 'drop-shadow(0 0 3px rgba(255,0,255,0.7))';
+const RAW_DOT_GLOW_FILTER = 'drop-shadow(0 0 2px rgba(0,255,136,0.5))';
 
 // Per spec §1: "opacity × 0.7" for the dot style.
 const DOT_OPACITY_MULT = 0.7;
@@ -209,6 +214,10 @@ export function CoachingAnchorOverlay({
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
+        // PR-7c-frontend-v8.1: above the tuning panel (z=10) so dots
+        // remain visible behind/around the panel. pointer-events:none
+        // means clicks still reach the panel sliders.
+        zIndex: 20,
       }}
     >
       {/* Raw "before" dots rendered FIRST so the magenta shifted dots
@@ -221,6 +230,7 @@ export function CoachingAnchorOverlay({
           fill={GREEN_RAW}
           stroke={DOT_STROKE}
           strokeWidth={DOT_STROKE_WIDTH}
+          style={{ filter: RAW_DOT_GLOW_FILTER }}
           visibility="hidden"
         />
       ))}
@@ -232,6 +242,7 @@ export function CoachingAnchorOverlay({
           fill={MAGENTA}
           stroke={DOT_STROKE}
           strokeWidth={DOT_STROKE_WIDTH}
+          style={{ filter: DOT_GLOW_FILTER }}
           visibility="hidden"
         />
       ))}

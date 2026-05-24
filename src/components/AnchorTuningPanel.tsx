@@ -1,20 +1,27 @@
 'use client';
 
 /**
- * AnchorTuningPanel — PR-7c-frontend-v8 self-service ratio tuning.
+ * AnchorTuningPanel — PR-7c-frontend-v8.1 self-service ratio tuning.
  *
  * Renders ONLY when SwingPlayer sees `?tune=anchors` in the URL.
- * Provides 4 live sliders for VISUAL_ANCHOR_CONFIG ratios plus a
- * debug readout of the current frame's raw vs shifted anchors.
- * Click "Copy" to get a paste-ready VISUAL_ANCHOR_CONFIG block on
- * the clipboard.
+ *
+ * v8 → v8.1 changes (per-anchor decoupling + tuning flow improvements):
+ *   - 4 coupled ratios → 10 per-anchor independent ratios
+ *     (L_SHOULDER UP/OUT, R_SHOULDER UP/OUT, L_HIP UP/OUT, R_HIP UP/OUT,
+ *      HEAD UP/OUT)
+ *   - Head sliders are BIPOLAR (-0.10 to +0.10) — direct signed shift,
+ *     no out_sign computation. Avoids the proj-near-0 wobble bug.
+ *   - 5-button phase stepper jumps videoEl.currentTime to setup / top /
+ *     transition / impact / finish timestamps. Validates ratios across
+ *     phases without manual scrubbing.
+ *   - Collapse chevron in header shrinks panel to title bar only.
+ *   - Width 280 → 320 to fit grouped layout.
  *
  * Goals:
- *   - Replace the v3→v7 cycle (guess→push→screenshot→describe→retune)
- *     with direct in-browser visual feedback.
- *   - Stateless sandbox: no localStorage, no DB. Once tuned, Jason
- *     copies values to chat, Claude commits final to VISUAL_ANCHOR_CONFIG,
- *     ships v8.1 in one push.
+ *   - Validate ratios at multiple swing phases (DTL perspective shifts
+ *     with body rotation; one-phase tuning misses other-phase drift).
+ *   - Per-anchor independence: near vs far shoulder in DTL view need
+ *     different shifts. Coupled tuning was a footgun.
  *
  * Production impact: zero. Lazy-loaded by SwingPlayer via `next/dynamic`,
  * so the chunk is only fetched when the URL param is present.
@@ -29,16 +36,17 @@ import {
 } from '@/lib/coaching/poseTimelineAnchors';
 
 type Ratios = {
-  SHOULDER_UP_RATIO:  number;
-  SHOULDER_OUT_RATIO: number;
-  HIP_UP_RATIO:       number;
-  HIP_OUT_RATIO:      number;
+  LEFT_SHOULDER_UP:    number;  LEFT_SHOULDER_OUT:   number;
+  RIGHT_SHOULDER_UP:   number;  RIGHT_SHOULDER_OUT:  number;
+  LEFT_HIP_UP:         number;  LEFT_HIP_OUT:        number;
+  RIGHT_HIP_UP:        number;  RIGHT_HIP_OUT:       number;
+  HEAD_UP:             number;  HEAD_OUT:            number;
 };
+
+type RatioKey = keyof Ratios;
 
 type Props = {
   videoEl: HTMLVideoElement | null;
-  // SwingPlayer's poseTimeline is `PoseTimeline | null | undefined`
-  // (optional prop with explicit null fallback). Accept all 3 here.
   poseTimeline: PoseTimeline | null | undefined;
   phaseMarkers: PhaseMarkers;
   durationSec: number;
@@ -46,9 +54,16 @@ type Props = {
   onRatiosChange: (next: Ratios) => void;
 };
 
-const SLIDER_MIN = 0;
-const SLIDER_MAX = 0.25;
-const SLIDER_STEP = 0.005;
+// Paired (positive-only) sliders: 0 to 0.25, step 0.005.
+const PAIRED_MIN = 0;
+const PAIRED_MAX = 0.25;
+const PAIRED_STEP = 0.005;
+
+// Head sliders are BIPOLAR: -0.10 to +0.10. Negative = down/one-side,
+// positive = up/other-side. Center 0.0 = nose direct.
+const HEAD_MIN = -0.10;
+const HEAD_MAX = 0.10;
+const HEAD_STEP = 0.005;
 
 /** Frame display info — null fields when video/pose isn't ready yet. */
 type DebugFrame = {
@@ -56,7 +71,6 @@ type DebugFrame = {
   totalFrames: number | null;
   phase: string;
   spineLen: number | null;
-  // Per-anchor: raw [x,y,conf] and shifted [x,y] (head shifted = raw nose)
   anchors: Record<
     'left_shoulder' | 'right_shoulder' | 'left_hip' | 'right_hip' | 'head',
     { raw: readonly [number, number, number] | null; shifted: readonly [number, number] | null }
@@ -71,6 +85,12 @@ const EMPTY_DEBUG: DebugFrame = {
   anchors: null,
 };
 
+type PhaseButton = {
+  key: string;
+  label: string;
+  ts: number;
+};
+
 export function AnchorTuningPanel({
   videoEl,
   poseTimeline,
@@ -81,12 +101,10 @@ export function AnchorTuningPanel({
 }: Props) {
   const [debug, setDebug] = useState<DebugFrame>(EMPTY_DEBUG);
   const [copied, setCopied] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const ratiosRef = useRef(ratios);
   ratiosRef.current = ratios;
 
-  // Live frame readout. Runs its own rAF (independent of the overlay's)
-  // so the panel updates even when the video is paused at a specific
-  // phase — useful for tuning frame-by-frame.
   useEffect(() => {
     if (!videoEl || !poseTimeline) {
       setDebug(EMPTY_DEBUG);
@@ -126,8 +144,6 @@ export function AnchorTuningPanel({
           )
         : null;
 
-      // Frame idx — best-effort. Use timestamp lookup if available; else
-      // estimate by linear scan of the frames array.
       const frameIdx = findClosestFrameIdx(poseTimeline, t);
 
       const pack = (
@@ -160,84 +176,158 @@ export function AnchorTuningPanel({
     return () => cancelAnimationFrame(raf);
   }, [videoEl, poseTimeline, phaseMarkers, durationSec]);
 
+  // Header — always visible, even when collapsed.
+  const renderHeader = () => (
+    <div style={headerRowStyle}>
+      <span style={titleStyle}>ANCHOR TUNING</span>
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        style={chevronBtnStyle}
+        title={collapsed ? 'Expand' : 'Collapse'}
+      >
+        {collapsed ? '+' : '−'}
+      </button>
+    </div>
+  );
+
   if (!poseTimeline) {
     return (
       <div className="atp-panel" style={panelStyle}>
-        <div style={titleStyle}>ANCHOR TUNING</div>
-        <div style={noDataStyle}>
-          No pose data on this video — tuning unavailable.
-        </div>
+        {renderHeader()}
+        {!collapsed && (
+          <div style={noDataStyle}>
+            No pose data on this video — tuning unavailable.
+          </div>
+        )}
       </div>
     );
   }
 
-  const handleSlider = (key: keyof Ratios) =>
+  if (collapsed) {
+    return (
+      <div className="atp-panel" style={panelStyleCollapsed}>
+        {renderHeader()}
+      </div>
+    );
+  }
+
+  const handleSlider = (key: RatioKey) =>
     (e: ChangeEvent<HTMLInputElement>) => {
       const next = parseFloat(e.target.value);
       onRatiosChange({ ...ratios, [key]: next });
     };
 
   const handleCopy = async () => {
+    const fmt = (n: number) => n.toFixed(3);
     const text =
       '// Tuned values (paste into VISUAL_ANCHOR_CONFIG):\n'
-      + `  SHOULDER_UP_RATIO:  ${ratios.SHOULDER_UP_RATIO.toFixed(3)},\n`
-      + `  SHOULDER_OUT_RATIO: ${ratios.SHOULDER_OUT_RATIO.toFixed(3)},\n`
-      + `  HIP_UP_RATIO:       ${ratios.HIP_UP_RATIO.toFixed(3)},\n`
-      + `  HIP_OUT_RATIO:      ${ratios.HIP_OUT_RATIO.toFixed(3)},\n`;
+      + `  LEFT_SHOULDER_UP:    ${fmt(ratios.LEFT_SHOULDER_UP)},\n`
+      + `  LEFT_SHOULDER_OUT:   ${fmt(ratios.LEFT_SHOULDER_OUT)},\n`
+      + `  RIGHT_SHOULDER_UP:   ${fmt(ratios.RIGHT_SHOULDER_UP)},\n`
+      + `  RIGHT_SHOULDER_OUT:  ${fmt(ratios.RIGHT_SHOULDER_OUT)},\n`
+      + `  LEFT_HIP_UP:         ${fmt(ratios.LEFT_HIP_UP)},\n`
+      + `  LEFT_HIP_OUT:        ${fmt(ratios.LEFT_HIP_OUT)},\n`
+      + `  RIGHT_HIP_UP:        ${fmt(ratios.RIGHT_HIP_UP)},\n`
+      + `  RIGHT_HIP_OUT:       ${fmt(ratios.RIGHT_HIP_OUT)},\n`
+      + `  HEAD_UP:             ${fmt(ratios.HEAD_UP)},\n`
+      + `  HEAD_OUT:            ${fmt(ratios.HEAD_OUT)},\n`;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard API may fail in iframe / non-HTTPS. Fallback: select-by-prompt.
       window.prompt('Copy these values:', text);
     }
   };
 
+  // Phase stepper buttons read timestamps from phaseMarkers and seek
+  // videoEl.currentTime on click. Active phase (matches debug.phase)
+  // gets a magenta highlight.
+  const phaseButtons: PhaseButton[] = [
+    { key: 'setup',      label: 'SETUP',  ts: phaseMarkers.setupTime },
+    { key: 'top',        label: 'TOP',    ts: phaseMarkers.topTime },
+    { key: 'transition', label: 'TRANS',  ts: phaseMarkers.transitionTime },
+    { key: 'impact',     label: 'IMPACT', ts: phaseMarkers.impactTime },
+    { key: 'finish',     label: 'FINISH', ts: phaseMarkers.finishTime },
+  ];
+
+  const handlePhaseClick = (ts: number) => {
+    if (videoEl) videoEl.currentTime = ts;
+  };
+
   return (
     <div className="atp-panel" style={panelStyle}>
-      <div style={titleStyle}>ANCHOR TUNING</div>
+      {renderHeader()}
 
-      <SliderRow label="SHOULDER_UP"   value={ratios.SHOULDER_UP_RATIO}   onChange={handleSlider('SHOULDER_UP_RATIO')}   />
-      <SliderRow label="SHOULDER_OUT"  value={ratios.SHOULDER_OUT_RATIO}  onChange={handleSlider('SHOULDER_OUT_RATIO')}  />
-      <SliderRow label="HIP_UP"        value={ratios.HIP_UP_RATIO}        onChange={handleSlider('HIP_UP_RATIO')}        />
-      <SliderRow label="HIP_OUT"       value={ratios.HIP_OUT_RATIO}       onChange={handleSlider('HIP_OUT_RATIO')}       />
+      <SectionLabel label="L SHOULDER" />
+      <SliderRow label="UP"  value={ratios.LEFT_SHOULDER_UP}  onChange={handleSlider('LEFT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+      <SliderRow label="OUT" value={ratios.LEFT_SHOULDER_OUT} onChange={handleSlider('LEFT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+
+      <SectionLabel label="R SHOULDER" />
+      <SliderRow label="UP"  value={ratios.RIGHT_SHOULDER_UP}  onChange={handleSlider('RIGHT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+      <SliderRow label="OUT" value={ratios.RIGHT_SHOULDER_OUT} onChange={handleSlider('RIGHT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+
+      <SectionLabel label="L HIP" />
+      <SliderRow label="UP"  value={ratios.LEFT_HIP_UP}  onChange={handleSlider('LEFT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+      <SliderRow label="OUT" value={ratios.LEFT_HIP_OUT} onChange={handleSlider('LEFT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+
+      <SectionLabel label="R HIP" />
+      <SliderRow label="UP"  value={ratios.RIGHT_HIP_UP}  onChange={handleSlider('RIGHT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+      <SliderRow label="OUT" value={ratios.RIGHT_HIP_OUT} onChange={handleSlider('RIGHT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
+
+      <SectionLabel label="HEAD  (bipolar ±0.10)" />
+      <SliderRow label="UP"  value={ratios.HEAD_UP}  onChange={handleSlider('HEAD_UP')}  min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
+      <SliderRow label="OUT" value={ratios.HEAD_OUT} onChange={handleSlider('HEAD_OUT')} min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
 
       <div style={separatorStyle} />
 
-      <div style={debugBlockStyle}>
-        <div style={debugRowStyle}>
-          <span>Frame</span>
-          <span style={debugValStyle}>
-            {debug.frameIdx ?? '—'}
-            {debug.totalFrames != null ? ` / ${debug.totalFrames}` : ''}
-          </span>
-        </div>
-        <div style={debugRowStyle}>
-          <span>Phase</span>
-          <span style={debugValStyle}>{debug.phase}</span>
-        </div>
-        <div style={debugRowStyle}>
-          <span>Spine</span>
-          <span style={debugValStyle}>
-            {debug.spineLen != null ? `${Math.round(debug.spineLen)} px` : '—'}
-          </span>
-        </div>
-
-        <div style={separatorThinStyle} />
-
-        {debug.anchors ? (
-          <>
-            <AnchorRow name="L_shoulder"  pair={debug.anchors.left_shoulder} />
-            <AnchorRow name="R_shoulder"  pair={debug.anchors.right_shoulder} />
-            <AnchorRow name="L_hip"       pair={debug.anchors.left_hip} />
-            <AnchorRow name="R_hip"       pair={debug.anchors.right_hip} />
-            <AnchorRow name="head (nose)" pair={debug.anchors.head} shiftedHidden />
-          </>
-        ) : (
-          <div style={noDataStyle}>No anchors at current time</div>
-        )}
+      <div style={debugRowStyle}>
+        <span>Frame</span>
+        <span style={debugValStyle}>
+          {debug.frameIdx ?? '—'}
+          {debug.totalFrames != null ? ` / ${debug.totalFrames}` : ''}
+        </span>
       </div>
+      <div style={debugRowStyle}>
+        <span>Spine</span>
+        <span style={debugValStyle}>
+          {debug.spineLen != null ? `${Math.round(debug.spineLen)} px` : '—'}
+        </span>
+      </div>
+      <div style={debugRowStyle}>
+        <span>Phase</span>
+        <span style={debugValStyle}>{debug.phase}</span>
+      </div>
+
+      <div style={phaseStepperStyle}>
+        {phaseButtons.map((pb) => {
+          const isActive = pb.key === debug.phase;
+          return (
+            <button
+              key={pb.key}
+              onClick={() => handlePhaseClick(pb.ts)}
+              style={isActive ? phaseBtnActiveStyle : phaseBtnStyle}
+              title={`Jump to t=${pb.ts.toFixed(2)}s`}
+            >
+              {pb.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={separatorThinStyle} />
+
+      {debug.anchors ? (
+        <div style={anchorsBlockStyle}>
+          <AnchorRow name="L_sh"  pair={debug.anchors.left_shoulder} />
+          <AnchorRow name="R_sh"  pair={debug.anchors.right_shoulder} />
+          <AnchorRow name="L_hip" pair={debug.anchors.left_hip} />
+          <AnchorRow name="R_hip" pair={debug.anchors.right_hip} />
+          <AnchorRow name="Head"  pair={debug.anchors.head} />
+        </div>
+      ) : (
+        <div style={noDataStyle}>No anchors at current time</div>
+      )}
 
       <div style={separatorStyle} />
 
@@ -250,24 +340,34 @@ export function AnchorTuningPanel({
 
 // ── Subcomponents ──────────────────────────────────────────────────
 
+function SectionLabel({ label }: { label: string }) {
+  return <div style={sectionLabelStyle}>{label}</div>;
+}
+
 function SliderRow({
-  label, value, onChange,
+  label, value, onChange, min, max, step, bipolar,
 }: {
   label: string;
   value: number;
   onChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  min: number;
+  max: number;
+  step: number;
+  bipolar?: boolean;
 }) {
   return (
     <div style={sliderRowStyle}>
       <div style={sliderLabelRowStyle}>
         <span style={sliderLabelStyle}>{label}</span>
-        <span style={sliderValueStyle}>{value.toFixed(3)}</span>
+        <span style={sliderValueStyle}>
+          {bipolar && value > 0 ? '+' : ''}{value.toFixed(3)}
+        </span>
       </div>
       <input
         type="range"
-        min={SLIDER_MIN}
-        max={SLIDER_MAX}
-        step={SLIDER_STEP}
+        min={min}
+        max={max}
+        step={step}
         value={value}
         onChange={onChange}
         style={sliderInputStyle}
@@ -277,41 +377,29 @@ function SliderRow({
 }
 
 function AnchorRow({
-  name, pair, shiftedHidden,
+  name, pair,
 }: {
   name: string;
   pair: { raw: readonly [number, number, number] | null; shifted: readonly [number, number] | null };
-  shiftedHidden?: boolean;
 }) {
   return (
     <div style={anchorRowStyle}>
-      <div style={anchorNameStyle}>{name}</div>
-      <div style={anchorLineStyle}>
-        <span style={anchorLabelStyle}>raw</span>
-        <span style={debugValStyle}>
-          {pair.raw
-            ? `${Math.round(pair.raw[0])},${Math.round(pair.raw[1])} (${pair.raw[2].toFixed(2)})`
-            : '—'}
-        </span>
-      </div>
-      {!shiftedHidden && (
-        <div style={anchorLineStyle}>
-          <span style={anchorLabelStyle}>v7</span>
-          <span style={debugValStyle}>
-            {pair.shifted
-              ? `${Math.round(pair.shifted[0])},${Math.round(pair.shifted[1])}`
-              : '—'}
-          </span>
-        </div>
-      )}
+      <span style={anchorNameStyle}>{name}</span>
+      <span style={debugValStyle}>
+        {pair.raw
+          ? `${Math.round(pair.raw[0])},${Math.round(pair.raw[1])} (${pair.raw[2].toFixed(2)})`
+          : '—'}
+        {' → '}
+        {pair.shifted
+          ? `${Math.round(pair.shifted[0])},${Math.round(pair.shifted[1])}`
+          : '—'}
+      </span>
     </div>
   );
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-/** Find the frame whose timestamp is closest to `t`. Linear scan —
- * this is debug-only code and pose timelines are <1000 frames. */
 function findClosestFrameIdx(timeline: PoseTimeline, t: number): number {
   const frames = timeline.frames;
   if (frames.length === 0) return 0;
@@ -327,18 +415,18 @@ function findClosestFrameIdx(timeline: PoseTimeline, t: number): number {
   return bestIdx;
 }
 
-// ── Inline styles (single source, no separate CSS file) ────────────
+// ── Inline styles ──────────────────────────────────────────────────
 
 const panelStyle: CSSProperties = {
   position: 'absolute',
   top: 16,
   right: 16,
-  width: 280,
+  width: 320,
   maxHeight: 'calc(100% - 32px)',
   overflowY: 'auto',
   zIndex: 10,
-  background: 'rgba(0, 0, 0, 0.78)',
-  border: '1px solid rgba(255, 0, 255, 0.35)',
+  background: 'rgba(0, 0, 0, 0.82)',
+  border: '1px solid rgba(255, 0, 255, 0.4)',
   borderRadius: 6,
   padding: 12,
   color: '#fff',
@@ -346,7 +434,20 @@ const panelStyle: CSSProperties = {
   fontSize: 11,
   lineHeight: 1.4,
   pointerEvents: 'auto',
-  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
+};
+
+const panelStyleCollapsed: CSSProperties = {
+  ...panelStyle,
+  maxHeight: 'none',
+  overflowY: 'visible',
+};
+
+const headerRowStyle: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 8,
 };
 
 const titleStyle: CSSProperties = {
@@ -354,8 +455,34 @@ const titleStyle: CSSProperties = {
   fontWeight: 700,
   letterSpacing: 1,
   color: '#FF00FF',
-  marginBottom: 10,
+};
+
+const chevronBtnStyle: CSSProperties = {
+  background: 'transparent',
+  border: '1px solid rgba(255,0,255,0.4)',
+  color: '#FF00FF',
+  width: 22,
+  height: 22,
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontSize: 14,
+  fontWeight: 700,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   fontFamily: 'inherit',
+  padding: 0,
+  lineHeight: 1,
+};
+
+const sectionLabelStyle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: 0.8,
+  color: 'rgba(255,255,255,0.65)',
+  marginTop: 8,
+  marginBottom: 4,
+  textTransform: 'uppercase',
 };
 
 const noDataStyle: CSSProperties = {
@@ -365,31 +492,35 @@ const noDataStyle: CSSProperties = {
 };
 
 const sliderRowStyle: CSSProperties = {
-  marginBottom: 8,
+  marginBottom: 5,
+  paddingLeft: 8,
 };
 
 const sliderLabelRowStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'baseline',
-  marginBottom: 2,
+  marginBottom: 1,
 };
 
 const sliderLabelStyle: CSSProperties = {
-  fontSize: 11,
-  color: 'rgba(255,255,255,0.85)',
+  fontSize: 10,
+  color: 'rgba(255,255,255,0.7)',
+  fontWeight: 600,
 };
 
 const sliderValueStyle: CSSProperties = {
-  fontSize: 12,
+  fontSize: 11,
   color: '#FF00FF',
   fontWeight: 600,
+  fontVariantNumeric: 'tabular-nums',
 };
 
 const sliderInputStyle: CSSProperties = {
   width: '100%',
   accentColor: '#FF00FF',
   cursor: 'pointer',
+  height: 14,
 };
 
 const separatorStyle: CSSProperties = {
@@ -404,15 +535,11 @@ const separatorThinStyle: CSSProperties = {
   margin: '6px 0',
 };
 
-const debugBlockStyle: CSSProperties = {
-  fontSize: 11,
-};
-
 const debugRowStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'baseline',
-  marginBottom: 3,
+  marginBottom: 2,
 };
 
 const debugValStyle: CSSProperties = {
@@ -420,25 +547,49 @@ const debugValStyle: CSSProperties = {
   fontVariantNumeric: 'tabular-nums',
 };
 
-const anchorRowStyle: CSSProperties = {
+const phaseStepperStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(5, 1fr)',
+  gap: 3,
   marginTop: 6,
 };
 
-const anchorNameStyle: CSSProperties = {
-  fontSize: 11,
-  color: '#FF00FF',
+const phaseBtnStyle: CSSProperties = {
+  padding: '4px 0',
+  background: 'rgba(255,255,255,0.08)',
+  color: 'rgba(255,255,255,0.7)',
+  border: '1px solid rgba(255,255,255,0.15)',
+  borderRadius: 3,
+  fontSize: 9,
   fontWeight: 600,
-  marginBottom: 1,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  letterSpacing: 0.3,
 };
 
-const anchorLineStyle: CSSProperties = {
+const phaseBtnActiveStyle: CSSProperties = {
+  ...phaseBtnStyle,
+  background: 'rgba(255, 0, 255, 0.25)',
+  color: '#FF00FF',
+  borderColor: 'rgba(255, 0, 255, 0.6)',
+};
+
+const anchorsBlockStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+};
+
+const anchorRowStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
-  paddingLeft: 8,
+  fontSize: 10,
 };
 
-const anchorLabelStyle: CSSProperties = {
-  color: 'rgba(255,255,255,0.55)',
+const anchorNameStyle: CSSProperties = {
+  color: '#FF00FF',
+  fontWeight: 600,
+  marginRight: 6,
 };
 
 const copyBtnStyle: CSSProperties = {

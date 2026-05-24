@@ -287,11 +287,15 @@ export function SwingPlayer({
   // unchanged when the URL param is absent.
   const searchParams = useSearchParams();
   const tuneMode = searchParams?.get('tune') === 'anchors';
+  // PR-7c-frontend-v8.1: 10 per-anchor ratios — 8 paired (positive only)
+  // for L/R shoulders + L/R hips, 2 bipolar for HEAD. Defaults match
+  // VISUAL_ANCHOR_CONFIG so initial visual state matches production.
   const [tuningRatios, setTuningRatios] = useState({
-    SHOULDER_UP_RATIO:  0.10,
-    SHOULDER_OUT_RATIO: 0.05,
-    HIP_UP_RATIO:       0.04,
-    HIP_OUT_RATIO:      0.06,
+    LEFT_SHOULDER_UP:   0.10,  LEFT_SHOULDER_OUT:   0.05,
+    RIGHT_SHOULDER_UP:  0.10,  RIGHT_SHOULDER_OUT:  0.05,
+    LEFT_HIP_UP:        0.04,  LEFT_HIP_OUT:        0.06,
+    RIGHT_HIP_UP:       0.04,  RIGHT_HIP_OUT:       0.06,
+    HEAD_UP:            0.00,  HEAD_OUT:            0.00,
   });
 
   // PR-5 hotfix: per-disc rolling state so atan2 wrap-around (±π

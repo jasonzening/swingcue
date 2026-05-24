@@ -68,58 +68,89 @@ export interface RawKeypoint {
 export const ANCHOR_DOT_CONFIDENCE_MIN = 0.3;
 
 /**
- * PR-7c-frontend-v7: visual-anchor shift configuration.
+ * PR-7c-frontend-v8.1: visual-anchor shift configuration.
  *
- * All tuning happens here. Ratios are relative to shoulder-to-hip
- * distance (the natural per-frame body scale) so a single set of
- * constants works across subject sizes and view angles (face-on vs
- * down-the-line). To iterate visuals, change the 4 ratio numbers
- * below — the algorithm itself is fixed.
+ * Per-anchor independent ratios — L/R shoulders and L/R hips each have
+ * their own UP + OUT pair (8 paired ratios). In DTL view the near vs
+ * far shoulder need different offsets, so coupling them like v7/v8 did
+ * was a footgun.
  *
- * Defaults are the v7 first-pass values (tuned against b32e0f21
- * frame-by-frame visual review on 2026-05-23).
+ * Head has bipolar UP + OUT (signed shifts from nose, no out_sign
+ * computation). Because the head sits near body midline, computing
+ * out_sign from a proj that's ~0 causes frame-to-frame sign flips and
+ * visible lateral wobble during playback. Bipolar means user-controlled
+ * direction: negative HEAD_OUT shifts one way, positive the other.
+ *
+ * Ratios are still relative to shoulder-to-hip distance (auto-scales
+ * across subject sizes + view angles). Algorithm is fixed; only the
+ * 10 ratios + 1 stability threshold + 1 toggle below are tunable.
+ *
+ * TS-safety note (lesson from v8.0.2): declared via an EXPLICIT
+ * VisualAnchorConfig interface (not `as const`) so fields are general
+ * `number` / `boolean` types. Avoids the literal-type narrowing class
+ * of bugs when slider values flow into VISUAL_ANCHOR_CONFIG-shaped
+ * objects.
  */
+export interface VisualAnchorConfig {
+  // SHOULDERS — per-anchor UP + OUT. UP shifts toward acromion peak;
+  // OUT shifts laterally away from spine midline.
+  LEFT_SHOULDER_UP:    number;
+  LEFT_SHOULDER_OUT:   number;
+  RIGHT_SHOULDER_UP:   number;
+  RIGHT_SHOULDER_OUT:  number;
+
+  // HIPS — per-anchor UP + OUT. UP shifts toward waistband; OUT
+  // shifts laterally toward outer visible hip silhouette.
+  LEFT_HIP_UP:         number;
+  LEFT_HIP_OUT:        number;
+  RIGHT_HIP_UP:        number;
+  RIGHT_HIP_OUT:       number;
+
+  // HEAD — BIPOLAR UP + OUT (signed, no out_sign computation).
+  // Negative UP = down toward chin; positive UP = up toward forehead.
+  // Negative OUT = lateral one side; positive OUT = other side.
+  // 0.00 + 0.00 → head dot sits exactly at MediaPipe nose.
+  HEAD_UP:             number;
+  HEAD_OUT:            number;
+
+  // META — v7 still honors these.
+  HEAD_USE_NOSE:        boolean;  // future-iteration knob; currently unused
+                                  // (v7 always uses nose as head base)
+  MIN_BODY_AXIS_LEN_PX: number;   // degenerate-pose threshold
+}
+
 /**
- * PR-7c-frontend-v8.0.2: explicit override type used by the in-browser
- * tuning panel + the overlay in tune mode. Using `Partial<typeof
- * VISUAL_ANCHOR_CONFIG>` would NOT work — `as const` makes the config's
- * fields LITERAL types (0.10, 0.05, ...) so a general slider `number`
- * isn't assignable. Each field here is the general type (number /
- * boolean) so live slider values typecheck.
+ * PR-7c-frontend-v8.1: override type used by the in-browser tuning
+ * panel + the overlay in tune mode. Production callers omit it and
+ * use VISUAL_ANCHOR_CONFIG defaults.
+ *
+ * Now a simple `Partial<VisualAnchorConfig>` — the interface above
+ * uses general types so Partial works as expected (the v8.0.2
+ * literal-narrowing workaround is no longer needed).
  */
-export type VisualAnchorConfigOverride = {
-  SHOULDER_UP_RATIO?:    number;
-  SHOULDER_OUT_RATIO?:   number;
-  HIP_UP_RATIO?:         number;
-  HIP_OUT_RATIO?:        number;
-  HEAD_USE_NOSE?:        boolean;
-  MIN_BODY_AXIS_LEN_PX?: number;
-};
+export type VisualAnchorConfigOverride = Partial<VisualAnchorConfig>;
 
-export const VISUAL_ANCHOR_CONFIG = {
-  // SHOULDERS — MediaPipe glenohumeral (interior) → visible acromion peak.
-  // Up component dominates (the main correction is upward to the bony
-  // peak). Out component small (lateral correction is minor — joint
-  // sits roughly under the visible shoulder horizontally).
-  SHOULDER_UP_RATIO:  0.10,
-  SHOULDER_OUT_RATIO: 0.05,
+export const VISUAL_ANCHOR_CONFIG: VisualAnchorConfig = {
+  // SHOULDERS — v7 first-pass values, same UP/OUT for L+R (v8.1 default;
+  // user tunes per-anchor in the panel).
+  LEFT_SHOULDER_UP:    0.10,
+  LEFT_SHOULDER_OUT:   0.05,
+  RIGHT_SHOULDER_UP:   0.10,
+  RIGHT_SHOULDER_OUT:  0.05,
 
-  // HIPS — MediaPipe hip socket (interior) → outer visible hip silhouette
-  // at waistband level. Out component dominates (the main correction is
-  // lateral). Small up component pulls toward waistband, not crotch.
-  HIP_UP_RATIO:  0.04,
-  HIP_OUT_RATIO: 0.06,
+  // HIPS — v7 first-pass values.
+  LEFT_HIP_UP:         0.04,
+  LEFT_HIP_OUT:        0.06,
+  RIGHT_HIP_UP:        0.04,
+  RIGHT_HIP_OUT:       0.06,
 
-  // HEAD — direct MediaPipe nose. v7 ships this; halo fallback for
-  // side-profile or bent-over poses deferred to v8 if needed.
-  HEAD_USE_NOSE: true,
+  // HEAD — bipolar, default 0 + 0 → head dot = MediaPipe nose direct.
+  HEAD_UP:             0.00,
+  HEAD_OUT:            0.00,
 
-  // STABILITY — below this body axis length (in image px), the pose
-  // is degenerate (collapsed at finish, occluded torso, mis-detection).
-  // Return raw anchors without shift in that case to avoid amplifying
-  // a small-noise body-axis into wild visual drift.
+  HEAD_USE_NOSE:        true,
   MIN_BODY_AXIS_LEN_PX: 30,
-} as const;
+};
 
 /**
  * The output of `computeVisualAnchors`. All 5 fields are RawKeypoint
@@ -217,9 +248,8 @@ export function computeVisualAnchors(
   // both pass live slider values via this arg, so the shifted dots
   // animate in real time as the user drags ratios.
   //
-  // v8.0.2: explicit override type (not Partial<typeof VISUAL_ANCHOR_CONFIG>)
-  // so slider `number` values typecheck against the `as const` literal
-  // types in VISUAL_ANCHOR_CONFIG.
+  // v8.1: override type is now a simple Partial<VisualAnchorConfig>
+  // (the interface uses general types, no `as const` literal narrowing).
   overrideConfig?: VisualAnchorConfigOverride,
 ): VisualAnchors {
   const C = overrideConfig
@@ -274,12 +304,29 @@ export function computeVisualAnchors(
     ];
   };
 
+  // v8.1: bipolar head shift — applies HEAD_UP / HEAD_OUT directly
+  // from nose in body-axis frame, with NO out_sign computation. Avoids
+  // the lateral-wobble bug that proj-sign-based shift would create at
+  // head positions sitting near the body midline (proj ≈ 0).
+  // Negative HEAD_OUT → one direction, positive → the other.
+  // HEAD_UP=HEAD_OUT=0 → head dot = MediaPipe nose exactly.
+  const headXY: readonly [number, number] | null = nose.xy
+    ? [
+        nose.xy[0]
+          + up_x   * spine_len * C.HEAD_UP
+          + perp_x * spine_len * C.HEAD_OUT,
+        nose.xy[1]
+          + up_y   * spine_len * C.HEAD_UP
+          + perp_y * spine_len * C.HEAD_OUT,
+      ]
+    : null;
+
   return {
     left_shoulder: {
       xy: shift(
         left_shoulder.xy[0], left_shoulder.xy[1],
         sh_mid_x, sh_mid_y,
-        C.SHOULDER_UP_RATIO, C.SHOULDER_OUT_RATIO,
+        C.LEFT_SHOULDER_UP, C.LEFT_SHOULDER_OUT,
       ),
       confidence: left_shoulder.confidence,
     },
@@ -287,7 +334,7 @@ export function computeVisualAnchors(
       xy: shift(
         right_shoulder.xy[0], right_shoulder.xy[1],
         sh_mid_x, sh_mid_y,
-        C.SHOULDER_UP_RATIO, C.SHOULDER_OUT_RATIO,
+        C.RIGHT_SHOULDER_UP, C.RIGHT_SHOULDER_OUT,
       ),
       confidence: right_shoulder.confidence,
     },
@@ -295,7 +342,7 @@ export function computeVisualAnchors(
       xy: shift(
         left_hip.xy[0], left_hip.xy[1],
         hip_mid_x, hip_mid_y,
-        C.HIP_UP_RATIO, C.HIP_OUT_RATIO,
+        C.LEFT_HIP_UP, C.LEFT_HIP_OUT,
       ),
       confidence: left_hip.confidence,
     },
@@ -303,10 +350,10 @@ export function computeVisualAnchors(
       xy: shift(
         right_hip.xy[0], right_hip.xy[1],
         hip_mid_x, hip_mid_y,
-        C.HIP_UP_RATIO, C.HIP_OUT_RATIO,
+        C.RIGHT_HIP_UP, C.RIGHT_HIP_OUT,
       ),
       confidence: right_hip.confidence,
     },
-    head: nose,
+    head: { xy: headXY, confidence: nose.confidence },
   };
 }
