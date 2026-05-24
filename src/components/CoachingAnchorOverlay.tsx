@@ -39,8 +39,8 @@ import {
   poseRawAnchorsAtTime,
   computeVisualAnchors,
   ANCHOR_DOT_CONFIDENCE_MIN,
-  VISUAL_ANCHOR_CONFIG,
   type RawKeypoint,
+  type VisualAnchorConfigOverride,
 } from '@/lib/coaching/poseTimelineAnchors';
 import { computeAnchorOpacity } from '@/lib/coaching/phaseOpacity';
 
@@ -50,7 +50,7 @@ type Props = {
   videoEl: HTMLVideoElement | null;
   /** PR-7c-frontend-v8 tune-mode: override the 4 production ratios
    * with live slider state. Production mode omits this prop. */
-  tuningRatios?: Partial<typeof VISUAL_ANCHOR_CONFIG>;
+  tuningRatios?: VisualAnchorConfigOverride;
   /** PR-7c-frontend-v8 tune-mode: render 4 raw MediaPipe shoulder/hip
    * dots in green at lower opacity as a "before" reference, so the
    * user can visually compare raw vs shifted while dragging sliders. */

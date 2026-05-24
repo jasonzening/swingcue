@@ -79,6 +79,23 @@ export const ANCHOR_DOT_CONFIDENCE_MIN = 0.3;
  * Defaults are the v7 first-pass values (tuned against b32e0f21
  * frame-by-frame visual review on 2026-05-23).
  */
+/**
+ * PR-7c-frontend-v8.0.2: explicit override type used by the in-browser
+ * tuning panel + the overlay in tune mode. Using `Partial<typeof
+ * VISUAL_ANCHOR_CONFIG>` would NOT work — `as const` makes the config's
+ * fields LITERAL types (0.10, 0.05, ...) so a general slider `number`
+ * isn't assignable. Each field here is the general type (number /
+ * boolean) so live slider values typecheck.
+ */
+export type VisualAnchorConfigOverride = {
+  SHOULDER_UP_RATIO?:    number;
+  SHOULDER_OUT_RATIO?:   number;
+  HIP_UP_RATIO?:         number;
+  HIP_OUT_RATIO?:        number;
+  HEAD_USE_NOSE?:        boolean;
+  MIN_BODY_AXIS_LEN_PX?: number;
+};
+
 export const VISUAL_ANCHOR_CONFIG = {
   // SHOULDERS — MediaPipe glenohumeral (interior) → visible acromion peak.
   // Up component dominates (the main correction is upward to the bony
@@ -199,7 +216,11 @@ export function computeVisualAnchors(
   // use VISUAL_ANCHOR_CONFIG. The tuning panel + overlay in tune mode
   // both pass live slider values via this arg, so the shifted dots
   // animate in real time as the user drags ratios.
-  overrideConfig?: Partial<typeof VISUAL_ANCHOR_CONFIG>,
+  //
+  // v8.0.2: explicit override type (not Partial<typeof VISUAL_ANCHOR_CONFIG>)
+  // so slider `number` values typecheck against the `as const` literal
+  // types in VISUAL_ANCHOR_CONFIG.
+  overrideConfig?: VisualAnchorConfigOverride,
 ): VisualAnchors {
   const C = overrideConfig
     ? { ...VISUAL_ANCHOR_CONFIG, ...overrideConfig }

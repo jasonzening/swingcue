@@ -37,7 +37,9 @@ type Ratios = {
 
 type Props = {
   videoEl: HTMLVideoElement | null;
-  poseTimeline: PoseTimeline | null;
+  // SwingPlayer's poseTimeline is `PoseTimeline | null | undefined`
+  // (optional prop with explicit null fallback). Accept all 3 here.
+  poseTimeline: PoseTimeline | null | undefined;
   phaseMarkers: PhaseMarkers;
   durationSec: number;
   ratios: Ratios;
