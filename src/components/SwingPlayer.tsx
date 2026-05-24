@@ -99,6 +99,10 @@ const PERSPECTIVE_TILT_DEG = 25;
 const PERSPECTIVE_TILT_RAD = (PERSPECTIVE_TILT_DEG * Math.PI) / 180;
 
 interface Props {
+  /** PR-7c-frontend-v9: video UUID from /result/[id] route. Used by
+   * CoachingAnchorOverlay + AnchorTuningPanel for per-video keyframe
+   * lookup in VIDEO_KEYFRAMES. */
+  videoId: string;
   videoUrl: string;
   timeline: OverlayTimeline;
   phases: PhaseMarkers;        // in seconds
@@ -242,6 +246,7 @@ function median(samples: number[]): number {
 }
 
 export function SwingPlayer({
+  videoId,
   videoUrl,
   timeline,
   phases,
@@ -645,6 +650,7 @@ export function SwingPlayer({
             SkeletonOverlay visually but reads the SAME underlying data. */}
         {enhancedMode && poseTimeline && (
           <CoachingAnchorOverlay
+            videoId={videoId}
             poseTimeline={poseTimeline}
             phaseMarkers={phases}
             videoEl={videoRef.current}
@@ -659,6 +665,7 @@ export function SwingPlayer({
         {/* PR-7c-frontend-v8: tuning panel (?tune=anchors only). */}
         {tuneMode && (
           <AnchorTuningPanel
+            videoId={videoId}
             videoEl={videoRef.current}
             poseTimeline={poseTimeline}
             phaseMarkers={phases}

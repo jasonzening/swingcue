@@ -1,27 +1,42 @@
 'use client';
 
 /**
- * AnchorTuningPanel — PR-7c-frontend-v8.1 self-service ratio tuning.
+ * AnchorTuningPanel — PR-7c-frontend-v9 keyframe interpolation tuning.
  *
  * Renders ONLY when SwingPlayer sees `?tune=anchors` in the URL.
  *
- * v8 → v8.1 changes (per-anchor decoupling + tuning flow improvements):
- *   - 4 coupled ratios → 10 per-anchor independent ratios
- *     (L_SHOULDER UP/OUT, R_SHOULDER UP/OUT, L_HIP UP/OUT, R_HIP UP/OUT,
- *      HEAD UP/OUT)
- *   - Head sliders are BIPOLAR (-0.10 to +0.10) — direct signed shift,
- *     no out_sign computation. Avoids the proj-near-0 wobble bug.
- *   - 5-button phase stepper jumps videoEl.currentTime to setup / top /
- *     transition / impact / finish timestamps. Validates ratios across
- *     phases without manual scrubbing.
- *   - Collapse chevron in header shrinks panel to title bar only.
- *   - Width 280 → 320 to fit grouped layout.
+ * v8.1 → v9 changes (keyframe architecture):
+ *   - PHASE-INVARIANT ASSUMPTION FALSIFIED: Jason's 5-snapshot v8.1.1
+ *     data showed ratios varying 3-8x across phases. Single-set tuning
+ *     can't cover the swing.
+ *   - New: per-video keyframe array. User saves N keyframes at chosen
+ *     frame indices; production overlay lerps between them per frame.
+ *   - REMOVED: 5-button phase stepper (DB phase data wrong for many
+ *     videos — PR-3.1 backend bug deferred). Replaced with
+ *     "Jump to frame [N] [GO]" input.
+ *   - ADDED: keyframe list UI with [jump] [edit] [×] per row, plus
+ *     "Save current frame as keyframe" + explicit "Load interp at
+ *     current frame" button.
+ *   - Slider ranges bumped: paired 0-0.25 → 0-0.40, head ±0.25 → ±0.40
+ *     (Jason hit max on multiple values).
+ *   - Copy format now outputs entire VIDEO_KEYFRAMES[video_id] array.
  *
- * Goals:
- *   - Validate ratios at multiple swing phases (DTL perspective shifts
- *     with body rotation; one-phase tuning misses other-phase drift).
- *   - Per-anchor independence: near vs far shoulder in DTL view need
- *     different shifts. Coupled tuning was a footgun.
+ * Interaction model (Decision C from v9 surface):
+ *   - Sliders do NOT auto-update on video scrub. Explicit user control.
+ *   - "Load interp at current frame" button pulls keyframe-interpolated
+ *     values into sliders (clears any unsaved drag state).
+ *   - Slider drag updates overlay LIVE (matches v8.1 tune-mode UX).
+ *   - Save button captures (currentFrame, currentRatios) as keyframe.
+ *   - Save at existing frame_idx: REPLACES with confirm.
+ *   - Edit button: loads ratios + seeks to that frame (both actions).
+ *   - Delete button: instant, no confirm (Copy = backup).
+ *
+ * State source-of-truth:
+ *   - keyframes[] lives in this component's React state
+ *   - Initialized from VIDEO_KEYFRAMES[videoId] on mount (deep clone)
+ *   - Production code reads from the in-source VIDEO_KEYFRAMES const;
+ *     this panel's edits never round-trip to backend. Jason copies →
+ *     pastes to chat → Claude commits to source.
  *
  * Production impact: zero. Lazy-loaded by SwingPlayer via `next/dynamic`,
  * so the chunk is only fetched when the URL param is present.
@@ -33,8 +48,17 @@ import { getCurrentPhase } from '@/lib/overlay/playerSync';
 import {
   poseRawAnchorsAtTime,
   computeVisualAnchors,
+  findClosestFrameIdx,
+  getRatiosAtFrame,
+  VIDEO_KEYFRAMES,
+  DEFAULT_RATIOS,
+  type AnchorKeyframe,
+  type VisualAnchorConfig,
 } from '@/lib/coaching/poseTimelineAnchors';
 
+// The 10 ratios that sliders control. Mirror of VisualAnchorConfig minus
+// the 2 meta fields (HEAD_USE_NOSE, MIN_BODY_AXIS_LEN_PX) which aren't
+// user-tunable in the panel.
 type Ratios = {
   LEFT_SHOULDER_UP:    number;  LEFT_SHOULDER_OUT:   number;
   RIGHT_SHOULDER_UP:   number;  RIGHT_SHOULDER_OUT:  number;
@@ -46,6 +70,7 @@ type Ratios = {
 type RatioKey = keyof Ratios;
 
 type Props = {
+  videoId: string;
   videoEl: HTMLVideoElement | null;
   poseTimeline: PoseTimeline | null | undefined;
   phaseMarkers: PhaseMarkers;
@@ -54,19 +79,17 @@ type Props = {
   onRatiosChange: (next: Ratios) => void;
 };
 
-// Paired (positive-only) sliders: 0 to 0.25, step 0.005.
+// v9: bumped from v8.1's 0-0.25 paired range. Jason hit max during top
+// phase tuning on shoulder/hip out ratios.
 const PAIRED_MIN = 0;
-const PAIRED_MAX = 0.25;
+const PAIRED_MAX = 0.40;
 const PAIRED_STEP = 0.005;
 
-// Head sliders are BIPOLAR: -0.25 to +0.25 (extended from v8.1's ±0.10
-// after Jason hit max during setup tuning). Negative = down/one-side,
-// positive = up/other-side. Center 0.0 = nose direct.
-const HEAD_MIN = -0.25;
-const HEAD_MAX = 0.25;
+// v9: bumped from v8.1.1's ±0.25. Jason saturated multiple HEAD values.
+const HEAD_MIN = -0.40;
+const HEAD_MAX = 0.40;
 const HEAD_STEP = 0.005;
 
-/** Frame display info — null fields when video/pose isn't ready yet. */
 type DebugFrame = {
   frameIdx: number | null;
   totalFrames: number | null;
@@ -86,13 +109,30 @@ const EMPTY_DEBUG: DebugFrame = {
   anchors: null,
 };
 
-type PhaseButton = {
-  key: string;
-  label: string;
-  ts: number;
-};
+/** Strip the 2 meta fields from a VisualAnchorConfig to get just the
+ * 10 user-tunable ratios. */
+function configToRatios(c: VisualAnchorConfig): Ratios {
+  return {
+    LEFT_SHOULDER_UP: c.LEFT_SHOULDER_UP,   LEFT_SHOULDER_OUT: c.LEFT_SHOULDER_OUT,
+    RIGHT_SHOULDER_UP: c.RIGHT_SHOULDER_UP, RIGHT_SHOULDER_OUT: c.RIGHT_SHOULDER_OUT,
+    LEFT_HIP_UP: c.LEFT_HIP_UP,             LEFT_HIP_OUT: c.LEFT_HIP_OUT,
+    RIGHT_HIP_UP: c.RIGHT_HIP_UP,           RIGHT_HIP_OUT: c.RIGHT_HIP_OUT,
+    HEAD_UP: c.HEAD_UP,                     HEAD_OUT: c.HEAD_OUT,
+  };
+}
+
+/** Build a full VisualAnchorConfig from panel ratios + the 2 meta
+ * fields (carried over from DEFAULT_RATIOS — panel doesn't tune them). */
+function ratiosToConfig(r: Ratios): VisualAnchorConfig {
+  return {
+    ...r,
+    HEAD_USE_NOSE: DEFAULT_RATIOS.HEAD_USE_NOSE,
+    MIN_BODY_AXIS_LEN_PX: DEFAULT_RATIOS.MIN_BODY_AXIS_LEN_PX,
+  };
+}
 
 export function AnchorTuningPanel({
+  videoId,
   videoEl,
   poseTimeline,
   phaseMarkers,
@@ -103,6 +143,18 @@ export function AnchorTuningPanel({
   const [debug, setDebug] = useState<DebugFrame>(EMPTY_DEBUG);
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [jumpInput, setJumpInput] = useState('');
+
+  // v9 keyframe state: deep-cloned from VIDEO_KEYFRAMES[videoId] on
+  // mount so panel edits never mutate the production const.
+  const [keyframes, setKeyframes] = useState<AnchorKeyframe[]>(() => {
+    const source = VIDEO_KEYFRAMES[videoId] ?? [];
+    return source.map((kf) => ({
+      frame_idx: kf.frame_idx,
+      ratios: { ...kf.ratios },
+    }));
+  });
+
   const ratiosRef = useRef(ratios);
   ratiosRef.current = ratios;
 
@@ -134,7 +186,15 @@ export function AnchorTuningPanel({
         return;
       }
 
-      const visual = computeVisualAnchors(raw, ratiosRef.current);
+      const frameIdx = findClosestFrameIdx(poseTimeline, t);
+      // Debug overlay in panel uses live slider override (matches what
+      // the production overlay would render in tune mode at this frame).
+      const visual = computeVisualAnchors(
+        raw,
+        frameIdx,
+        videoId,
+        ratiosToConfig(ratiosRef.current),
+      );
 
       const sh = raw.left_shoulder.xy && raw.right_shoulder.xy
         ? Math.hypot(
@@ -144,8 +204,6 @@ export function AnchorTuningPanel({
               - (raw.left_shoulder.xy[1] + raw.right_shoulder.xy[1]) / 2,
           )
         : null;
-
-      const frameIdx = findClosestFrameIdx(poseTimeline, t);
 
       const pack = (
         rawKp: { xy: readonly [number, number] | null; confidence: number },
@@ -175,9 +233,9 @@ export function AnchorTuningPanel({
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [videoEl, poseTimeline, phaseMarkers, durationSec]);
+  }, [videoEl, poseTimeline, phaseMarkers, durationSec, videoId]);
 
-  // Header — always visible, even when collapsed.
+  // Header — always visible.
   const renderHeader = () => (
     <div style={headerRowStyle}>
       <span style={titleStyle}>ANCHOR TUNING</span>
@@ -218,70 +276,94 @@ export function AnchorTuningPanel({
       onRatiosChange({ ...ratios, [key]: next });
     };
 
+  // ── Frame navigation ───────────────────────────────────────────
+
+  const seekToFrame = (idx: number) => {
+    if (!videoEl || !poseTimeline) return;
+    const clamped = Math.max(0, Math.min(idx, poseTimeline.frames.length - 1));
+    const ts = poseTimeline.frames[clamped]?.ts;
+    if (ts != null) videoEl.currentTime = ts;
+  };
+
+  const handleJumpGo = () => {
+    const n = parseInt(jumpInput, 10);
+    if (Number.isFinite(n)) seekToFrame(n);
+  };
+
+  const handleLoadInterp = () => {
+    if (debug.frameIdx == null) return;
+    const interpConfig = getRatiosAtFrame(debug.frameIdx, keyframes);
+    onRatiosChange(configToRatios(interpConfig));
+  };
+
+  // ── Keyframe operations ────────────────────────────────────────
+
+  const handleSaveKeyframe = () => {
+    if (debug.frameIdx == null) return;
+    const newConfig = ratiosToConfig(ratios);
+    const existingIdx = keyframes.findIndex((k) => k.frame_idx === debug.frameIdx);
+    if (existingIdx >= 0) {
+      const confirmed = window.confirm(
+        `Replace keyframe at frame ${debug.frameIdx} with current slider values?`,
+      );
+      if (!confirmed) return;
+      const next = [...keyframes];
+      next[existingIdx] = { frame_idx: debug.frameIdx, ratios: newConfig };
+      setKeyframes(next);
+    } else {
+      setKeyframes(
+        [...keyframes, { frame_idx: debug.frameIdx, ratios: newConfig }]
+          .sort((a, b) => a.frame_idx - b.frame_idx),
+      );
+    }
+  };
+
+  const handleEditKeyframe = (frameIdx: number) => {
+    const kf = keyframes.find((k) => k.frame_idx === frameIdx);
+    if (!kf) return;
+    onRatiosChange(configToRatios(kf.ratios));
+    seekToFrame(frameIdx);
+  };
+
+  const handleDeleteKeyframe = (frameIdx: number) => {
+    setKeyframes(keyframes.filter((k) => k.frame_idx !== frameIdx));
+  };
+
+  // ── Copy: full VIDEO_KEYFRAMES[videoId] array ─────────────────
+
   const handleCopy = async () => {
     const fmt = (n: number) => n.toFixed(3);
-
-    // v8.1.1: extract video_id from /result/[id] URL pathname.
-    // Panel is lazy-loaded via next/dynamic with ssr:false so window
-    // is always defined when handleCopy fires.
-    const videoId =
-      typeof window !== 'undefined'
-        ? window.location.pathname.split('/').filter(Boolean).pop() ?? 'unknown'
-        : 'unknown';
-    const t = videoEl ? videoEl.currentTime : 0;
-
-    // Per-anchor lines: raw "x.x, y.y" with 1-decimal MediaPipe precision +
-    // conf, then "→ x, y" with rounded tuned coords. Head shows "nose" prefix
-    // so its raw source is unambiguous.
-    const anchorLine = (
-      name: string,
-      pair: DebugFrame['anchors'] extends Record<string, infer V> | null ? V : never,
-      headNoseLabel = false,
-    ): string => {
-      const raw = pair.raw
-        ? `(${pair.raw[0].toFixed(1)}, ${pair.raw[1].toFixed(1)}) conf=${pair.raw[2].toFixed(2)}`
-        : '—';
-      const shifted = pair.shifted
-        ? `(${Math.round(pair.shifted[0])}, ${Math.round(pair.shifted[1])})`
-        : '—';
-      const prefix = headNoseLabel ? 'nose ' : '';
-      return `//   ${name.padEnd(6)} ${prefix}${raw}  →  ${shifted}`;
-    };
-
-    const a = debug.anchors;
-    const anchorBlock = a
-      ? [
-          anchorLine('L_sh',  a.left_shoulder),
-          anchorLine('R_sh',  a.right_shoulder),
-          anchorLine('L_hip', a.left_hip),
-          anchorLine('R_hip', a.right_hip),
-          anchorLine('Head',  a.head, true),
-        ].join('\n')
-      : '//   (no pose data at this frame)';
-
+    const sorted = [...keyframes].sort((a, b) => a.frame_idx - b.frame_idx);
+    const ratiosBlock = (r: VisualAnchorConfig) =>
+      [
+        `      LEFT_SHOULDER_UP:    ${fmt(r.LEFT_SHOULDER_UP)},`,
+        `      LEFT_SHOULDER_OUT:   ${fmt(r.LEFT_SHOULDER_OUT)},`,
+        `      RIGHT_SHOULDER_UP:   ${fmt(r.RIGHT_SHOULDER_UP)},`,
+        `      RIGHT_SHOULDER_OUT:  ${fmt(r.RIGHT_SHOULDER_OUT)},`,
+        `      LEFT_HIP_UP:         ${fmt(r.LEFT_HIP_UP)},`,
+        `      LEFT_HIP_OUT:        ${fmt(r.LEFT_HIP_OUT)},`,
+        `      RIGHT_HIP_UP:        ${fmt(r.RIGHT_HIP_UP)},`,
+        `      RIGHT_HIP_OUT:       ${fmt(r.RIGHT_HIP_OUT)},`,
+        `      HEAD_UP:             ${fmt(r.HEAD_UP)},`,
+        `      HEAD_OUT:            ${fmt(r.HEAD_OUT)},`,
+      ].join('\n');
+    const body = sorted
+      .map(
+        (kf) =>
+          `    { frame_idx: ${kf.frame_idx}, ratios: {\n${ratiosBlock(kf.ratios)}\n    }},`,
+      )
+      .join('\n');
     const text =
       '// ────────────────────────────────────────────────\n'
-      + '// SwingCue Anchor Tuning Snapshot\n'
+      + '// SwingCue Anchor Keyframes\n'
       + '// ────────────────────────────────────────────────\n'
-      + `// video_id:  ${videoId}\n`
-      + `// frame:     ${debug.frameIdx ?? '—'} / ${debug.totalFrames ?? '—'}  (t=${t.toFixed(3)}s)\n`
-      + `// phase:     ${debug.phase}\n`
-      + `// spine_len: ${debug.spineLen != null ? Math.round(debug.spineLen) + ' px' : '—'}\n`
+      + `// video_id:        ${videoId}\n`
+      + `// total_keyframes: ${sorted.length}\n`
       + '//\n'
-      + '// Anchor positions at this frame (raw → v8 tuned):\n'
-      + anchorBlock + '\n'
-      + '//\n'
-      + '// Tuned ratios (paste into VISUAL_ANCHOR_CONFIG):\n'
-      + `  LEFT_SHOULDER_UP:    ${fmt(ratios.LEFT_SHOULDER_UP)},\n`
-      + `  LEFT_SHOULDER_OUT:   ${fmt(ratios.LEFT_SHOULDER_OUT)},\n`
-      + `  RIGHT_SHOULDER_UP:   ${fmt(ratios.RIGHT_SHOULDER_UP)},\n`
-      + `  RIGHT_SHOULDER_OUT:  ${fmt(ratios.RIGHT_SHOULDER_OUT)},\n`
-      + `  LEFT_HIP_UP:         ${fmt(ratios.LEFT_HIP_UP)},\n`
-      + `  LEFT_HIP_OUT:        ${fmt(ratios.LEFT_HIP_OUT)},\n`
-      + `  RIGHT_HIP_UP:        ${fmt(ratios.RIGHT_HIP_UP)},\n`
-      + `  RIGHT_HIP_OUT:       ${fmt(ratios.RIGHT_HIP_OUT)},\n`
-      + `  HEAD_UP:             ${fmt(ratios.HEAD_UP)},\n`
-      + `  HEAD_OUT:            ${fmt(ratios.HEAD_OUT)},\n`;
+      + '// Paste into VIDEO_KEYFRAMES[video_id]:\n'
+      + '[\n'
+      + body + '\n'
+      + ']\n';
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -291,26 +373,13 @@ export function AnchorTuningPanel({
     }
   };
 
-  // Phase stepper buttons read timestamps from phaseMarkers and seek
-  // videoEl.currentTime on click. Active phase (matches debug.phase)
-  // gets a magenta highlight.
-  const phaseButtons: PhaseButton[] = [
-    { key: 'setup',      label: 'SETUP',  ts: phaseMarkers.setupTime },
-    { key: 'top',        label: 'TOP',    ts: phaseMarkers.topTime },
-    { key: 'transition', label: 'TRANS',  ts: phaseMarkers.transitionTime },
-    { key: 'impact',     label: 'IMPACT', ts: phaseMarkers.impactTime },
-    { key: 'finish',     label: 'FINISH', ts: phaseMarkers.finishTime },
-  ];
-
-  const handlePhaseClick = (ts: number) => {
-    if (videoEl) videoEl.currentTime = ts;
-  };
+  const sortedKfs = [...keyframes].sort((a, b) => a.frame_idx - b.frame_idx);
 
   return (
     <div className="atp-panel" style={panelStyle}>
       {renderHeader()}
 
-      <SectionLabel label="L SHOULDER" />
+      <SectionLabel label="L SHOULDER  (0 → 0.40)" />
       <SliderRow label="UP"  value={ratios.LEFT_SHOULDER_UP}  onChange={handleSlider('LEFT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.LEFT_SHOULDER_OUT} onChange={handleSlider('LEFT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
@@ -326,7 +395,7 @@ export function AnchorTuningPanel({
       <SliderRow label="UP"  value={ratios.RIGHT_HIP_UP}  onChange={handleSlider('RIGHT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.RIGHT_HIP_OUT} onChange={handleSlider('RIGHT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="HEAD  (bipolar ±0.25)" />
+      <SectionLabel label="HEAD  (bipolar ±0.40)" />
       <SliderRow label="UP"  value={ratios.HEAD_UP}  onChange={handleSlider('HEAD_UP')}  min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
       <SliderRow label="OUT" value={ratios.HEAD_OUT} onChange={handleSlider('HEAD_OUT')} min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
 
@@ -350,21 +419,50 @@ export function AnchorTuningPanel({
         <span style={debugValStyle}>{debug.phase}</span>
       </div>
 
-      <div style={phaseStepperStyle}>
-        {phaseButtons.map((pb) => {
-          const isActive = pb.key === debug.phase;
-          return (
-            <button
-              key={pb.key}
-              onClick={() => handlePhaseClick(pb.ts)}
-              style={isActive ? phaseBtnActiveStyle : phaseBtnStyle}
-              title={`Jump to t=${pb.ts.toFixed(2)}s`}
-            >
-              {pb.label}
-            </button>
-          );
-        })}
+      <div style={frameJumpRowStyle}>
+        <span style={frameJumpLabelStyle}>Jump frame</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={jumpInput}
+          onChange={(e) => setJumpInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleJumpGo(); }}
+          placeholder="N"
+          style={frameJumpInputStyle}
+        />
+        <button onClick={handleJumpGo} style={frameJumpBtnStyle}>GO</button>
       </div>
+
+      <button onClick={handleLoadInterp} style={loadInterpBtnStyle}>
+        LOAD INTERP AT CURRENT FRAME
+      </button>
+
+      <div style={separatorThinStyle} />
+
+      {/* Keyframe list */}
+      <div style={kfSectionHeaderStyle}>
+        KEYFRAMES ({sortedKfs.length})
+      </div>
+      {sortedKfs.length === 0 ? (
+        <div style={noDataStyle}>(no keyframes yet — save current frame to start)</div>
+      ) : (
+        <div style={kfListStyle}>
+          {sortedKfs.map((kf) => {
+            const isCurrent = debug.frameIdx === kf.frame_idx;
+            return (
+              <div key={kf.frame_idx} style={isCurrent ? kfRowActiveStyle : kfRowStyle}>
+                <span style={kfFrameStyle}>f={kf.frame_idx}</span>
+                <button onClick={() => seekToFrame(kf.frame_idx)} style={kfBtnStyle} title="Jump">↪</button>
+                <button onClick={() => handleEditKeyframe(kf.frame_idx)} style={kfBtnStyle} title="Edit (load + jump)">✎</button>
+                <button onClick={() => handleDeleteKeyframe(kf.frame_idx)} style={kfBtnDangerStyle} title="Delete">×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <button onClick={handleSaveKeyframe} style={saveKfBtnStyle}>
+        + SAVE CURRENT FRAME AS KEYFRAME
+      </button>
 
       <div style={separatorThinStyle} />
 
@@ -383,7 +481,7 @@ export function AnchorTuningPanel({
       <div style={separatorStyle} />
 
       <button onClick={handleCopy} style={copyBtnStyle}>
-        {copied ? 'COPIED!' : 'COPY VISUAL_ANCHOR_CONFIG'}
+        {copied ? 'COPIED!' : 'COPY VIDEO_KEYFRAMES ARRAY'}
       </button>
     </div>
   );
@@ -447,23 +545,6 @@ function AnchorRow({
       </span>
     </div>
   );
-}
-
-// ── Helpers ────────────────────────────────────────────────────────
-
-function findClosestFrameIdx(timeline: PoseTimeline, t: number): number {
-  const frames = timeline.frames;
-  if (frames.length === 0) return 0;
-  let bestIdx = 0;
-  let bestDelta = Math.abs(frames[0].ts - t);
-  for (let i = 1; i < frames.length; i++) {
-    const d = Math.abs(frames[i].ts - t);
-    if (d < bestDelta) {
-      bestDelta = d;
-      bestIdx = i;
-    }
-  }
-  return bestIdx;
 }
 
 // ── Inline styles ──────────────────────────────────────────────────
@@ -540,6 +621,7 @@ const noDataStyle: CSSProperties = {
   color: 'rgba(255,255,255,0.5)',
   fontStyle: 'italic',
   padding: '6px 0',
+  fontSize: 10,
 };
 
 const sliderRowStyle: CSSProperties = {
@@ -598,31 +680,138 @@ const debugValStyle: CSSProperties = {
   fontVariantNumeric: 'tabular-nums',
 };
 
-const phaseStepperStyle: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(5, 1fr)',
-  gap: 3,
+const frameJumpRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
   marginTop: 6,
+  marginBottom: 4,
 };
 
-const phaseBtnStyle: CSSProperties = {
-  padding: '4px 0',
-  background: 'rgba(255,255,255,0.08)',
+const frameJumpLabelStyle: CSSProperties = {
+  fontSize: 10,
   color: 'rgba(255,255,255,0.7)',
-  border: '1px solid rgba(255,255,255,0.15)',
+  fontWeight: 600,
+  minWidth: 70,
+};
+
+const frameJumpInputStyle: CSSProperties = {
+  flex: 1,
+  background: 'rgba(255,255,255,0.06)',
+  border: '1px solid rgba(255,255,255,0.18)',
   borderRadius: 3,
-  fontSize: 9,
+  color: '#fff',
+  fontSize: 11,
+  padding: '3px 6px',
+  fontFamily: 'inherit',
+  fontVariantNumeric: 'tabular-nums',
+};
+
+const frameJumpBtnStyle: CSSProperties = {
+  padding: '3px 10px',
+  background: 'rgba(255,0,255,0.18)',
+  color: '#FF00FF',
+  border: '1px solid rgba(255,0,255,0.5)',
+  borderRadius: 3,
+  fontSize: 10,
+  fontWeight: 700,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  letterSpacing: 0.4,
+};
+
+const loadInterpBtnStyle: CSSProperties = {
+  width: '100%',
+  padding: '5px 8px',
+  background: 'rgba(255,255,255,0.06)',
+  color: 'rgba(255,255,255,0.85)',
+  border: '1px solid rgba(255,255,255,0.18)',
+  borderRadius: 3,
+  fontSize: 10,
   fontWeight: 600,
   fontFamily: 'inherit',
   cursor: 'pointer',
-  letterSpacing: 0.3,
+  letterSpacing: 0.4,
+  marginTop: 4,
 };
 
-const phaseBtnActiveStyle: CSSProperties = {
-  ...phaseBtnStyle,
-  background: 'rgba(255, 0, 255, 0.25)',
-  color: '#FF00FF',
-  borderColor: 'rgba(255, 0, 255, 0.6)',
+const kfSectionHeaderStyle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: 0.8,
+  color: 'rgba(255,255,255,0.85)',
+  marginTop: 4,
+  marginBottom: 4,
+  textTransform: 'uppercase',
+};
+
+const kfListStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  marginBottom: 6,
+};
+
+const kfRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '3px 6px',
+  background: 'rgba(255,255,255,0.04)',
+  borderRadius: 3,
+  fontSize: 10,
+};
+
+const kfRowActiveStyle: CSSProperties = {
+  ...kfRowStyle,
+  background: 'rgba(255,0,255,0.18)',
+  outline: '1px solid rgba(255,0,255,0.5)',
+};
+
+const kfFrameStyle: CSSProperties = {
+  flex: 1,
+  color: '#fff',
+  fontVariantNumeric: 'tabular-nums',
+  fontWeight: 600,
+};
+
+const kfBtnStyle: CSSProperties = {
+  width: 22,
+  height: 22,
+  padding: 0,
+  background: 'rgba(255,255,255,0.08)',
+  color: 'rgba(255,255,255,0.85)',
+  border: '1px solid rgba(255,255,255,0.18)',
+  borderRadius: 3,
+  fontSize: 11,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  lineHeight: 1,
+};
+
+const kfBtnDangerStyle: CSSProperties = {
+  ...kfBtnStyle,
+  background: 'rgba(255, 80, 80, 0.12)',
+  color: 'rgba(255, 120, 120, 0.95)',
+  borderColor: 'rgba(255, 80, 80, 0.4)',
+  fontWeight: 700,
+};
+
+const saveKfBtnStyle: CSSProperties = {
+  width: '100%',
+  padding: '6px 8px',
+  background: 'rgba(168, 240, 64, 0.12)',
+  color: '#A8F040',
+  border: '1px solid rgba(168, 240, 64, 0.45)',
+  borderRadius: 4,
+  fontSize: 11,
+  fontWeight: 600,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  letterSpacing: 0.4,
 };
 
 const anchorsBlockStyle: CSSProperties = {

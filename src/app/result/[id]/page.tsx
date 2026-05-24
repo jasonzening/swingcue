@@ -214,6 +214,7 @@ export default function ResultPage() {
 
       {videoUrl ? (
         <SwingPlayer
+          videoId={videoId}
           videoUrl={videoUrl}
           timeline={overlayTimeline}
           phases={phases}

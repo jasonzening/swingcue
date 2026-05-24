@@ -9,7 +9,7 @@
  *
  * v7 introduces `computeVisualAnchors`: a deterministic, phase-
  * invariant geometric shift in a body-axis-relative frame. 4 ratios
- * centralized in VISUAL_ANCHOR_CONFIG drive the entire correction.
+ * centralized in DEFAULT_RATIOS / VIDEO_KEYFRAMES drive the entire correction.
  * Shifts are applied per-frame, oriented to current body axis, so
  * they auto-rotate with pose — no learned matrix, no per-phase
  * variance (avoids the PR-7a failure mode).
@@ -19,7 +19,7 @@
  *     derivation deleted)
  *   - REMOVED: Center type, computeNeckCenter helper,
  *     HIGH_CONFIDENCE_THRESHOLD constant (no derived anchor anymore)
- *   - ADDED: VISUAL_ANCHOR_CONFIG, VisualAnchors interface,
+ *   - ADDED: DEFAULT_RATIOS / VIDEO_KEYFRAMES, VisualAnchors interface,
  *     computeVisualAnchors helper
  *
  * Data source: production `pose_timeline_2d` envelope (PoseTimeline
@@ -88,7 +88,7 @@ export const ANCHOR_DOT_CONFIDENCE_MIN = 0.3;
  * TS-safety note (lesson from v8.0.2): declared via an EXPLICIT
  * VisualAnchorConfig interface (not `as const`) so fields are general
  * `number` / `boolean` types. Avoids the literal-type narrowing class
- * of bugs when slider values flow into VISUAL_ANCHOR_CONFIG-shaped
+ * of bugs when slider values flow into DEFAULT_RATIOS / VIDEO_KEYFRAMES-shaped
  * objects.
  */
 export interface VisualAnchorConfig {
@@ -122,17 +122,20 @@ export interface VisualAnchorConfig {
 /**
  * PR-7c-frontend-v8.1: override type used by the in-browser tuning
  * panel + the overlay in tune mode. Production callers omit it and
- * use VISUAL_ANCHOR_CONFIG defaults.
+ * fall back to per-video keyframe interpolation (v9) or DEFAULT_RATIOS.
  *
- * Now a simple `Partial<VisualAnchorConfig>` — the interface above
- * uses general types so Partial works as expected (the v8.0.2
- * literal-narrowing workaround is no longer needed).
+ * Simple `Partial<VisualAnchorConfig>` — the interface uses general
+ * types so Partial works as expected.
  */
 export type VisualAnchorConfigOverride = Partial<VisualAnchorConfig>;
 
-export const VISUAL_ANCHOR_CONFIG: VisualAnchorConfig = {
-  // SHOULDERS — v7 first-pass values, same UP/OUT for L+R (v8.1 default;
-  // user tunes per-anchor in the panel).
+/**
+ * PR-7c-frontend-v9: production fallback ratios. Used when a video has
+ * no entry in VIDEO_KEYFRAMES (= every video except the few Jason has
+ * hand-tuned). Matches v8.1's single-set defaults.
+ */
+export const DEFAULT_RATIOS: VisualAnchorConfig = {
+  // SHOULDERS — v7 first-pass values.
   LEFT_SHOULDER_UP:    0.10,
   LEFT_SHOULDER_OUT:   0.05,
   RIGHT_SHOULDER_UP:   0.10,
@@ -151,6 +154,169 @@ export const VISUAL_ANCHOR_CONFIG: VisualAnchorConfig = {
   HEAD_USE_NOSE:        true,
   MIN_BODY_AXIS_LEN_PX: 30,
 };
+
+/**
+ * PR-7c-frontend-v9: one keyframe = a saved (frame_idx, ratios) pair.
+ * Production interpolation lerps between bracketing keyframes per frame.
+ */
+export interface AnchorKeyframe {
+  frame_idx: number;
+  ratios: VisualAnchorConfig;
+}
+
+/**
+ * PR-7c-frontend-v9: hand-tuned per-video keyframes. Indexed by sampled
+ * `frame_idx` (the position in poseTimeline.frames, matches the
+ * AnchorTuningPanel's findClosestFrameIdx output that Jason copies in
+ * snapshot blocks).
+ *
+ * Why per-video instead of phase-invariant ratios:
+ *   v8.1 assumed ratios would generalize across phases via body-axis-
+ *   relative scaling. Jason's 5-snapshot tuning data (b32e0f21,
+ *   2026-05-23) showed ratios varying 3-8x across phases
+ *   (LEFT_SHOULDER_UP 0.030 → 0.105, RIGHT_HIP_UP 0.020 → 0.160).
+ *   Body-axis frame is not invariant enough — perspective + arm
+ *   occlusion + body deformation across the swing require per-frame
+ *   tuning. v9 lets Jason save N keyframes and interpolates between.
+ *
+ * Videos NOT in this map fall through to DEFAULT_RATIOS (single-set,
+ * matches v8.1 production behavior — no regression).
+ */
+export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
+  // b32e0f21 — Jason's 5 hand-tuned snapshots from v8.1.1 panel
+  // (Copy outputs aggregated 2026-05-23).
+  'b32e0f21-2656-473c-aa87-e1eaf6e1221f': [
+    {
+      frame_idx: 0,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP: 0.075,  LEFT_SHOULDER_OUT: 0.000,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.015,
+        LEFT_HIP_UP: 0.090,       LEFT_HIP_OUT: 0.020,
+        RIGHT_HIP_UP: 0.020,      RIGHT_HIP_OUT: 0.000,
+        HEAD_UP: 0.250,           HEAD_OUT: 0.185,
+      },
+    },
+    {
+      frame_idx: 34,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP: 0.050,  LEFT_SHOULDER_OUT: 0.090,
+        RIGHT_SHOULDER_UP: 0.020, RIGHT_SHOULDER_OUT: 0.080,
+        LEFT_HIP_UP: 0.110,       LEFT_HIP_OUT: 0.055,
+        RIGHT_HIP_UP: 0.040,      RIGHT_HIP_OUT: 0.065,
+        HEAD_UP: 0.225,           HEAD_OUT: 0.055,
+      },
+    },
+    {
+      frame_idx: 45,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP: 0.030,  LEFT_SHOULDER_OUT: 0.065,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.050,
+        LEFT_HIP_UP: 0.145,       LEFT_HIP_OUT: 0.000,
+        RIGHT_HIP_UP: 0.040,      RIGHT_HIP_OUT: 0.035,
+        HEAD_UP: 0.250,           HEAD_OUT: 0.090,
+      },
+    },
+    {
+      frame_idx: 47,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP: 0.105,  LEFT_SHOULDER_OUT: 0.110,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.010,
+        LEFT_HIP_UP: 0.145,       LEFT_HIP_OUT: 0.000,
+        RIGHT_HIP_UP: 0.160,      RIGHT_HIP_OUT: 0.000,
+        HEAD_UP: 0.250,           HEAD_OUT: 0.105,
+      },
+    },
+    {
+      frame_idx: 55,
+      ratios: {
+        ...DEFAULT_RATIOS,
+        LEFT_SHOULDER_UP: 0.060,  LEFT_SHOULDER_OUT: 0.105,
+        RIGHT_SHOULDER_UP: 0.000, RIGHT_SHOULDER_OUT: 0.075,
+        LEFT_HIP_UP: 0.050,       LEFT_HIP_OUT: 0.100,
+        RIGHT_HIP_UP: 0.065,      RIGHT_HIP_OUT: 0.075,
+        HEAD_UP: 0.250,           HEAD_OUT: -0.080,
+      },
+    },
+  ],
+};
+
+/**
+ * PR-7c-frontend-v9: find the sampled-frame index whose `ts` is closest
+ * to time `t`. O(n) linear scan — pose timelines are <200 frames so
+ * this is trivial. Shared between CoachingAnchorOverlay (rAF) and
+ * AnchorTuningPanel (debug readout) so production interpolation indexes
+ * match what the panel surfaces (and what Jason copied as `frame_idx`
+ * in snapshot blocks).
+ */
+export function findClosestFrameIdx(timeline: PoseTimeline, t: number): number {
+  const frames = timeline.frames;
+  if (frames.length === 0) return 0;
+  let bestIdx = 0;
+  let bestDelta = Math.abs(frames[0].ts - t);
+  for (let i = 1; i < frames.length; i++) {
+    const d = Math.abs(frames[i].ts - t);
+    if (d < bestDelta) {
+      bestDelta = d;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+/**
+ * PR-7c-frontend-v9: linearly interpolate the 10 ratios between
+ * bracketing keyframes at `frameIdx`. Non-numeric fields (HEAD_USE_NOSE
+ * boolean, etc.) snap to the lower keyframe's value (no fractional
+ * boolean semantics).
+ *
+ * Edge cases:
+ *   - empty keyframes array → DEFAULT_RATIOS (matches videos with no
+ *     hand-tuning)
+ *   - frameIdx before first keyframe → first keyframe's ratios (clamp)
+ *   - frameIdx after last keyframe → last keyframe's ratios (clamp)
+ *   - frameIdx exactly at a keyframe → that keyframe's ratios
+ *
+ * Keyframes are sorted defensively (caller may pass unsorted arrays
+ * from the tuning panel's edit/delete operations).
+ */
+export function getRatiosAtFrame(
+  frameIdx: number,
+  keyframes: AnchorKeyframe[],
+): VisualAnchorConfig {
+  if (keyframes.length === 0) return DEFAULT_RATIOS;
+  const sorted = [...keyframes].sort((a, b) => a.frame_idx - b.frame_idx);
+  if (frameIdx <= sorted[0].frame_idx) return sorted[0].ratios;
+  if (frameIdx >= sorted[sorted.length - 1].frame_idx) {
+    return sorted[sorted.length - 1].ratios;
+  }
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (sorted[i + 1].frame_idx > frameIdx) {
+      const k1 = sorted[i];
+      const k2 = sorted[i + 1];
+      const t = (frameIdx - k1.frame_idx) / (k2.frame_idx - k1.frame_idx);
+      // Typed lerp — Object.fromEntries + single cast at the boundary.
+      const entries = (Object.keys(k1.ratios) as Array<keyof VisualAnchorConfig>)
+        .map((key): [keyof VisualAnchorConfig, number | boolean] => {
+          const v1 = k1.ratios[key];
+          const v2 = k2.ratios[key];
+          if (typeof v1 === 'number' && typeof v2 === 'number') {
+            return [key, v1 + (v2 - v1) * t];
+          }
+          return [key, v1];
+        });
+      // Cast through unknown — Object.fromEntries returns generic
+      // Record<string, ...>; we know structurally we've covered every
+      // VisualAnchorConfig key because `entries` was built from
+      // `Object.keys(k1.ratios) as Array<keyof VisualAnchorConfig>`.
+      return Object.fromEntries(entries) as unknown as VisualAnchorConfig;
+    }
+  }
+  return sorted[sorted.length - 1].ratios;
+}
 
 /**
  * The output of `computeVisualAnchors`. All 5 fields are RawKeypoint
@@ -242,19 +408,23 @@ export function poseRawAnchorsAtTime(
  */
 export function computeVisualAnchors(
   raw: Record<MediaPipeAnchorName, RawKeypoint>,
-  // PR-7c-frontend-v8: optional ratio overrides for the in-browser
-  // tuning panel (?tune=anchors). Production callers omit this arg and
-  // use VISUAL_ANCHOR_CONFIG. The tuning panel + overlay in tune mode
-  // both pass live slider values via this arg, so the shifted dots
-  // animate in real time as the user drags ratios.
+  // PR-7c-frontend-v9: per-frame keyframe interpolation.
   //
-  // v8.1: override type is now a simple Partial<VisualAnchorConfig>
-  // (the interface uses general types, no `as const` literal narrowing).
+  // Production (overrideConfig undefined): look up VIDEO_KEYFRAMES[videoId]
+  // and interpolate via getRatiosAtFrame(frameIdx, ...). Videos with
+  // no keyframes fall back to DEFAULT_RATIOS.
+  //
+  // Tune mode (overrideConfig defined): use the override directly as
+  // a single set across all frames — matches v8.1 tune-mode UX. The
+  // panel's keyframes array is the source of saved snapshots; the
+  // tune-mode overlay reflects what the user is currently dragging.
+  frameIdx: number,
+  videoId: string,
   overrideConfig?: VisualAnchorConfigOverride,
 ): VisualAnchors {
-  const C = overrideConfig
-    ? { ...VISUAL_ANCHOR_CONFIG, ...overrideConfig }
-    : VISUAL_ANCHOR_CONFIG;
+  const C: VisualAnchorConfig = overrideConfig
+    ? { ...DEFAULT_RATIOS, ...overrideConfig }
+    : getRatiosAtFrame(frameIdx, VIDEO_KEYFRAMES[videoId] ?? []);
   const { left_shoulder, right_shoulder, left_hip, right_hip, nose } = raw;
 
   // Edge case 1: any torso joint missing — pass-through (head = nose).

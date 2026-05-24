@@ -38,6 +38,7 @@ import { getCurrentPhase } from '@/lib/overlay/playerSync';
 import {
   poseRawAnchorsAtTime,
   computeVisualAnchors,
+  findClosestFrameIdx,
   ANCHOR_DOT_CONFIDENCE_MIN,
   type RawKeypoint,
   type VisualAnchorConfigOverride,
@@ -45,15 +46,19 @@ import {
 import { computeAnchorOpacity } from '@/lib/coaching/phaseOpacity';
 
 type Props = {
+  /** PR-7c-frontend-v9: video id (UUID from /result/[id] route).
+   * Used to look up per-video keyframes in VIDEO_KEYFRAMES. */
+  videoId: string;
   poseTimeline: PoseTimeline;
   phaseMarkers: PhaseMarkers;
   videoEl: HTMLVideoElement | null;
-  /** PR-7c-frontend-v8 tune-mode: override the 4 production ratios
-   * with live slider state. Production mode omits this prop. */
+  /** PR-7c-frontend-v8 tune-mode: override production ratios with live
+   * slider state. Single-set across all frames during tune (matches
+   * v8.1 behavior). Production mode omits this prop and lets v9
+   * keyframe interpolation drive per-frame ratios. */
   tuningRatios?: VisualAnchorConfigOverride;
   /** PR-7c-frontend-v8 tune-mode: render 4 raw MediaPipe shoulder/hip
-   * dots in green at lower opacity as a "before" reference, so the
-   * user can visually compare raw vs shifted while dragging sliders. */
+   * dots in green at lower opacity as a "before" reference. */
   showRawDots?: boolean;
 };
 
@@ -108,6 +113,7 @@ const RAW_DOT_NAMES: readonly RawDotName[] = [
 ];
 
 export function CoachingAnchorOverlay({
+  videoId,
   poseTimeline,
   phaseMarkers,
   videoEl,
@@ -159,12 +165,12 @@ export function CoachingAnchorOverlay({
       // body-axis-relative geometric correction. All 5 anchors now flow
       // through the same `applyDot` helper with the < 0.3 confidence
       // gate. Head = direct MediaPipe nose (no longer derived).
-      // Tuning happens in VISUAL_ANCHOR_CONFIG (poseTimelineAnchors.ts).
-      //
-      // PR-7c-frontend-v8: `tuningRatios` (optional, tune mode) overrides
-      // the production VISUAL_ANCHOR_CONFIG so the magenta dots animate
-      // live as the user drags sliders. Undefined in production.
-      const visual = computeVisualAnchors(anchors, tuningRatios);
+      // v9: ratios source = per-frame keyframe interpolation from
+      // VIDEO_KEYFRAMES[videoId], or DEFAULT_RATIOS fallback. Tune mode
+      // (tuningRatios !== undefined) overrides with a single live set
+      // for the current dragging session.
+      const frameIdx = findClosestFrameIdx(poseTimeline, t);
+      const visual = computeVisualAnchors(anchors, frameIdx, videoId, tuningRatios);
       applyDot(dotRefs.current.left_shoulder,  visual.left_shoulder,  phaseOp);
       applyDot(dotRefs.current.right_shoulder, visual.right_shoulder, phaseOp);
       applyDot(dotRefs.current.left_hip,       visual.left_hip,       phaseOp);
@@ -201,7 +207,7 @@ export function CoachingAnchorOverlay({
       videoEl.removeEventListener('loadedmetadata', draw);
       videoEl.removeEventListener('seeked', draw);
     };
-  }, [videoEl, poseTimeline, phaseMarkers, videoWidth, videoHeight, tuningRatios, showRawDots]);
+  }, [videoEl, poseTimeline, phaseMarkers, videoWidth, videoHeight, tuningRatios, showRawDots, videoId]);
 
   return (
     <svg
