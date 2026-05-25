@@ -113,6 +113,26 @@ _PILOT_NAME_TO_H36M = {v: k for k, v in H36M_TO_PILOT_NAME.items()}
 
 
 # ---------------------------------------------------------------------------
+# PR-8b.1: SMPL mesh vertex landmarks.
+#
+# H36M's "head" joint lies in the face/nose region — fine for body
+# pose, wrong for golf head-sway metrics that need the cranial top.
+# The SMPL mesh has 6890 vertices; vertex 411 was identified as the
+# head crown via argmax-y over the mesh in PR-7a4 PROBE
+# (docs/PR-7a4_PROBE/smpl_landmark_indices.json).
+#
+# Vertex 411 is anatomical truth — no scale tuning needed (which would
+# be the alternative: extrapolate H36M neck→head by a magic factor).
+#
+# Scope (PR-8b.1): head_crown only. Other vertex landmarks
+# (throat_midpoint=444, c7=414, acromion_left=4721, acromion_right=...)
+# stay in the probe file pending a follow-up PR.
+# ---------------------------------------------------------------------------
+
+HEAD_CROWN_VERTEX_INDEX = 411
+
+
+# ---------------------------------------------------------------------------
 # Workspace + video setup helpers (unchanged from PR-7a.5).
 # ---------------------------------------------------------------------------
 
@@ -379,10 +399,24 @@ if _MODAL_AVAILABLE:
         n_native = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
+        # PR-8b.1: extract head_crown 3D directly from SMPL mesh
+        # vertex 411 (per PR-7a4 PROBE). verts are in the same camera-
+        # frame meters as joints_3d, so the same projection intrinsics
+        # apply. Per-frame Z<0.1 / NaN guards live in the formatter so
+        # the rest of the body still emits coordinates even if the
+        # crown vertex is degenerate for an isolated frame.
+        head_crown_3d = verts[:, HEAD_CROWN_VERTEX_INDEX, :].astype(np.float32)
+        print(
+            f"[wham_runner] head_crown_3d shape={head_crown_3d.shape} "
+            f"vertex_idx={HEAD_CROWN_VERTEX_INDEX} "
+            f"(frame[0] xyz = {head_crown_3d[0].tolist()})"
+        )
+
         return {
             "track":              track,
             "wham_out":           wham_out,
             "joints_3d":          joints_3d,
+            "head_crown_3d":      head_crown_3d,
             "frame_ids":          frame_ids,
             "video_w":            video_w,
             "video_h":            video_h,
@@ -785,7 +819,9 @@ if _MODAL_AVAILABLE:
         """Emitted into meta.joint_index_mapping — single source of
         truth for downstream consumers. Includes the chirality-swap
         flag so consumers understand the names follow image-orientation
-        convention (PR-7a.2)."""
+        convention (PR-7a.2). PR-8b.1: adds the head_crown vertex
+        landmark so frontends know head_crown is mesh-derived (not
+        H36M-derived)."""
         m: dict = dict(_PILOT_NAME_TO_H36M)
         m["_source"] = "h36m_17"
         m["_chirality_normalized"] = (
@@ -793,6 +829,22 @@ if _MODAL_AVAILABLE:
             "indices 11/14, 12/15, 13/16 swapped at array level so "
             "name 'left_*' refers to image-left after a face-on camera, "
             "matching ground-truth label convention."
+        )
+        # PR-8b.1: head_crown is NOT an H36M joint — it's a direct SMPL
+        # mesh vertex. The existing 'head' field (H36M idx 10) sits in
+        # the face/nose region; head_crown sits at the cranial top.
+        # Use head_crown for golf head-sway metrics; head is retained
+        # for evidence + backward compat only.
+        m["head_crown_vertex_index"] = HEAD_CROWN_VERTEX_INDEX
+        m["_landmark_source_for_head_crown"] = "smpl_mesh_vertex"
+        m["_notes"] = (
+            f"head_crown derived from SMPL mesh vertex "
+            f"{HEAD_CROWN_VERTEX_INDEX} (per PR-7a4 PROBE: "
+            f"docs/PR-7a4_PROBE/smpl_landmark_indices.json). head_crown "
+            f"is distinct from the H36M `head` joint which lies in the "
+            f"face/nose region. Use head_crown for golf head-sway "
+            f"metrics; H36M head is retained for evidence and backward "
+            f"compat only."
         )
         return m
 
@@ -859,6 +911,7 @@ if _MODAL_AVAILABLE:
         import numpy as np
 
         joints_3d_all = pipe["joints_3d"]   # (T, 17, 3) chirality-swapped
+        head_crown_3d_all = pipe.get("head_crown_3d")  # (T, 3) or None
         frame_ids     = pipe["frame_ids"]
         fps_native    = pipe["fps_native"]
         track         = pipe["track"]
@@ -945,6 +998,37 @@ if _MODAL_AVAILABLE:
                     and -slack_y <= v <= image_h + slack_y
                 ):
                     n_oob += 1
+
+            # PR-8b.1: head_crown — SMPL vertex 411 (cranial top), in
+            # the same camera-frame meters as the H36M joints. Project
+            # with same intrinsics. Per-frame guard: Z<0.1m or any NaN
+            # → emit head_crown=None for THIS frame only (does NOT set
+            # fit_ok=False — body joints may still be valid).
+            if head_crown_3d_all is not None:
+                hc3d = head_crown_3d_all[i]   # (3,)
+                hc_x, hc_y, hc_z = float(hc3d[0]), float(hc3d[1]), float(hc3d[2])
+                hc_valid = (
+                    np.isfinite(hc3d).all()
+                    and hc_z >= 0.1
+                )
+                if hc_valid:
+                    # Project — same R/t/focal/cx/cy as torso joints.
+                    hc_proj = _project_joints_2d(
+                        hc3d[None, :],  # shape (1, 3) for vectorized helper
+                        R_i, t_i, focal, cx, cy,
+                    )
+                    hc_u = float(hc_proj[0, 0])
+                    hc_v = float(hc_proj[0, 1])
+                    keypoints_2d["head_crown"] = {"x": hc_u, "y": hc_v}
+                    keypoints_3d["head_crown"] = {"x": hc_x, "y": hc_y, "z": hc_z}
+                else:
+                    keypoints_2d["head_crown"] = None
+                    keypoints_3d["head_crown"] = None
+            else:
+                # Pipeline didn't return head_crown_3d (older path?) —
+                # emit None so the schema field exists.
+                keypoints_2d["head_crown"] = None
+                keypoints_3d["head_crown"] = None
 
             # Rule 2: >50% of joints OOB → flag low-quality but still emit.
             fit_ok = (n_oob <= n_named // 2)
