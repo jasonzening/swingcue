@@ -458,6 +458,14 @@ export function poseRawAnchorsAtTime(
  * Phase invariance: body_axis is computed from CURRENT pose every
  * frame. Shifts rotate with the body automatically. No learned
  * per-phase offsets → cannot replicate PR-7a's phase-overshoot bug.
+ *
+ * v10 clamp audit (2026-05-24): grep-verified ZERO ratio-value clamps
+ * exist in this file. Math.abs in findClosestFrameIdx is a distance
+ * compare; Math.hypot computes spine_len; spine_len < MIN_BODY_AXIS_LEN_PX
+ * is a degenerate-pose stability guard (kept by spec); out_sign is a
+ * direction toggle for paired anchors (algorithm correctness, not
+ * magnitude clamp). Slider values 0 → 1.20 propagate end-to-end via
+ * `spine_len * C.X_RATIO` to coordinate shifts with no internal cap.
  */
 export function computeVisualAnchors(
   raw: Record<MediaPipeAnchorName, RawKeypoint>,

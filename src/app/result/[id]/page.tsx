@@ -37,6 +37,23 @@ export default function ResultPage() {
   // SkeletonOverlay. Hidden behind URL param — no production UI change.
   const debugMode = searchParams.get('debug') === 'pose' ? 'pose' : undefined;
 
+  // PR-7c-frontend-v10: side-by-side tuning layout. When ?tune=anchors
+  // active AND viewport >= 1100px, expand the .page max-width from
+  // 430px → 820px so the SwingPlayer's .sp-row flex layout (video +
+  // panel side-by-side) actually has room. Below 1100px, panel
+  // falls back to absolute overlay and .page stays 430px.
+  const isTuneMode = searchParams.get('tune') === 'anchors';
+  const [isWideViewport, setIsWideViewport] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1100px)');
+    setIsWideViewport(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsWideViewport(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  const tuneSideBySide = isTuneMode && isWideViewport;
+
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [videoUrl, setVideoUrl] = useState('');
   const [issue, setIssue] = useState<MainIssueType>('early_extension');
@@ -205,7 +222,7 @@ export default function ResultPage() {
   const issueLabel = ISSUE_LABELS[issue] ?? issue;
 
   return (
-    <div className="page">
+    <div className={`page ${tuneSideBySide ? 'page-tune-wide' : ''}`}>
       <header className="hdr">
         <button className="btn-hdr-back" onClick={() => router.push('/history')}>←</button>
         <span className="hdr-logo">SwingCue</span>
@@ -248,6 +265,11 @@ const css = `
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 body { background:#050805; }
 .page { min-height:100dvh; background:#050805; font-family:'DM Sans',system-ui,sans-serif; max-width:430px; margin:0 auto; display:flex; flex-direction:column; color:#f0f0ee; }
+/* PR-7c-frontend-v10: side-by-side tuning layout. Expand the 430px
+   mobile column to 820px (= 430 video + 16 gap + 360 panel + breathing
+   room) so SwingPlayer's .sp-row flex actually has room. Class is
+   only applied when ?tune=anchors AND viewport >= 1100px. */
+.page.page-tune-wide { max-width:820px; }
 .page-center { min-height:100dvh; background:#050805; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:40px; font-family:'DM Sans',system-ui; }
 .hdr { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#050805; border-bottom:1px solid rgba(255,255,255,0.05); flex-shrink:0; }
 .hdr-logo { font-size:16px; font-weight:800; color:#a8f040; letter-spacing:-0.3px; }

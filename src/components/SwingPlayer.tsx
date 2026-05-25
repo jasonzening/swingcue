@@ -288,10 +288,26 @@ export function SwingPlayer({
   // PR-7c-frontend-v8: `?tune=anchors` opt-in tuning mode. When active,
   // mounts AnchorTuningPanel with live sliders for the 4 visual-anchor
   // ratios and feeds them into CoachingAnchorOverlay via tuningRatios
-  // (overrides VISUAL_ANCHOR_CONFIG defaults). Production behavior is
+  // (overrides DEFAULT_RATIOS / VIDEO_KEYFRAMES). Production behavior is
   // unchanged when the URL param is absent.
   const searchParams = useSearchParams();
   const tuneMode = searchParams?.get('tune') === 'anchors';
+
+  // PR-7c-frontend-v10: viewport detection for side-by-side panel
+  // layout. When tuneMode active AND viewport >= 1100px, panel renders
+  // as a static flex-item sibling of .sp-vw inside a .sp-row wrapper
+  // (no overlap with video). Below 1100px or when no tune mode, panel
+  // stays inside .sp-vw with position: absolute (or doesn't render).
+  const [isWideViewport, setIsWideViewport] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 1100px)');
+    setIsWideViewport(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsWideViewport(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  const sideBySide = tuneMode && enhancedMode && isWideViewport;
   // PR-7c-frontend-v8.1: 10 per-anchor ratios — 8 paired (positive only)
   // for L/R shoulders + L/R hips, 2 bipolar for HEAD. Defaults match
   // VISUAL_ANCHOR_CONFIG so initial visual state matches production.
@@ -614,6 +630,10 @@ export function SwingPlayer({
 
   return (
     <div className="sp">
+      {/* PR-7c-frontend-v10: when tune mode active on viewport >= 1100px,
+          wrap .sp-vw + panel in a flex-row container so the panel sits
+          to the right of the video instead of overlaying it. */}
+      <div className={sideBySide ? 'sp-row' : ''}>
       {/* ══ VIDEO + CANVAS ══ */}
       <div className="sp-vw">
         <video
@@ -662,8 +682,11 @@ export function SwingPlayer({
         {/* PR-7c-frontend: badge — only visible in enhanced mode. */}
         {enhancedMode && !tuneMode && <EnhancedCoachingBadge />}
 
-        {/* PR-7c-frontend-v8: tuning panel (?tune=anchors only). */}
-        {tuneMode && (
+        {/* PR-7c-frontend-v8: tuning panel (?tune=anchors only).
+            v10: when sideBySide is true, panel renders OUTSIDE .sp-vw
+            as a flex sibling (see below); when false (narrow viewport
+            or no tune), renders here with layoutMode='absolute'. */}
+        {tuneMode && !sideBySide && (
           <AnchorTuningPanel
             videoId={videoId}
             videoEl={videoRef.current}
@@ -672,6 +695,7 @@ export function SwingPlayer({
             durationSec={dur}
             ratios={tuningRatios}
             onRatiosChange={setTuningRatios}
+            layoutMode="absolute"
           />
         )}
 
@@ -733,6 +757,24 @@ export function SwingPlayer({
 
         <div className="sp-tap" onClick={togglePlay} />
       </div>
+
+      {/* PR-7c-frontend-v10: flex-mode tuning panel — renders as a
+          static sibling of .sp-vw inside .sp-row when sideBySide
+          (viewport >= 1100px AND tune mode). On narrow viewports the
+          panel renders inside .sp-vw above with layoutMode='absolute'. */}
+      {tuneMode && sideBySide && (
+        <AnchorTuningPanel
+          videoId={videoId}
+          videoEl={videoRef.current}
+          poseTimeline={poseTimeline}
+          phaseMarkers={phases}
+          durationSec={dur}
+          ratios={tuningRatios}
+          onRatiosChange={setTuningRatios}
+          layoutMode="flex"
+        />
+      )}
+      </div>{/* closes .sp-row wrapper */}
 
       {/* ══ LAYER TOGGLE ══
           PR-7c-frontend: hidden in enhanced mode. setLayer() gates
@@ -816,6 +858,14 @@ export function SwingPlayer({
 
 const css = `
   .sp { display:flex; flex-direction:column; background:#050805; width:100%; }
+
+  /* PR-7c-frontend-v10: side-by-side tune layout. Active on viewports
+     >= 1100px AND ?tune=anchors (JS-applied class via sideBySide
+     state). Below 1100px, sideBySide is false → no .sp-row class → no
+     flex layout → panel falls back to absolute overlay inside .sp-vw.
+     Production (no ?tune) never gets this class. */
+  .sp-row { display:flex; gap:16px; align-items:flex-start; }
+  .sp-row .sp-vw { flex:0 0 auto; }
 
   /* ── Video wrap ── */
   .sp-vw { position:relative; width:100%; background:#000; flex-shrink:0; }

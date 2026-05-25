@@ -77,17 +77,24 @@ type Props = {
   durationSec: number;
   ratios: Ratios;
   onRatiosChange: (next: Ratios) => void;
+  /** PR-7c-frontend-v10: layout mode. 'absolute' (default) = panel
+   * overlays the video area as before. 'flex' = panel is a static
+   * flex-item sibling of the video area on viewports >= 1100px.
+   * SwingPlayer picks the mode based on viewport + tune state. */
+  layoutMode?: 'absolute' | 'flex';
 };
 
-// v9.2: bumped from v9.1's 0.60 paired range — UX-hit cap during
-// cross-frame tuning even though most settled values < 0.30.
+// v10: bumped from v9.2's 0.80 paired range (+50%) — exploration
+// headroom for the v10 tuning round. Slider value flows end-to-end
+// to coordinate shift with NO internal clamp (audited 2026-05-24,
+// see computeVisualAnchors docstring).
 const PAIRED_MIN = 0;
-const PAIRED_MAX = 0.80;
+const PAIRED_MAX = 1.20;
 const PAIRED_STEP = 0.005;
 
-// v9.2: bumped from v9.1's ±0.60 head range — same reason.
-const HEAD_MIN = -0.80;
-const HEAD_MAX = 0.80;
+// v10: bumped from v9.2's ±0.80 head range (+50%).
+const HEAD_MIN = -1.20;
+const HEAD_MAX = 1.20;
 const HEAD_STEP = 0.005;
 
 type DebugFrame = {
@@ -139,6 +146,7 @@ export function AnchorTuningPanel({
   durationSec,
   ratios,
   onRatiosChange,
+  layoutMode = 'absolute',
 }: Props) {
   const [debug, setDebug] = useState<DebugFrame>(EMPTY_DEBUG);
   const [copied, setCopied] = useState(false);
@@ -249,9 +257,20 @@ export function AnchorTuningPanel({
     </div>
   );
 
+  // v10: layoutMode='flex' overrides the absolute positioning so the
+  // panel can be a static flex-item sibling of .sp-vw on wide viewports.
+  // 'absolute' (default) preserves the legacy overlay-on-video behavior
+  // used on narrow viewports and pre-v10 production.
+  const effectivePanelStyle: CSSProperties = layoutMode === 'flex'
+    ? { ...panelStyle, ...panelFlexOverrides }
+    : panelStyle;
+  const effectiveCollapsedStyle: CSSProperties = layoutMode === 'flex'
+    ? { ...panelStyleCollapsed, ...panelFlexOverrides }
+    : panelStyleCollapsed;
+
   if (!poseTimeline) {
     return (
-      <div className="atp-panel" style={panelStyle}>
+      <div className="atp-panel" style={effectivePanelStyle}>
         {renderHeader()}
         {!collapsed && (
           <div style={noDataStyle}>
@@ -264,7 +283,7 @@ export function AnchorTuningPanel({
 
   if (collapsed) {
     return (
-      <div className="atp-panel" style={panelStyleCollapsed}>
+      <div className="atp-panel" style={effectiveCollapsedStyle}>
         {renderHeader()}
       </div>
     );
@@ -402,10 +421,10 @@ export function AnchorTuningPanel({
   const sortedKfs = [...keyframes].sort((a, b) => a.frame_idx - b.frame_idx);
 
   return (
-    <div className="atp-panel" style={panelStyle}>
+    <div className="atp-panel" style={effectivePanelStyle}>
       {renderHeader()}
 
-      <SectionLabel label="L SHOULDER  (0 → 0.80)" />
+      <SectionLabel label="L SHOULDER  (0 → 1.20)" />
       <SliderRow label="UP"  value={ratios.LEFT_SHOULDER_UP}  onChange={handleSlider('LEFT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.LEFT_SHOULDER_OUT} onChange={handleSlider('LEFT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
@@ -421,7 +440,7 @@ export function AnchorTuningPanel({
       <SliderRow label="UP"  value={ratios.RIGHT_HIP_UP}  onChange={handleSlider('RIGHT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.RIGHT_HIP_OUT} onChange={handleSlider('RIGHT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="HEAD  (bipolar ±0.80)" />
+      <SectionLabel label="HEAD  (bipolar ±1.20)" />
       <SliderRow label="UP"  value={ratios.HEAD_UP}  onChange={handleSlider('HEAD_UP')}  min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
       <SliderRow label="OUT" value={ratios.HEAD_OUT} onChange={handleSlider('HEAD_OUT')} min={HEAD_MIN} max={HEAD_MAX} step={HEAD_STEP} bipolar />
 
@@ -599,6 +618,20 @@ const panelStyleCollapsed: CSSProperties = {
   ...panelStyle,
   maxHeight: 'none',
   overflowY: 'visible',
+};
+
+/** PR-7c-frontend-v10: overrides spread on top of panelStyle when
+ * layoutMode='flex'. Strips absolute positioning + height cap so the
+ * panel sits as a static flex-item sibling of .sp-vw inside .sp-row
+ * on viewports >= 1100px. */
+const panelFlexOverrides: CSSProperties = {
+  position: 'static',
+  top: 'auto',
+  right: 'auto',
+  width: 360,
+  maxHeight: 'none',
+  overflowY: 'visible',
+  zIndex: 'auto',
 };
 
 const headerRowStyle: CSSProperties = {
