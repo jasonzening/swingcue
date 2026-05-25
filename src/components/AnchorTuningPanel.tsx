@@ -84,11 +84,14 @@ type Props = {
   layoutMode?: 'absolute' | 'flex';
 };
 
-// v10: bumped from v9.2's 0.80 paired range (+50%) — exploration
-// headroom for the v10 tuning round. Slider value flows end-to-end
-// to coordinate shift with NO internal clamp (audited 2026-05-24,
-// see computeVisualAnchors docstring).
-const PAIRED_MIN = 0;
+// v10.1: paired sliders bipolar (-1.20 to 1.20). v10 left them
+// unipolar 0..1.20 while HEAD was ±1.20 — asymmetry blocked tuning
+// against the auto-detected anchor side (4 of 8 paired sliders pinned
+// at 0.000 on b32e0f21 setup). Algorithm in computeVisualAnchors
+// already handles negative ratios correctly via out_sign * ratio +
+// signed up-axis projection (audited 2026-05-24); v10.1 just exposes
+// the negative half in the UI.
+const PAIRED_MIN = -1.20;
 const PAIRED_MAX = 1.20;
 const PAIRED_STEP = 0.005;
 
@@ -424,19 +427,19 @@ export function AnchorTuningPanel({
     <div className="atp-panel" style={effectivePanelStyle}>
       {renderHeader()}
 
-      <SectionLabel label="L SHOULDER  (0 → 1.20)" />
+      <SectionLabel label="L SHOULDER  (bipolar ±1.20)" />
       <SliderRow label="UP"  value={ratios.LEFT_SHOULDER_UP}  onChange={handleSlider('LEFT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.LEFT_SHOULDER_OUT} onChange={handleSlider('LEFT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="R SHOULDER" />
+      <SectionLabel label="R SHOULDER  (bipolar ±1.20)" />
       <SliderRow label="UP"  value={ratios.RIGHT_SHOULDER_UP}  onChange={handleSlider('RIGHT_SHOULDER_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.RIGHT_SHOULDER_OUT} onChange={handleSlider('RIGHT_SHOULDER_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="L HIP" />
+      <SectionLabel label="L HIP  (bipolar ±1.20)" />
       <SliderRow label="UP"  value={ratios.LEFT_HIP_UP}  onChange={handleSlider('LEFT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.LEFT_HIP_OUT} onChange={handleSlider('LEFT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
-      <SectionLabel label="R HIP" />
+      <SectionLabel label="R HIP  (bipolar ±1.20)" />
       <SliderRow label="UP"  value={ratios.RIGHT_HIP_UP}  onChange={handleSlider('RIGHT_HIP_UP')}  min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
       <SliderRow label="OUT" value={ratios.RIGHT_HIP_OUT} onChange={handleSlider('RIGHT_HIP_OUT')} min={PAIRED_MIN} max={PAIRED_MAX} step={PAIRED_STEP} />
 
