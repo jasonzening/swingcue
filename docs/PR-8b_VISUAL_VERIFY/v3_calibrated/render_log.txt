@@ -1,0 +1,23 @@
+# render_compare_v3 — head_crown coord dump for KEY_FRAMES=[44, 45, 60]
+# WHAM source: smoke_b32e0f21-2656-473c-aa87-e1eaf6e1221f.json
+
+=== frame 44 ===
+  WHAM head        : (453.67706298828125, 411.2967529296875)
+  WHAM neck        : (437.8768310546875, 451.70404052734375)
+  WHAM head_crown  : (474.3959655761719, 387.45098876953125)
+  delta (crown - head) : (+20.7, -23.8)  <- crown should be above head: dy negative
+  delta (crown - neck) : (+36.5, -64.3)
+
+=== frame 45 ===
+  WHAM head        : (452.1662292480469, 410.3194580078125)
+  WHAM neck        : (438.14471435546875, 451.51458740234375)
+  WHAM head_crown  : (472.5753173828125, 386.37261962890625)
+  delta (crown - head) : (+20.4, -23.9)  <- crown should be above head: dy negative
+  delta (crown - neck) : (+34.4, -65.1)
+
+=== frame 60 ===
+  WHAM head        : (414.798828125, 353.4981384277344)
+  WHAM neck        : (389.6996154785156, 383.076416015625)
+  WHAM head_crown  : (431.6882019042969, 331.3507995605469)
+  delta (crown - head) : (+16.9, -22.1)  <- crown should be above head: dy negative
+  delta (crown - neck) : (+42.0, -51.7)

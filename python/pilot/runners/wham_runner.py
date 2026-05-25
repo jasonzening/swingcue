@@ -731,12 +731,22 @@ if _MODAL_AVAILABLE:
                 focal = float(K[0, 0, 0])
                 notes.append(f"focal_source=track[K][0,0,0]={focal:.2f}")
         if focal is None:
-            # Spec fallback: focal = max(image_width, image_height).
-            # WHAM trained on web video — this is its implicit assumption.
-            focal = float(max(image_w, image_h))
+            # PR-8b.2 calibration fix: WHAM's canonical projection
+            # (lib/vis/run_vis.py line 22) uses the CLIFF formula
+            # focal = sqrt(width² + height²). Previous max(w,h) fallback
+            # underestimated by ~13% for portrait videos — caused
+            # ~10-20px drift through the swing visible only in 120-frame
+            # MP4 review (static frames at setup hid the issue because
+            # the person was centered at fixed depth).
+            #
+            # Reference: tmp/wham_src/run_vis.py + renderer.py — WHAM's
+            # own visualizer uses this focal + cx=w/2 + cy=h/2 + identity
+            # extrinsics, matching what we already use modulo this focal.
+            focal = float((image_w ** 2 + image_h ** 2) ** 0.5)
             notes.append(
-                f"focal_fallback=max(image_w,image_h)={focal:.0f} "
-                f"(WHAM did not expose focal/K/fx/focal_length)"
+                f"focal_fallback=CLIFF=sqrt(w^2+h^2)={focal:.1f} "
+                f"(WHAM upstream canonical: run_vis.py L22; "
+                f"renderer.py K[0,0]=K[1,1]=focal_length)"
             )
 
         if R_pf is None:
