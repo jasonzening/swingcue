@@ -183,9 +183,15 @@ export interface AnchorKeyframe {
  * matches v8.1 production behavior — no regression).
  */
 export const VIDEO_KEYFRAMES: Record<string, AnchorKeyframe[]> = {
-  // b32e0f21 — Jason's final refined 9 keyframes (v9.3, 2026-05-24).
-  // Closes PR-7c-frontend. Production overlay lerps these 9 points
-  // across the full swing for smooth phase-aware coaching anchors.
+  // b32e0f21 v2 (2026-05-25): MediaPipe-based interim. Will be FULLY REPLACED
+  // when WHAM pipeline lands (PR-8). DO NOT use as reference for anatomical
+  // truth — these ratios are tuned against MediaPipe keypoint geometry
+  // (acromion ≠ MP shoulder, greater trochanter ≠ MP hip). v3 will retune
+  // against WHAM SMPL joint output.
+  //
+  // History — refined 9 keyframes (v9.3, 2026-05-24). Closes PR-7c-frontend.
+  // Production overlay lerps these 9 points across the full swing for smooth
+  // phase-aware coaching anchors.
   //
   // Key refinements from v9.2 baseline:
   //   - f=21:  L_SH_OUT 0.145 → 0.195, R_HIP_UP 0.015 → 0.100
