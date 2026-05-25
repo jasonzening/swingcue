@@ -1,42 +1,44 @@
 """
-wham_runner.py — phase2b Modal entrypoint for WHAM bone-center inference.
+wham_runner.py — WHAM bone-center inference on Modal A10G GPU.
 
-Runs WHAM (yohanshin/WHAM @ pinned commit) on a single golf swing video
-on Modal A10G GPU. Returns the 3D joint-center timeline + 2D back-
-projection (for overlay rendering) in the PilotRunResult schema
-(see runners/_base.py).
+Two deployed Modal functions + one local driver share a common pipeline:
 
-This is the FIRST inference function in the Phase 2 pilot. Real GPU
-spend: ~$0.01 per 7-second clip on A10G ($1.10/hr × ~30s). Modal Image
-first-build is ~10-15 min (DPVO CUDA-extension compile dominates);
-cached afterward.
+  • _run_wham_pipeline()    pipeline-shared helper (PR-8b refactor).
+                            Sets up workspace, downloads video, runs WHAM
+                            demo.py, parses pkl, regresses H36M joints,
+                            applies PR-7a.2 chirality swap at the array
+                            level. Returns a rich dict that formatters
+                            translate into their preferred schemas.
 
-Invocation (CC drives, after setup_models has populated the Volume):
+  • run_wham()              [PR-7a.5 schema, dev CLI]
+                            Returns PilotRunResult-shaped dict (joint_centers_3d
+                            per frame, _wham_runner_version="7a5").
+                            run_wham_local local_entrypoint calls this
+                            for Jason's existing dev workflow.
 
+  • infer_video()           [PR-8b schema, deployed for Railway]
+                            Returns wham_video_meta + wham_pose_timeline
+                            shaped dict matching PR-8a' Supabase schema.
+                            Implements 2D back-projection from WHAM SLAM
+                            camera. Status/error envelope for Railway
+                            error handling (PR-8c will consume).
+
+WHAM commit pin: 2b54f7797391c94876848b905ed875b154c4a295 (2026-05-20).
+
+Cost: ~$0.01 per 7-second clip on A10G. Modal Image first-build ~10-15 min
+(DPVO CUDA compile dominates); cached afterward.
+
+Invocations:
+
+  Dev (PR-7a.5 schema):
     ./.venv-pilot/Scripts/python.exe -m modal run \\
-        python/pilot/runners/wham_runner.py::run_wham \\
-        --video-id b3fea3f0-e248-44d7-a923-0bb43172b5bf \\
-        --video-url 'https://<signed-supabase-url>'
+        python/pilot/runners/wham_runner.py::run_wham_local \\
+        --video-id <uuid> --video-url '<signed-supabase-url>'
 
-The function downloads the video into /tmp inside the Modal container,
-symlinks /models/wham/* + /models/body_models/* into WHAM's expected
-repo layout, invokes WHAM's official demo entrypoint, then parses the
-SMPL/joint output into PilotRunResult JSON.
-
-Output: written to the local filesystem AFTER the Modal function
-returns. Location:
-    python/pilot/output/wham/<video_id>/
-      ├── joint_centers_3d.json       (PilotRunResult shape)
-      └── overlay_2d.mp4              (rendered locally, see _render_overlay)
-
-Inference failure modes (expected first run):
-  - WHAM Image build fails at DPVO compile → re-check CUDA toolkit /
-    nvcc availability in modal_app.py wham_image apt_install.
-  - Body models missing → setup_models.py warning becomes a hard error
-    here. Re-run `modal volume put` per modal_app.py docstring.
-  - WHAM checkpoint format mismatch → spec §9 Q5: pinned commit + pinned
-    weight versions should keep this in lockstep, but verify SHA-256 if
-    nondeterministic.
+  Deployed inference (PR-8b schema, used by Railway in PR-8c):
+    modal deploy python/pilot/modal_app.py
+    # Then invoke via Modal client:
+    #   infer_video.spawn(video_url=..., video_id=...)
 """
 
 from __future__ import annotations
@@ -44,7 +46,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from typing import Optional
 
 # Make `from modal_app import ...` work when invoked as a script
 # (`python wham_runner.py` or `modal run wham_runner.py`) — modal_app
@@ -73,6 +74,47 @@ WHAM_BODY_MODELS_DIR = f"{WHAM_REPO_ROOT}/dataset/body_models"
 VOLUME_WHAM_DIR        = "/models/wham"
 VOLUME_BODY_MODELS_DIR = "/models/body_models"
 
+WHAM_COMMIT_SHORT = "2b54f77"
+
+
+# ---------------------------------------------------------------------------
+# Joint mapping — H36M 17-joint index → coaching name.
+#
+# H36M's joint order is well-documented and stable; WHAM's 31-joint
+# J_regressor_wham has an undocumented ordering and produced
+# anatomically-impossible mappings on the first try (e.g. "ankles"
+# higher than "pelvis"). We trade off spine2/spine3 + feet (H36M
+# doesn't have them) for cleaner anatomy. Foot positions can be
+# inferred from ankle for overlay.
+#
+# PR-7a.2 chirality swap (upper-body arm chain) is applied at the
+# ARRAY level inside _run_wham_pipeline (was previously applied during
+# formatting in run_wham). After swap, idx 11/14, 12/15, 13/16 hold
+# image-orientation coordinates — so "left_shoulder" in our output
+# refers to image-left, matching ground-truth label convention.
+# ---------------------------------------------------------------------------
+
+H36M_TO_PILOT_NAME = {
+    0:  "pelvis",
+    7:  "spine1",
+    9:  "neck",
+    10: "head",
+    11: "left_shoulder",   14: "right_shoulder",
+    12: "left_elbow",      15: "right_elbow",
+    13: "left_wrist",      16: "right_wrist",
+    4:  "left_hip",        1:  "right_hip",
+    5:  "left_knee",       2:  "right_knee",
+    6:  "left_ankle",      3:  "right_ankle",
+}
+
+# Inverse: pilot name → H36M index. Emitted in PR-8b meta.joint_index_mapping
+# so consumers can look up the array position by joint name.
+_PILOT_NAME_TO_H36M = {v: k for k, v in H36M_TO_PILOT_NAME.items()}
+
+
+# ---------------------------------------------------------------------------
+# Workspace + video setup helpers (unchanged from PR-7a.5).
+# ---------------------------------------------------------------------------
 
 def _setup_workspace() -> None:
     """
@@ -82,7 +124,6 @@ def _setup_workspace() -> None:
       - /opt/wham/dataset/body_models/{smpl, smplh, smplx}/...
     Volume mounts under /models/{wham, body_models}.
     """
-    # checkpoints/ symlink farm
     os.makedirs(WHAM_CHECKPOINTS_DIR, exist_ok=True)
     if os.path.isdir(VOLUME_WHAM_DIR):
         for fname in os.listdir(VOLUME_WHAM_DIR):
@@ -97,8 +138,6 @@ def _setup_workspace() -> None:
             f"{VOLUME_WHAM_DIR} not present — run setup_models.py first"
         )
 
-    # body_models/ symlink (single tree symlink — WHAM expects the
-    # smpl/smplh/smplx subdirs underneath).
     if os.path.isdir(VOLUME_BODY_MODELS_DIR):
         parent = os.path.dirname(WHAM_BODY_MODELS_DIR)
         os.makedirs(parent, exist_ok=True)
@@ -124,17 +163,12 @@ def _download_video(video_url: str, dst_path: str) -> None:
     Pull the source video onto local disk inside the Modal function.
 
     Stdlib urllib is strict about URL syntax: spaces in the path
-    (Supabase preserves original filenames like
-    "Video Project 6-miao.mp4") trigger `InvalidURL: URL can't contain
-    control characters`. Percent-encode the path component before the
-    request so urllib accepts it. Token-bearing query string is left
-    untouched (its `+`/`=`/`.` chars are already legal).
+    trigger `InvalidURL`. Percent-encode the path component; leave the
+    query string untouched (its `+`/`=`/`.` chars are already legal).
     """
     import urllib.parse
     import urllib.request
 
-    # Split URL into scheme://netloc/path?query so we can quote() only
-    # the path (and leave the JWT query parameters alone).
     parts = urllib.parse.urlsplit(video_url)
     safe_path = urllib.parse.quote(parts.path, safe="/")
     encoded_url = urllib.parse.urlunsplit(
@@ -147,42 +181,52 @@ def _download_video(video_url: str, dst_path: str) -> None:
     print(f"[wham_runner]   ({sz_mb:.2f} MB)")
 
 
-# ---------------------------------------------------------------------------
-# Modal function entrypoint.
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Modal-side code below — only registered when modal is importable.
+# ===========================================================================
 
 if _MODAL_AVAILABLE:
-    import modal
+    import modal  # noqa: F401  (referenced in decorators below)
 
-    @app.function(
-        image=wham_image,
-        volumes={"/models": model_volume},
-        gpu="A10G",
-        timeout=600,
-    )
-    def run_wham(
+    # -----------------------------------------------------------------------
+    # Shared pipeline helper (PR-8b refactor)
+    #
+    # Runs the WHAM inference end-to-end and returns a rich raw-data dict.
+    # Two callers (run_wham, infer_video) format this into their preferred
+    # output schemas. Imports done lazily (cv2/numpy/joblib live in
+    # wham_image and aren't available outside the Modal container).
+    # -----------------------------------------------------------------------
+
+    def _run_wham_pipeline(
         video_id: str,
         video_url: str,
         primary_checkpoint: str = "wham_vit_w_3dpw.pth.tar",
-        save_smpl_params: bool = False,   # PR-7a.5 probe opt-in (default OFF)
     ) -> dict:
         """
-        Run WHAM on one video and return the joint-center timeline.
+        Run WHAM on one video. Setup + download + demo + pkl parse +
+        H36M joint regression + PR-7a.2 chirality swap (array-level).
 
-        Args:
-            video_id:           string for output naming.
-            video_url:          HTTP(S) URL the function can fetch from.
-                                Supabase signed URLs work; local path
-                                via 'file://' also works inside the
-                                Modal sandbox.
-            primary_checkpoint: which WHAM weight to use. Default is
-                                the 3dpw-trained primary. Alternate:
-                                "wham_vit_bedlam_w_3dpw.pth.tar".
+        Returns:
+            {
+                "track":              dict,            # raw WHAM track dict
+                "wham_out":           dict,            # raw top-level WHAM output
+                "joints_3d":          np.ndarray,      # (T, 17, 3) chirality-swapped
+                "frame_ids":          np.ndarray | None,
+                "video_w":            int,
+                "video_h":            int,
+                "fps_native":         float,
+                "n_native":           int,
+                "primary_track_id":   any,
+                "primary_checkpoint": str,
+                "n_frames":           int,
+            }
 
-        Returns: PilotRunResult-shaped dict (see runners/_base.py).
+        Raises RuntimeError on WHAM-side failure (missing models, demo.py
+        crash, no .pkl produced, missing 'verts', etc.).
         """
-        import json
-        import sys
+        import cv2
+        import joblib
+        import numpy as np
 
         _setup_workspace()
 
@@ -192,10 +236,6 @@ if _MODAL_AVAILABLE:
 
         # WHAM exposes a demo.py at repo root. It writes outputs under
         # output/demo/<video_basename>/.
-        # TODO(phase2b): re-check demo.py CLI signature against WHAM's
-        # README — flags may be `--video <path> --output_pth output.pth`
-        # vs `--input <path>`. The pinned commit's CLI is what we
-        # benchmark against; if it changes, update here.
         out_dir = f"{WHAM_REPO_ROOT}/output/demo/{video_id}"
         os.makedirs(out_dir, exist_ok=True)
         demo_cmd = [
@@ -204,16 +244,9 @@ if _MODAL_AVAILABLE:
             "--video", local_video,
             "--output_pth", f"{out_dir}/wham_output.pth",
             "--save_pkl",
-            # --visualize intentionally OFF: that flag pulls in
-            # pytorch3d which has no py310+cu113+pyt1110 prebuilt wheel
-            # (would force a slow source build). We render our own
-            # 2D back-projection overlay locally from the joint output
-            # in PilotRunResult.frames[*].joint_centers_2d_projected.
+            # --visualize OFF — pytorch3d source build is slow.
         ]
         print(f"[wham_runner] running WHAM demo: {' '.join(demo_cmd)}")
-        # Stream stdout/stderr so build/inference logs are visible in
-        # Modal's run output. Always print both, regardless of exit
-        # code — a 0 exit doesn't guarantee the pkl was written.
         completed = subprocess.run(
             demo_cmd,
             cwd=WHAM_REPO_ROOT,
@@ -231,24 +264,9 @@ if _MODAL_AVAILABLE:
                 f"WHAM demo failed with exit {completed.returncode}"
             )
 
-        # WHAM's demo writes wham_output.pkl by default with the
-        # following keys (per the pinned commit's demo.py source):
-        #   pose:            (T, 24, 3, 3)  rotation matrices  (SMPL pose)
-        #   trans:            (T, 3)         root translation
-        #   betas:            (T, 10)        SMPL shape
-        #   verts:            (T, 6890, 3)   posed SMPL vertices
-        #   joints:           (T, 24, 3)     world-frame joint centers (METERS)
-        #   contact:          (T, 4)
-        #   frame_ids:        (T,)
-        # The pkl path is implicitly at out_dir/wham_output.pkl.
-        # We translate that into our PilotRunResult shape.
-        # TODO(phase2b): verify the actual pkl filename WHAM uses
-        # (could be 'demo.pkl' or '{video_id}.pkl') and parse accordingly.
+        # Locate the pkl — preferred path or fallback tree scan.
         pkl_path = f"{out_dir}/wham_output.pkl"
         if not os.path.exists(pkl_path):
-            # Fall back: scan the entire /opt/wham/output tree for any
-            # .pkl. WHAM may write outputs at a different path than the
-            # --output_pth arg (e.g. derived from video basename).
             print(f"[wham_runner] {pkl_path} not present; scanning WHAM output tree:")
             found_pkls: list[str] = []
             for root, _dirs, files in os.walk(f"{WHAM_REPO_ROOT}/output"):
@@ -265,17 +283,13 @@ if _MODAL_AVAILABLE:
                 raise RuntimeError(
                     f"WHAM produced no .pkl anywhere under "
                     f"{WHAM_REPO_ROOT}/output (demo exit was 0 — output dir "
-                    f"layout differs from expected; check stdout/stderr above)"
+                    f"layout differs from expected)"
                 )
 
-        import joblib
         wham_out = joblib.load(pkl_path)
         print(f"[wham_runner] wham_output top-level keys: {list(wham_out.keys())}")
 
-        # WHAM's pkl is keyed by track-id (one entry per detected person
-        # across the clip). For golf swings we expect exactly one
-        # person → take the first track. Each track value is a dict with
-        # the SMPL keys (pose, trans, betas, joints, frame_ids).
+        # WHAM's pkl is keyed by track-id. For golf swings, expect 1 person.
         track_ids = sorted(wham_out.keys())
         if not track_ids:
             raise RuntimeError(f"WHAM pkl had no tracks: {pkl_path}")
@@ -286,41 +300,13 @@ if _MODAL_AVAILABLE:
             f"{len(track_ids)} total; track keys: {list(track.keys())}"
         )
 
-        # Joint name → H36M-regressor index mapping (17 joints).
-        # H36M's joint order is well-documented and stable; WHAM's
-        # 31-joint J_regressor_wham has an undocumented ordering and
-        # produced anatomically-impossible mappings on the first try
-        # (e.g. "ankles" higher than "pelvis"). We trade off spine2/
-        # spine3 + feet (H36M doesn't have them) for cleaner anatomy.
-        # Foot positions can be inferred from ankle for overlay.
-        H36M_TO_PILOT_NAME = {
-            0:  "pelvis",
-            7:  "spine1",          # H36M has 1 spine joint; spine2/3 not available
-            9:  "neck",
-            10: "head",
-            11: "left_shoulder",   14: "right_shoulder",
-            12: "left_elbow",      15: "right_elbow",
-            13: "left_wrist",      16: "right_wrist",
-            4:  "left_hip",        1:  "right_hip",
-            5:  "left_knee",       2:  "right_knee",
-            6:  "left_ankle",      3:  "right_ankle",
-        }
-
-        # WHAM doesn't emit pre-computed joint positions; it gives the
-        # full posed mesh vertices + SMPL params. Joints are derived by
-        # multiplying the WHAM joint regressor (24×6890) against the
-        # vertex array. The J_regressor_wham.npy file we downloaded
-        # into body_models is purpose-built for this.
-        import numpy as np
+        # Regress joints from posed vertices via J_regressor_h36m.
         verts = track.get("verts")
         if verts is None:
             raise RuntimeError(
-                f"WHAM track[{primary_track_id}] missing 'verts' field. "
+                f"WHAM track[{primary_track_id}] missing 'verts'. "
                 f"keys={list(track.keys())}"
             )
-        # verts shape: (T, 6890, 3) — posed mesh vertices in WHAM's
-        # output frame (camera-frame; pose_world + trans_world give the
-        # SLAM-grounded world frame variant).
         verts = np.asarray(verts)
         if verts.ndim != 3 or verts.shape[-1] != 3:
             raise RuntimeError(
@@ -328,10 +314,6 @@ if _MODAL_AVAILABLE:
                 f"(expected (T, V, 3))"
             )
 
-        # Switched from J_regressor_wham (31 joints, undocumented order)
-        # to J_regressor_h36m (17 joints, well-known order) for cleaner
-        # anatomy. Both .npy files live in body_models from the WHAM
-        # extras tarball.
         j_regressor_path = "/models/body_models/J_regressor_h36m.npy"
         if not os.path.exists(j_regressor_path):
             raise RuntimeError(
@@ -339,47 +321,57 @@ if _MODAL_AVAILABLE:
                 f"setup_models extras step needs to run first"
             )
         J_regressor = np.load(j_regressor_path)
-        # Expected shape (24, 6890). Some variants store it as (6890, 24)
-        # or (J, V) where J may be != 24; handle both orientations.
+        # (J, V) canonical; (V, J) needs transpose.
         if J_regressor.shape[1] == verts.shape[1]:
-            # (J, V) — canonical
             pass
         elif J_regressor.shape[0] == verts.shape[1]:
             J_regressor = J_regressor.T
         else:
             raise RuntimeError(
                 f"J_regressor shape {J_regressor.shape} incompatible with "
-                f"verts shape {verts.shape} (need shared V dim)"
+                f"verts shape {verts.shape}"
             )
         print(
             f"[wham_runner] computing joints: "
             f"J_regressor {J_regressor.shape} @ verts {verts.shape}"
         )
-        # joints[t, j, d] = sum_v J_regressor[j, v] * verts[t, v, d]
         joints_3d = np.einsum("jv,tvd->tjd", J_regressor, verts)
+        # joints_3d shape: (T, 17, 3) in WHAM's output frame.
         print(f"[wham_runner] derived joints shape: {joints_3d.shape}")
 
-        # DEBUG: dump all 31 joint xyz for frame[0] so the WHAM joint
-        # name ordering can be reverse-engineered. Print sorted by y
-        # (typically vertical) — lowest y = pelvis/ankles, highest = head.
-        # Standard SMPL convention: y is vertical (up positive in world
-        # frame; here in WHAM's camera frame, y direction depends on
-        # camera orientation). Either way, sorted-by-y gives a clear
-        # spatial profile.
+        # ── PR-7a.2 chirality swap at the ARRAY level ────────────────────
+        # Per PR-7a.2 cross-pair diagnostic, WHAM's H36M upper-body
+        # (shoulder/elbow/wrist) uses anatomy convention (anat-left =
+        # image-right for face-on camera), but lower-body AND our GT
+        # labels both use image-orientation convention. Swap the upper
+        # arm chain indices so all joints follow GT image-orientation.
+        # Doing the swap at the array level (vs at the formatter level
+        # as PR-7a.5 did) means downstream code reading
+        # joints_3d[H36M_TO_PILOT_NAME^-1["left_shoulder"]] gets image-
+        # left coords directly.
+        arm_swap_pairs = [(11, 14), (12, 15), (13, 16)]
+        for left_idx, right_idx in arm_swap_pairs:
+            joints_3d[:, [left_idx, right_idx], :] = (
+                joints_3d[:, [right_idx, left_idx], :]
+            )
+
+        # Debug dump frame[0] all joint xyz so the joint name ordering
+        # can be reverse-engineered if anatomy looks off. Print sorted
+        # by y (typically vertical) — lowest y = pelvis/ankles, highest
+        # = head.
         debug_frame_idx = 0
         f0_joints = joints_3d[debug_frame_idx]
         idx_sorted = sorted(range(len(f0_joints)), key=lambda i: f0_joints[i][1])
-        print(f"[wham_runner] DEBUG frame[{debug_frame_idx}] all joints (sorted by y):")
+        print(f"[wham_runner] DEBUG frame[{debug_frame_idx}] all joints (sorted by y, post-chirality-swap):")
         for i in idx_sorted:
             x, y, z = f0_joints[i]
-            print(f"[wham_runner]   idx={i:2d}  ({x:+7.3f}, {y:+7.3f}, {z:+7.3f})")
+            name = H36M_TO_PILOT_NAME.get(i, f"(idx {i})")
+            print(f"[wham_runner]   idx={i:2d} {name:>15}  ({x:+7.3f}, {y:+7.3f}, {z:+7.3f})")
 
         frame_ids = track.get("frame_ids")
         n_frames = len(joints_3d)
 
-        # Read video metadata locally (ffprobe via opencv was apt-installed
-        # in wham_image).
-        import cv2
+        # Read video metadata locally.
         cap = cv2.VideoCapture(local_video)
         fps_native = cap.get(cv2.CAP_PROP_FPS) or 30.0
         video_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -387,48 +379,80 @@ if _MODAL_AVAILABLE:
         n_native = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
-        frames_out = []
-        for i in range(n_frames):
-            joints_world = joints_3d[i]  # (17, 3) numpy (H36M order)
-            joint_centers_3d = {}
-            for h36m_idx, pilot_name in H36M_TO_PILOT_NAME.items():
-                xyz = joints_world[h36m_idx].tolist()
-                joint_centers_3d[pilot_name] = xyz
+        return {
+            "track":              track,
+            "wham_out":           wham_out,
+            "joints_3d":          joints_3d,
+            "frame_ids":          frame_ids,
+            "video_w":            video_w,
+            "video_h":            video_h,
+            "fps_native":         float(fps_native),
+            "n_native":           n_native,
+            "primary_track_id":   primary_track_id,
+            "primary_checkpoint": primary_checkpoint,
+            "n_frames":           n_frames,
+        }
 
-            # ── PR-7a.2 chirality normalization (upper-body arm chain) ──
-            # WHAM emits H36M-ordered joints. Per PR-7a.2 cross-pair
-            # diagnostic, WHAM's H36M upper-body (shoulder/elbow/wrist)
-            # uses anatomy convention (golfer-anat-left = image-RIGHT for
-            # a face-on camera), but lower-body (hip/knee/ankle) AND our
-            # ground-truth labels both use image-orientation convention
-            # (left = image-LEFT). Without this normalization, downstream
-            # fitting tries to encode the convention mismatch as huge
-            # body-local offset vectors. Swap the arm chain so all WHAM
-            # joints match the GT image-orientation convention.
-            for left, right in (
-                ("left_shoulder", "right_shoulder"),
-                ("left_elbow",    "right_elbow"),
-                ("left_wrist",    "right_wrist"),
-            ):
-                joint_centers_3d[left], joint_centers_3d[right] = (
-                    joint_centers_3d[right], joint_centers_3d[left],
-                )
+
+    # -----------------------------------------------------------------------
+    # run_wham — PR-7a.5 schema, kept for dev CLI workflow.
+    # -----------------------------------------------------------------------
+
+    @app.function(
+        image=wham_image,
+        volumes={"/models": model_volume},
+        gpu="A10G",
+        timeout=600,
+    )
+    def run_wham(
+        video_id: str,
+        video_url: str,
+        primary_checkpoint: str = "wham_vit_w_3dpw.pth.tar",
+        save_smpl_params: bool = False,
+    ) -> dict:
+        """
+        Run WHAM on one video and return the PR-7a.5 PilotRunResult dict.
+
+        run_wham_local local_entrypoint calls this remotely. Behavior
+        unchanged from PR-7a.5 (modulo the chirality swap moving from
+        the formatter to _run_wham_pipeline — net frame-level output
+        is identical).
+        """
+        import base64
+        import io
+        import numpy as np
+
+        pipe = _run_wham_pipeline(
+            video_id=video_id,
+            video_url=video_url,
+            primary_checkpoint=primary_checkpoint,
+        )
+
+        track            = pipe["track"]
+        joints_3d        = pipe["joints_3d"]
+        frame_ids        = pipe["frame_ids"]
+        fps_native       = pipe["fps_native"]
+        video_w          = pipe["video_w"]
+        video_h          = pipe["video_h"]
+        n_native         = pipe["n_native"]
+        n_frames         = pipe["n_frames"]
+
+        frames_out: list[dict] = []
+        for i in range(n_frames):
+            joints_world = joints_3d[i]
+            joint_centers_3d: dict[str, list[float]] = {}
+            for h36m_idx, pilot_name in H36M_TO_PILOT_NAME.items():
+                joint_centers_3d[pilot_name] = joints_world[h36m_idx].tolist()
+
             fi = int(frame_ids[i]) if frame_ids is not None else i
             frames_out.append({
                 "ts":                       round(fi / fps_native, 3),
                 "frame_idx":                fi,
                 "joint_centers_3d":         joint_centers_3d,
-                # TODO(phase2b): 2D back-projection requires the camera
-                # extrinsics. WHAM's SLAM stage emits per-frame
-                # cam_R / cam_t — extract from wham_out['cam_*'] keys
-                # and project here. For first smoke, leave as None;
-                # local render_overlay can fall back to verts-mean
-                # projection.
+                # 2D projection deferred to infer_video (PR-8b).
                 "joint_centers_2d_projected": None,
                 "smpl_betas":                track["betas"][i].tolist()
                                               if "betas" in track else None,
-                # PR-7a.5: pose + trans saved only when save_smpl_params=True.
-                # pose adds ~1.7 KB/frame (24*3*3 floats), trans adds 24 bytes/frame.
                 "smpl_pose":  (
                     track["pose"][i].tolist()
                     if save_smpl_params and "pose" in track else None
@@ -442,40 +466,34 @@ if _MODAL_AVAILABLE:
         result = {
             "video_id":     video_id,
             "runner":       "wham",
-            "_wham_runner_version": "7a5",   # PR-7a.5 schema marker
+            "_wham_runner_version": "7a5",
             "video_width":  video_w,
             "video_height": video_h,
             "fps_native":   round(fps_native, 2),
-            "fps_sampled":  round(fps_native, 2),  # WHAM runs at native fps
+            "fps_sampled":  round(fps_native, 2),
             "duration_sec": round(n_native / fps_native, 3),
             "frames":       frames_out,
             "camera": {
-                # TODO(phase2b): pull from wham_out keys
+                # Camera extraction is PR-8b's job (infer_video). Old
+                # PR-7a.5 schema kept None for back-compat.
                 "rotation":    None,
                 "translation": None,
                 "focal_px":    None,
             },
             "notes": [
-                f"wham_commit=2b54f77",
-                f"primary_checkpoint={primary_checkpoint}",
+                f"wham_commit={WHAM_COMMIT_SHORT}",
+                f"primary_checkpoint={pipe['primary_checkpoint']}",
                 f"n_frames_wham={n_frames}",
                 f"n_native_frames={n_native}",
                 f"video_url={video_url[:80]}{'...' if len(video_url) > 80 else ''}",
                 f"j_regressor=J_regressor_h36m.npy (17 joints, H36M order)",
                 f"h36m_to_pilot_dropped_keys=[spine2,spine3,left_foot,right_foot]",
+                f"chirality_swap=array_level (PR-8b refactor)",
             ],
         }
 
-        # ── PR-7a.5: opt-in SMPL params packing (verts to .npz sidecar) ──
-        # When save_smpl_params=True, pack (verts, pose, trans, betas) into
-        # a compressed .npz blob and ship as base64 string in the result
-        # dict. Modal returns it across the wire; local_entrypoint pops +
-        # writes to python/pilot/output/wham/<id>/smpl_params.npz.
-        #
-        # Default OFF — production runs unchanged.
+        # PR-7a.5: opt-in SMPL params packing to .npz sidecar.
         if save_smpl_params and "verts" in track:
-            import base64
-            import io
             verts_arr = np.asarray(track["verts"], dtype=np.float32)
             pose_arr  = np.asarray(track["pose"],  dtype=np.float32) if "pose"  in track else None
             trans_arr = np.asarray(track["trans"], dtype=np.float32) if "trans" in track else None
@@ -488,8 +506,6 @@ if _MODAL_AVAILABLE:
                 **({"betas": betas_arr} if betas_arr is not None else {}),
             )
             raw_npz_bytes = buf.getvalue()
-            # Size log BEFORE encoding — if Modal hangs we can tell
-            # size-related from inference-related.
             print(f"[wham_runner] smpl_params npz raw size = "
                   f"{len(raw_npz_bytes) / 1024 / 1024:.1f} MB")
             encoded = base64.b64encode(raw_npz_bytes).decode("ascii")
@@ -506,8 +522,490 @@ if _MODAL_AVAILABLE:
         return result
 
 
+    # -----------------------------------------------------------------------
+    # infer_video — PR-8b schema, deployed for Railway consumption.
+    # -----------------------------------------------------------------------
+
+    @app.function(
+        image=wham_image,
+        gpu="A10G",
+        volumes={"/models": model_volume},
+        timeout=600,
+    )
+    def infer_video(
+        video_url: str,
+        video_id: str,
+        save_smpl_params: bool = False,
+    ) -> dict:
+        """
+        PR-8b: deployed WHAM inference returning the PR-8a' schema
+        (wham_video_meta + wham_pose_timeline shapes).
+
+        Implements 2D back-projection from WHAM SLAM camera output
+        (was None/TODO in PR-7a.5). Camera extraction is defensive —
+        runtime-inspects WHAM track + top-level dict keys, falls back
+        to `focal = max(w, h)` and identity extrinsics if WHAM didn't
+        expose the expected fields. The actual key names discovered
+        are recorded in `meta.camera.notes` so Spec 2 can document
+        what WHAM produces in this build.
+
+        NO Supabase writes — PR-8c (Railway) wires DB ingestion.
+        """
+        import time
+        import numpy as np
+
+        start_ms = int(time.time() * 1000)
+
+        try:
+            pipe = _run_wham_pipeline(
+                video_id=video_id,
+                video_url=video_url,
+            )
+        except Exception as exc:
+            # Catastrophic failure — return failed envelope. Caller
+            # (Railway in PR-8c) parses status + error_message for
+            # retry/give-up logic.
+            elapsed_ms = int(time.time() * 1000) - start_ms
+            print(f"[wham_runner.infer_video] FAILED after {elapsed_ms}ms: {exc}")
+            return {
+                "status":              "failed",
+                "video_id":            video_id,
+                "modal_call_id":       None,
+                "inference_ms_total":  elapsed_ms,
+                "error_message":       str(exc),
+                "meta":                _empty_pr8b_meta(),
+                "frames":              [],
+            }
+
+        # Pipeline succeeded — extract camera + format frames.
+        cam = _extract_camera(
+            wham_out=pipe["wham_out"],
+            track=pipe["track"],
+            image_w=pipe["video_w"],
+            image_h=pipe["video_h"],
+            n_frames=pipe["n_frames"],
+        )
+
+        meta = _build_pr8b_meta(pipe, cam)
+        frames_out, n_partial = _build_pr8b_frames(pipe, cam, save_smpl_params)
+
+        status = "completed" if n_partial == 0 else "partial"
+        elapsed_ms = int(time.time() * 1000) - start_ms
+        print(
+            f"[wham_runner.infer_video] {status} — "
+            f"{pipe['n_frames']} frames ({n_partial} partial), "
+            f"{elapsed_ms}ms total"
+        )
+
+        return {
+            "status":              status,
+            "video_id":            video_id,
+            "modal_call_id":       None,  # populated by Railway (PR-8c)
+            "inference_ms_total":  elapsed_ms,
+            "error_message":       None,
+            "meta":                meta,
+            "frames":              frames_out,
+        }
+
+
+    # -----------------------------------------------------------------------
+    # PR-8b helpers — camera extraction, 2D projection, schema builders.
+    # -----------------------------------------------------------------------
+
+    def _extract_camera(
+        wham_out: dict,
+        track: dict,
+        image_w: int,
+        image_h: int,
+        n_frames: int,
+    ) -> dict:
+        """
+        Defensively pull camera intrinsics + extrinsics from the WHAM
+        output. Returns a dict with R_per_frame / t_per_frame / focal /
+        cx / cy / notes. R_per_frame and t_per_frame may be None if
+        WHAM didn't expose them; projection falls back to identity in
+        that case (joints assumed already in camera frame).
+
+        WHAM's actual output key names are undocumented for this commit
+        pin; we try a range of common patterns and log the result so
+        future PRs can lock to the verified key names.
+        """
+        import numpy as np
+
+        notes: list[str] = []
+        notes.append(f"wham_out_top_keys={list(wham_out.keys())[:12]}")
+        notes.append(f"track_keys={list(track.keys())[:24]}")
+
+        R_pf: "np.ndarray | None" = None
+        t_pf: "np.ndarray | None" = None
+        focal: "float | None" = None
+
+        # Try separate R/t key pairs at track level.
+        for r_key, t_key in (
+            ("cam_R", "cam_t"),
+            ("cam_rotation", "cam_translation"),
+            ("R", "trans_cam"),
+            ("world_cam_R", "world_cam_t"),
+        ):
+            if r_key in track and t_key in track:
+                R_pf = np.asarray(track[r_key], dtype=np.float32)
+                t_pf = np.asarray(track[t_key], dtype=np.float32)
+                notes.append(f"extrinsics_source=track[{r_key},{t_key}] R={R_pf.shape} t={t_pf.shape}")
+                break
+
+        # Try combined 4x4 / 3x4 cam matrix at track level.
+        if R_pf is None and "cam" in track:
+            cam = np.asarray(track["cam"], dtype=np.float32)
+            if cam.ndim == 3 and cam.shape[1:] == (4, 4):
+                R_pf = cam[:, :3, :3]
+                t_pf = cam[:, :3, 3]
+                notes.append(f"extrinsics_source=track[cam] (T,4,4) {cam.shape}")
+            elif cam.ndim == 3 and cam.shape[1:] == (3, 4):
+                R_pf = cam[:, :3, :3]
+                t_pf = cam[:, :3, 3]
+                notes.append(f"extrinsics_source=track[cam] (T,3,4) {cam.shape}")
+            elif cam.ndim == 2 and cam.shape == (4, 4):
+                # Single global pose; broadcast to per-frame.
+                R_pf = np.broadcast_to(cam[None, :3, :3], (n_frames, 3, 3)).copy()
+                t_pf = np.broadcast_to(cam[None, :3, 3], (n_frames, 3)).copy()
+                notes.append(f"extrinsics_source=track[cam] global (4,4)")
+
+        # Try top-level wham_out for camera (some WHAM forks emit there).
+        if R_pf is None:
+            for r_key, t_key in (("cam_R", "cam_t"), ("global_R", "global_t")):
+                if r_key in wham_out and t_key in wham_out:
+                    R_pf = np.asarray(wham_out[r_key], dtype=np.float32)
+                    t_pf = np.asarray(wham_out[t_key], dtype=np.float32)
+                    notes.append(f"extrinsics_source=wham_out[{r_key},{t_key}]")
+                    break
+
+        # Focal length — try a few common name patterns.
+        for key in ("focal", "focal_length", "focal_px", "fx"):
+            if key in track:
+                val = track[key]
+                arr = np.asarray(val).flatten()
+                if arr.size > 0:
+                    focal = float(arr[0])
+                    notes.append(f"focal_source=track[{key}]={focal:.2f}")
+                    break
+        if focal is None and "K" in track:
+            K = np.asarray(track["K"], dtype=np.float32)
+            if K.ndim == 2 and K.shape == (3, 3):
+                focal = float(K[0, 0])
+                notes.append(f"focal_source=track[K][0,0]={focal:.2f}")
+            elif K.ndim == 3 and K.shape[1:] == (3, 3):
+                focal = float(K[0, 0, 0])
+                notes.append(f"focal_source=track[K][0,0,0]={focal:.2f}")
+        if focal is None:
+            # Spec fallback: focal = max(image_width, image_height).
+            # WHAM trained on web video — this is its implicit assumption.
+            focal = float(max(image_w, image_h))
+            notes.append(
+                f"focal_fallback=max(image_w,image_h)={focal:.0f} "
+                f"(WHAM did not expose focal/K/fx/focal_length)"
+            )
+
+        if R_pf is None:
+            notes.append(
+                "extrinsics_unavailable=identity_fallback "
+                "(joints projected as if already in camera frame)"
+            )
+
+        cx = image_w / 2.0
+        cy = image_h / 2.0
+        notes.append(f"principal_point=image_center=({cx:.0f},{cy:.0f})")
+
+        return {
+            "R_per_frame": R_pf,
+            "t_per_frame": t_pf,
+            "focal":       focal,
+            "cx":          cx,
+            "cy":          cy,
+            "notes":       "; ".join(notes),
+        }
+
+    def _project_joints_2d(
+        joints_world,  # (J, 3) np.ndarray, J=17 H36M
+        R,             # (3, 3) np.ndarray or None
+        t,             # (3,)   np.ndarray or None
+        focal: float,
+        cx: float,
+        cy: float,
+    ):
+        """
+        Pinhole projection. Returns (J, 2) np.ndarray.
+
+        If R/t is None, treat joints_world as already in camera frame
+        (identity fallback per spec). Z near zero is guarded against
+        with a small epsilon — joints behind the camera produce huge
+        out-of-bounds u/v which the fit_ok check later flags.
+        """
+        import numpy as np
+        joints = np.asarray(joints_world, dtype=np.float32)
+        if R is not None and t is not None:
+            R = np.asarray(R, dtype=np.float32)
+            t = np.asarray(t, dtype=np.float32)
+            joints_cam = joints @ R.T + t  # (J, 3)
+        else:
+            joints_cam = joints
+        X = joints_cam[:, 0]
+        Y = joints_cam[:, 1]
+        Z = joints_cam[:, 2]
+        eps = 1e-6
+        Z_safe = np.where(np.abs(Z) < eps, eps * np.sign(Z + eps), Z)
+        u = focal * X / Z_safe + cx
+        v = focal * Y / Z_safe + cy
+        return np.stack([u, v], axis=-1)  # (J, 2)
+
+    def _empty_pr8b_meta() -> dict:
+        """Meta block for `failed` envelope — fields populated to satisfy
+        Zod schema in PR-8d but values are minimal/null."""
+        return {
+            "source":                "wham_smplh_v1",
+            "joint_type":            "bone_center",
+            "coordinate_space_2d":   "video_px",
+            "coordinate_space_3d":   "smpl_world_m",
+            "wham_model":            "wham_vit_w_3dpw",
+            "wham_commit":           WHAM_COMMIT_SHORT,
+            "image_width":           0,
+            "image_height":          0,
+            "processed_fps":         0.0,
+            "frame_count":           0,
+            "camera": {
+                "rotation":            None,
+                "translation":         None,
+                "focal_px":            None,
+                "principal_point_px":  None,
+                "notes":               "pipeline failed before camera extraction",
+            },
+            "joint_index_mapping":   _build_joint_index_mapping(),
+        }
+
+    def _build_joint_index_mapping() -> dict:
+        """Emitted into meta.joint_index_mapping — single source of
+        truth for downstream consumers. Includes the chirality-swap
+        flag so consumers understand the names follow image-orientation
+        convention (PR-7a.2)."""
+        m: dict = dict(_PILOT_NAME_TO_H36M)
+        m["_source"] = "h36m_17"
+        m["_chirality_normalized"] = (
+            "upper_body_arm_chain_swapped (PR-7a.2): "
+            "indices 11/14, 12/15, 13/16 swapped at array level so "
+            "name 'left_*' refers to image-left after a face-on camera, "
+            "matching ground-truth label convention."
+        )
+        return m
+
+    def _build_pr8b_meta(pipe: dict, cam: dict) -> dict:
+        """Build the wham_video_meta-shaped meta dict from pipeline +
+        camera output. Camera rotation/translation report the frame-0
+        snapshot; per-frame variation is consumed by projection inside
+        the formatter."""
+        R_pf = cam["R_per_frame"]
+        t_pf = cam["t_per_frame"]
+        cam_rotation = None
+        cam_translation = None
+        if R_pf is not None and len(R_pf) > 0:
+            cam_rotation = R_pf[0].tolist()
+        if t_pf is not None and len(t_pf) > 0:
+            cam_translation = t_pf[0].tolist()
+
+        notes_full = cam["notes"]
+        if R_pf is not None and len(R_pf) > 1:
+            notes_full += (
+                f"; meta.camera.rotation/translation = frame-0 snapshot, "
+                f"per-frame variation applied during 2D projection "
+                f"(R={R_pf.shape}, t={t_pf.shape if t_pf is not None else None})"
+            )
+
+        return {
+            "source":                "wham_smplh_v1",
+            "joint_type":            "bone_center",
+            "coordinate_space_2d":   "video_px",
+            "coordinate_space_3d":   "smpl_world_m",
+            "wham_model":            "wham_vit_w_3dpw",
+            "wham_commit":           WHAM_COMMIT_SHORT,
+            "image_width":           pipe["video_w"],
+            "image_height":          pipe["video_h"],
+            "processed_fps":         round(pipe["fps_native"], 2),
+            "frame_count":           pipe["n_frames"],
+            "camera": {
+                "rotation":            cam_rotation,
+                "translation":         cam_translation,
+                "focal_px":            cam["focal"],
+                "principal_point_px":  [cam["cx"], cam["cy"]],
+                "notes":               notes_full,
+            },
+            "joint_index_mapping":   _build_joint_index_mapping(),
+        }
+
+    def _build_pr8b_frames(pipe: dict, cam: dict, save_smpl_params: bool):
+        """
+        Build the per-frame list for wham_pose_timeline shape. Applies
+        per-frame 2D projection from cam.R_per_frame[i] / t_per_frame[i]
+        (or identity fallback). Computes fit_ok per spec:
+          - rule 1: any 3D joint non-finite → fit_ok=False, sub-dicts null
+          - rule 2: >50% of joints' projected (u,v) out-of-image-bounds
+                    → fit_ok=False, sub-dicts still populated
+
+        fit_quality: per spec, computed as
+            1.0 - clip(mean_reprojection_error_px / 50, 0, 1)
+        Requires WHAM's 2D detections (kp2d). If not exposed in the
+        track dict, set to None and explained in code comment.
+
+        Returns (frames_out_list, n_partial).
+        """
+        import math
+        import numpy as np
+
+        joints_3d_all = pipe["joints_3d"]   # (T, 17, 3) chirality-swapped
+        frame_ids     = pipe["frame_ids"]
+        fps_native    = pipe["fps_native"]
+        track         = pipe["track"]
+        image_w       = pipe["video_w"]
+        image_h       = pipe["video_h"]
+        n_frames      = pipe["n_frames"]
+
+        R_pf  = cam["R_per_frame"]
+        t_pf  = cam["t_per_frame"]
+        focal = cam["focal"]
+        cx    = cam["cx"]
+        cy    = cam["cy"]
+
+        # kp2d availability check — if WHAM didn't expose the 2D ground-
+        # truth (YOLO/ViTPose) detections, we can't compute reprojection
+        # error and fit_quality stays None for all frames. Inspect once
+        # up front.
+        kp2d_per_frame = None
+        for key in ("kp2d", "keypoints_2d", "vitpose_kp2d", "input_kp2d"):
+            if key in track:
+                kp2d_per_frame = np.asarray(track[key])
+                print(f"[wham_runner.infer_video] kp2d source=track[{key}] shape={kp2d_per_frame.shape}")
+                break
+        if kp2d_per_frame is None:
+            print(
+                "[wham_runner.infer_video] no 2D ground-truth keypoints "
+                "(kp2d/keypoints_2d/vitpose_kp2d) exposed by WHAM → "
+                "fit_quality=null for all frames"
+            )
+
+        frames_out: list[dict] = []
+        n_partial = 0
+        # Iterate the 16 named joints; map to H36M array index.
+        named_indices = [
+            (name, idx) for name, idx in _PILOT_NAME_TO_H36M.items()
+        ]
+        n_named = len(named_indices)
+
+        for i in range(n_frames):
+            joints_world = joints_3d_all[i]   # (17, 3)
+            fi = int(frame_ids[i]) if frame_ids is not None else i
+            ts_ms = int(round((fi / fps_native) * 1000))
+
+            # Rule 1: any non-finite 3D joint → hard skip.
+            if not np.isfinite(joints_world).all():
+                n_partial += 1
+                frames_out.append({
+                    "frame_idx":               fi,
+                    "frame_timestamp_ms":      ts_ms,
+                    "fit_ok":                  False,
+                    "fit_quality":             None,
+                    "smpl_pose":               None,
+                    "smpl_shape":              None,
+                    "smpl_trans":              None,
+                    "keypoints_2d_projected":  None,
+                    "keypoints_3d_smpl":       None,
+                })
+                continue
+
+            # Project ALL 17 joints (we only emit the 16 named in the
+            # sub-dict but compute on the full array for vector ops).
+            R_i = R_pf[i] if R_pf is not None and i < len(R_pf) else None
+            t_i = t_pf[i] if t_pf is not None and i < len(t_pf) else None
+            kp2d_proj = _project_joints_2d(
+                joints_world, R_i, t_i, focal, cx, cy,
+            )  # (17, 2)
+
+            keypoints_2d: dict = {}
+            keypoints_3d: dict = {}
+            n_oob = 0
+            for name, idx in named_indices:
+                u = float(kp2d_proj[idx, 0])
+                v = float(kp2d_proj[idx, 1])
+                x = float(joints_world[idx, 0])
+                y = float(joints_world[idx, 1])
+                z = float(joints_world[idx, 2])
+                keypoints_2d[name] = {"x": u, "y": v}
+                keypoints_3d[name] = {"x": x, "y": y, "z": z}
+                # Out-of-bounds with ±10% slack per spec.
+                slack_x = 0.10 * image_w
+                slack_y = 0.10 * image_h
+                if not (
+                    -slack_x <= u <= image_w + slack_x
+                    and -slack_y <= v <= image_h + slack_y
+                ):
+                    n_oob += 1
+
+            # Rule 2: >50% of joints OOB → flag low-quality but still emit.
+            fit_ok = (n_oob <= n_named // 2)
+            if not fit_ok:
+                n_partial += 1
+
+            # fit_quality from reprojection error — only computable if
+            # WHAM exposed its 2D detection input. Else None.
+            fit_quality = None
+            if kp2d_per_frame is not None and i < len(kp2d_per_frame):
+                gt2d = kp2d_per_frame[i]  # expected (K, 2) or (K, 3) with conf
+                if gt2d.ndim == 2 and gt2d.shape[0] >= n_named:
+                    # Match by H36M index if possible; otherwise fall back
+                    # to first 17 entries. WHAM's kp2d convention isn't
+                    # documented at this commit pin — defensive.
+                    try:
+                        diffs = kp2d_proj[:n_named, :2] - gt2d[:n_named, :2]
+                        per_joint_err = np.linalg.norm(diffs, axis=1)
+                        mean_err = float(np.mean(per_joint_err))
+                        # Saturate at 50px (per spec).
+                        normalized = max(0.0, min(1.0, mean_err / 50.0))
+                        fit_quality = 1.0 - normalized
+                    except Exception:
+                        fit_quality = None
+
+            # SMPL params: shape always emit (small), pose/trans opt-in.
+            smpl_shape_i = (
+                track["betas"][i].tolist()
+                if "betas" in track and i < len(track["betas"])
+                else None
+            )
+            smpl_pose_i = (
+                track["pose"][i].tolist()
+                if save_smpl_params and "pose" in track and i < len(track["pose"])
+                else None
+            )
+            smpl_trans_i = (
+                track["trans"][i].tolist()
+                if save_smpl_params and "trans" in track and i < len(track["trans"])
+                else None
+            )
+
+            frames_out.append({
+                "frame_idx":               fi,
+                "frame_timestamp_ms":      ts_ms,
+                "fit_ok":                  fit_ok,
+                "fit_quality":             fit_quality,
+                "smpl_pose":               smpl_pose_i,
+                "smpl_shape":              smpl_shape_i,
+                "smpl_trans":              smpl_trans_i,
+                "keypoints_2d_projected":  keypoints_2d,
+                "keypoints_3d_smpl":       keypoints_3d,
+            })
+
+        # Avoid math being flagged unused — import only above for clarity.
+        _ = math
+        return frames_out, n_partial
+
+
 # ---------------------------------------------------------------------------
-# Local entry (Modal-side run + local result-fetch + overlay render).
+# Local entry — Modal-side run + local result-fetch + overlay render.
 # Invoke with: modal run wham_runner.py::run_wham_local --video-id ... --video-url ...
 # ---------------------------------------------------------------------------
 
@@ -520,12 +1018,12 @@ if _MODAL_AVAILABLE:
         save_smpl_params: bool = False,
     ) -> None:
         """
-        Local driver: invokes run_wham on Modal, then writes the result
-        JSON to python/pilot/output/wham/<video_id>/joint_centers_3d.json.
+        Local driver: invokes run_wham on Modal, then writes the PR-7a.5
+        result JSON to python/pilot/output/wham/<video_id>/joint_centers_3d.json.
 
-        PR-7a.5: when save_smpl_params=True, also pops the SMPL params
-        blob from the result dict and writes it as a .npz sidecar at
-        python/pilot/output/wham/<video_id>/smpl_params.npz.
+        PR-8b note: this entrypoint still calls `run_wham` (PR-7a.5
+        schema). The new PR-8b function is `infer_video` — invoke via
+        the deployed Modal function once `modal deploy` has landed.
         """
         import base64
         import json
@@ -542,8 +1040,6 @@ if _MODAL_AVAILABLE:
         out_dir = Path(f"python/pilot/output/wham/{video_id}")
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # PR-7a.5: pop the SMPL params blob BEFORE JSON dump (too large
-        # to inline). Sidecar .npz lands next to joint_centers_3d.json.
         npz_b64 = result.pop("smpl_params_npz_b64", None)
         shapes  = result.pop("smpl_params_shapes", None)
 
@@ -559,14 +1055,10 @@ if _MODAL_AVAILABLE:
             sz_mb = npz_path.stat().st_size / 1024 / 1024
             print(f"[wham_runner] wrote {npz_path} "
                   f"({sz_mb:.1f} MB) shapes={shapes}")
-        print(
-            f"[wham_runner] next: render 2D overlay via "
-            f"python -m pilot.runners._overlay {video_id}"
-        )
 
 
 # ---------------------------------------------------------------------------
-# Local self-test (no Modal cost).
+# Local self-test — describes the deployable surface.
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -577,8 +1069,14 @@ if __name__ == "__main__":
         print(f"[wham_runner] image        = wham_image")
         print(f"[wham_runner] gpu          = A10G")
         print(f"[wham_runner] timeout_sec  = 600")
+        print(f"[wham_runner] functions    = run_wham (PR-7a.5), infer_video (PR-8b)")
         print(
-            "[wham_runner] invoke remotely with: "
-            "modal run python/pilot/runners/wham_runner.py::run_wham_local "
+            "[wham_runner] dev CLI (PR-7a.5 schema):\n"
+            "    modal run python/pilot/runners/wham_runner.py::run_wham_local "
             "--video-id <uuid> --video-url '<https URL>'"
+        )
+        print(
+            "[wham_runner] deploy (PR-8b infer_video):\n"
+            "    modal deploy python/pilot/modal_app.py\n"
+            "Then invoke via Modal client (PR-8c Railway driver)."
         )
