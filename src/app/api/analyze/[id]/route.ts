@@ -56,25 +56,35 @@ function proportionalPhases(dur: number): PhaseMarkers {
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
 /* ââ Call Python analysis service ââ */
-async function callPythonAnalyzer(
-  videoUrl: string,
-  viewType: string,
-  videoId: string,
-  userId: string,
-): Promise<{
+// PR-8c.2 (2026-05-26 product decision): silent stub fallback on backend
+// failure must end. Callers distinguish:
+//   success         -> real MediaPipe data
+//   not_configured  -> PYTHON_ANALYZER_URL absent (dev mode); stub OK
+//   failed          -> backend 5xx / timeout / error; surface to client
+//                      as analysis_failed + return 502.
+type PythonSuccessResult = {
   videoMetadata: VideoMetadata;
   phaseMarkers: PhaseMarkers;
   keypointTimeline: KeypointFrame[];
   detectedIssue: MainIssueType;
   confidence: number;
-  // PR-4: 17-keypoint COCO frame-level timeline. Typed at the consumer
-  // site (commit 4 lands the PoseTimeline type); kept as unknown here so
-  // commits 3 and 4 are independently buildable.
+  // PR-4: 17-keypoint COCO frame-level timeline.
   poseTimeline2d: unknown | null;
-} | null> {
+};
+type PythonCallResult =
+  | { kind: 'success'; result: PythonSuccessResult }
+  | { kind: 'not_configured' }
+  | { kind: 'failed'; error_code: string; error_message: string };
+
+async function callPythonAnalyzer(
+  videoUrl: string,
+  viewType: string,
+  videoId: string,
+  userId: string,
+): Promise<PythonCallResult> {
   if (!PYTHON_ANALYZER_URL) {
-    console.log('[analyze] PYTHON_ANALYZER_URL not set â using stub');
-    return null;
+    console.log('[analyze] PYTHON_ANALYZER_URL not set; falling back to stub');
+    return { kind: 'not_configured' };
   }
 
   try {
@@ -99,14 +109,27 @@ async function callPythonAnalyzer(
     });
 
     if (!res.ok) {
+      // 5xx = backend unavailable; 4xx = client-shaped problem. Both
+      // surface to client as analysis_failed per 2026-05-26 spec.
       console.error(`[analyze] Python service returned ${res.status}`);
-      return null;
+      const code = res.status >= 500
+        ? `backend_unavailable_${res.status}`
+        : `backend_http_${res.status}`;
+      return {
+        kind: 'failed',
+        error_code: code,
+        error_message: `Python /analyze returned HTTP ${res.status}`,
+      };
     }
 
     const data = await res.json();
     if (data.status !== 'success') {
       console.error('[analyze] Python service error:', data.error);
-      return null;
+      return {
+        kind: 'failed',
+        error_code: 'backend_status_failure',
+        error_message: data.error ?? 'Python returned non-success status',
+      };
     }
 
     // Map Python response to our TypeScript types
@@ -137,17 +160,30 @@ async function callPythonAnalyzer(
     }
 
     return {
-      videoMetadata:    videoMeta,
-      phaseMarkers:     phases,
-      keypointTimeline: data.keypointTimeline ?? [],
-      detectedIssue:    detectedIssue as MainIssueType,
-      confidence,
-      poseTimeline2d:   data.poseTimeline2d ?? null,
+      kind: 'success',
+      result: {
+        videoMetadata:    videoMeta,
+        phaseMarkers:     phases,
+        keypointTimeline: data.keypointTimeline ?? [],
+        detectedIssue:    detectedIssue as MainIssueType,
+        confidence,
+        poseTimeline2d:   data.poseTimeline2d ?? null,
+      },
     };
 
   } catch (err) {
     console.error('[analyze] Python service call failed:', err);
-    return null;
+    const errName = err instanceof Error ? err.name : 'UnknownError';
+    const errMsg  = err instanceof Error ? err.message : String(err);
+    const code =
+      errName === 'TimeoutError' || errName === 'AbortError'
+        ? 'backend_timeout'
+        : 'backend_network_error';
+    return {
+      kind: 'failed',
+      error_code: code,
+      error_message: `${errName}: ${errMsg}`,
+    };
   }
 }
 
@@ -208,23 +244,67 @@ export async function POST(
       .createSignedUrl(video.storage_path, 300); // 5 min expiry for analysis
 
     if (signedData?.signedUrl) {
-      const pythonResult = await callPythonAnalyzer(
+      const callResult = await callPythonAnalyzer(
         signedData.signedUrl,
         viewType,
         videoId,
         user.id,
       );
 
-      if (pythonResult) {
-        videoMetadata    = pythonResult.videoMetadata;
-        phaseMarkers     = pythonResult.phaseMarkers;
-        keypointTimeline = pythonResult.keypointTimeline;
-        detectedIssue    = pythonResult.detectedIssue;
-        issueConfidence  = pythonResult.confidence;
+      if (callResult.kind === 'success') {
+        videoMetadata    = callResult.result.videoMetadata;
+        phaseMarkers     = callResult.result.phaseMarkers;
+        keypointTimeline = callResult.result.keypointTimeline;
+        detectedIssue    = callResult.result.detectedIssue;
+        issueConfidence  = callResult.result.confidence;
         dataSource       = 'mediapipe';
-        poseTimeline2d   = pythonResult.poseTimeline2d;
+        poseTimeline2d   = callResult.result.poseTimeline2d;
         console.log(`[analyze] Using real MediaPipe data: ${detectedIssue} (conf=${issueConfidence.toFixed(2)})`);
+      } else if (callResult.kind === 'failed') {
+        // PR-8c.2 (2026-05-26 product decision): when Python service fails
+        // (5xx, timeout, network error, non-success status), DO NOT silently
+        // fall back to stub. Surface the failure to the client + record
+        // explicit error state on swing_analysis + swing_videos so the
+        // frontend state machine can render an error view instead of stub.
+        console.error(
+          `[analyze] ANALYSIS_FAILED ${callResult.error_code}: ${callResult.error_message}`
+        );
+
+        const errorVideoMetadata = {
+          dataSource:         'analysis_failed',
+          wham_status:        'failed',
+          wham_error_message: callResult.error_code,
+          wham_error_detail:  callResult.error_message,
+        };
+
+        // Best-effort write of swing_analysis error row. issue_type column
+        // is NOT NULL; sentinel 'analysis_failed' lets the frontend detect
+        // this state in addition to wham_status='failed'.
+        await supabase.from('swing_analysis').insert({
+          video_id:            videoId,
+          issue_type:          'analysis_failed',
+          video_metadata_json: errorVideoMetadata,
+        });
+
+        // swing_videos must be 'failed', not 'completed'. Frontend reads
+        // this for the upload-list state badge.
+        await supabase.from('swing_videos').update({
+          status:                   'failed',
+          error_code:               'ANALYSIS_FAILED',
+          error_message:            callResult.error_message,
+          processing_completed_at:  new Date().toISOString(),
+        }).eq('id', videoId);
+
+        return NextResponse.json({
+          error:         'analysis_failed',
+          error_code:    callResult.error_code,
+          error_message: callResult.error_message,
+        }, { status: 502 });
       }
+      // callResult.kind === 'not_configured' falls through to stub block.
+      // (Won't fire inside this branch — PYTHON_ANALYZER_URL is already
+      //  verified non-empty by the outer guard. Defensive: dataSource
+      //  stays 'stub' and the stub fallback below runs.)
     }
   }
 
