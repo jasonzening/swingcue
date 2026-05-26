@@ -1,0 +1,170 @@
+[
+  {
+    "label": "GATE 1 \u2014 DTL (956afa87)",
+    "video_id": "956afa87-57bb-4778-94fe-df43379da1b5",
+    "checks": {
+      "meta_row_exists": true,
+      "status": "completed",
+      "status_matches_expected": true,
+      "wham_model": "wham_vit_w_3dpw",
+      "frame_count": 119,
+      "image_wh": [
+        1080,
+        1920
+      ],
+      "head_crown_vertex_index": 411,
+      "_trans_z_stabilization": "median_over_swing",
+      "_wham_commit": "2b54f77",
+      "_trans_z_median": 4.044492244720459,
+      "timeline_count": 119,
+      "timeline_count_matches_meta": true,
+      "sa_wham_status": "ready",
+      "sa_wham_started_at": "2026-05-26T04:36:36.433533+00:00",
+      "sa_wham_expected_seconds": 60
+    },
+    "meta": {
+      "id": "06f878f3-248e-476c-8398-754911959008",
+      "video_id": "956afa87-57bb-4778-94fe-df43379da1b5",
+      "user_id": "7b09a7d0-cf00-4087-9bac-138f29fe6002",
+      "source": "wham_smplh_v1",
+      "joint_type": "bone_center",
+      "coordinate_space_2d": "video_px",
+      "coordinate_space_3d": "smpl_world_m",
+      "wham_model": "wham_vit_w_3dpw",
+      "modal_call_id": null,
+      "inference_ms_total": 45314,
+      "status": "completed",
+      "error_message": null,
+      "image_width": 1080,
+      "image_height": 1920,
+      "processed_fps": 29.52,
+      "frame_count": 119,
+      "camera": {
+        "notes": "wham_out_top_keys=[0]; track_keys=['pose', 'trans', 'pose_world', 'trans_world', 'betas', 'verts', 'frame_ids']; focal_fallback=CLIFF=sqrt(w^2+h^2)=2202.9 (WHAM upstream canonical: run_vis.py L22; renderer.py K[0,0]=K[1,1]=focal_length); extrinsics_unavailable=identity_fallback (joints projected as if already in camera frame); principal_point=image_center=(540,960)",
+        "focal_px": 2202.9071700822983,
+        "rotation": null,
+        "translation": null,
+        "principal_point_px": [
+          540.0,
+          960.0
+        ]
+      },
+      "joint_index_mapping": {
+        "head": 10,
+        "neck": 9,
+        "_notes": "head_crown derived from SMPL mesh vertex 411 (per PR-7a4 PROBE: docs/PR-7a4_PROBE/smpl_landmark_indices.json). head_crown is distinct from the H36M `head` joint which lies in the face/nose region. Use head_crown for golf head-sway metrics; H36M head is retained for evidence and backward compat only. PR-8b.3: trans_z replaced by median(trans_z) = 4.044m (raw range [3.346, 4.148]m) to kill monocular depth ambiguity drift. Works for fixed-tripod recording; may need refinement for handheld videos (deferred to PR-8b.4).",
+        "pelvis": 0,
+        "spine1": 7,
+        "_source": "h36m_17",
+        "left_hip": 4,
+        "left_knee": 5,
+        "right_hip": 1,
+        "left_ankle": 6,
+        "left_elbow": 12,
+        "left_wrist": 13,
+        "right_knee": 2,
+        "right_ankle": 3,
+        "right_elbow": 15,
+        "right_wrist": 16,
+        "_wham_commit": "2b54f77",
+        "left_shoulder": 11,
+        "right_shoulder": 14,
+        "_trans_z_raw_range_m": [
+          3.345867156982422,
+          4.148453712463379
+        ],
+        "_chirality_normalized": "upper_body_arm_chain_swapped (PR-7a.2): indices 11/14, 12/15, 13/16 swapped at array level so name 'left_*' refers to image-left after a face-on camera, matching ground-truth label convention.",
+        "_trans_z_stabilization": "median_over_swing",
+        "_trans_z_median_value_m": 4.044492244720459,
+        "head_crown_vertex_index": 411,
+        "_landmark_source_for_head_crown": "smpl_mesh_vertex"
+      },
+      "created_at": "2026-05-26T04:37:31.796594+00:00",
+      "updated_at": "2026-05-26T04:37:31.796594+00:00"
+    }
+  },
+  {
+    "label": "GATE 2 \u2014 FACE-ON (5bbcfbc8)",
+    "video_id": "5bbcfbc8-49b9-4fc4-8b0e-a34c5427aa62",
+    "checks": {
+      "meta_row_exists": true,
+      "status": "completed",
+      "status_matches_expected": true,
+      "wham_model": "wham_vit_w_3dpw",
+      "frame_count": 201,
+      "image_wh": [
+        720,
+        1280
+      ],
+      "head_crown_vertex_index": 411,
+      "_trans_z_stabilization": "median_over_swing",
+      "_wham_commit": "2b54f77",
+      "_trans_z_median": 3.9792823791503906,
+      "timeline_count": 201,
+      "timeline_count_matches_meta": true,
+      "sa_wham_status": "ready",
+      "sa_wham_started_at": "2026-05-26T04:37:34.852457+00:00",
+      "sa_wham_expected_seconds": 60
+    },
+    "meta": {
+      "id": "94c6236f-669b-465c-8071-d7c27acd2489",
+      "video_id": "5bbcfbc8-49b9-4fc4-8b0e-a34c5427aa62",
+      "user_id": "7b09a7d0-cf00-4087-9bac-138f29fe6002",
+      "source": "wham_smplh_v1",
+      "joint_type": "bone_center",
+      "coordinate_space_2d": "video_px",
+      "coordinate_space_3d": "smpl_world_m",
+      "wham_model": "wham_vit_w_3dpw",
+      "modal_call_id": null,
+      "inference_ms_total": 53582,
+      "status": "completed",
+      "error_message": null,
+      "image_width": 720,
+      "image_height": 1280,
+      "processed_fps": 30,
+      "frame_count": 201,
+      "camera": {
+        "notes": "wham_out_top_keys=[0]; track_keys=['pose', 'trans', 'pose_world', 'trans_world', 'betas', 'verts', 'frame_ids']; focal_fallback=CLIFF=sqrt(w^2+h^2)=1468.6 (WHAM upstream canonical: run_vis.py L22; renderer.py K[0,0]=K[1,1]=focal_length); extrinsics_unavailable=identity_fallback (joints projected as if already in camera frame); principal_point=image_center=(360,640)",
+        "focal_px": 1468.6047800548656,
+        "rotation": null,
+        "translation": null,
+        "principal_point_px": [
+          360.0,
+          640.0
+        ]
+      },
+      "joint_index_mapping": {
+        "head": 10,
+        "neck": 9,
+        "_notes": "head_crown derived from SMPL mesh vertex 411 (per PR-7a4 PROBE: docs/PR-7a4_PROBE/smpl_landmark_indices.json). head_crown is distinct from the H36M `head` joint which lies in the face/nose region. Use head_crown for golf head-sway metrics; H36M head is retained for evidence and backward compat only. PR-8b.3: trans_z replaced by median(trans_z) = 3.979m (raw range [3.714, 4.072]m) to kill monocular depth ambiguity drift. Works for fixed-tripod recording; may need refinement for handheld videos (deferred to PR-8b.4).",
+        "pelvis": 0,
+        "spine1": 7,
+        "_source": "h36m_17",
+        "left_hip": 4,
+        "left_knee": 5,
+        "right_hip": 1,
+        "left_ankle": 6,
+        "left_elbow": 12,
+        "left_wrist": 13,
+        "right_knee": 2,
+        "right_ankle": 3,
+        "right_elbow": 15,
+        "right_wrist": 16,
+        "_wham_commit": "2b54f77",
+        "left_shoulder": 11,
+        "right_shoulder": 14,
+        "_trans_z_raw_range_m": [
+          3.7136290073394775,
+          4.071583271026611
+        ],
+        "_chirality_normalized": "upper_body_arm_chain_swapped (PR-7a.2): indices 11/14, 12/15, 13/16 swapped at array level so name 'left_*' refers to image-left after a face-on camera, matching ground-truth label convention.",
+        "_trans_z_stabilization": "median_over_swing",
+        "_trans_z_median_value_m": 3.9792823791503906,
+        "head_crown_vertex_index": 411,
+        "_landmark_source_for_head_crown": "smpl_mesh_vertex"
+      },
+      "created_at": "2026-05-26T04:38:30.7149+00:00",
+      "updated_at": "2026-05-26T04:38:30.7149+00:00"
+    }
+  }
+]
