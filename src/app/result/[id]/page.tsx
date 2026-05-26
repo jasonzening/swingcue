@@ -20,6 +20,81 @@ import { ISSUE_LABELS } from '@/types/analysis';
 // PR-5.8A: render-time coaching-anchor expansion (URL-tunable).
 import { readExpandFactorsFromURL } from '@/lib/skeleton/coachingAnchors';
 
+// ────────────────────────────────────────────────────────────────────
+// PR-8d.0: wham_status state machine.
+//
+// Frontend reads swing_analysis.video_metadata_json.wham_status set by
+// PR-8c.1 Railway BackgroundTask + PR-8c.3/8c.4 stage-aware failure
+// writers. Five UI branches:
+//
+//   absent                 — legacy row (no wham_status key). Render
+//                            current placeholder UI unchanged.
+//   processing             — WHAM in flight. Show 3D-build screen with
+//                            ETA + polling. Per R2: never frontend-
+//                            mark failed; backend is sole writer.
+//   ready                  — WHAM finished successfully. Current full
+//                            result UI.
+//   failed_preprocessing   — PR-8c.4 reject (duration < 3s, multi-scene).
+//                            Show wham_error_message verbatim (these
+//                            are user-friendly strings by construction).
+//   failed_other           — Any other failed stage (dispatch / download /
+//                            slam_init / inference / postprocess / timeout
+//                            / unknown / stage absent). Show GENERIC
+//                            "Analysis failed. Please retry." NEVER
+//                            expose wham_error_message (may contain
+//                            full Python tracebacks per R6).
+// ────────────────────────────────────────────────────────────────────
+type WhamUiState =
+  | { kind: 'absent' }
+  | { kind: 'processing'; startedAt: number; expectedSeconds: number }
+  | { kind: 'ready' }
+  | { kind: 'failed_preprocessing'; userMessage: string }
+  | { kind: 'failed_other'; stage?: string };
+
+function classifyWhamState(vmj: unknown): WhamUiState {
+  if (!vmj || typeof vmj !== 'object') return { kind: 'absent' };
+  const o = vmj as Record<string, unknown>;
+  // R4: legacy = wham_status KEY MISSING (not null). Use `in` operator.
+  if (!('wham_status' in o)) return { kind: 'absent' };
+  const ws = o.wham_status;
+  if (ws === 'ready') return { kind: 'ready' };
+  if (ws === 'processing') {
+    const startedAtStr = typeof o.wham_started_at === 'string' ? o.wham_started_at : null;
+    const startedAt = startedAtStr ? new Date(startedAtStr).getTime() : Date.now();
+    const expectedSeconds = typeof o.wham_expected_completion_seconds === 'number'
+      ? o.wham_expected_completion_seconds
+      : 60;
+    return { kind: 'processing', startedAt, expectedSeconds };
+  }
+  if (ws === 'failed') {
+    const stage = typeof o.wham_failure_stage === 'string' ? o.wham_failure_stage : undefined;
+    if (stage === 'preprocessing') {
+      // PR-8c.4 preprocessing messages are user-friendly by construction
+      // ("Video too short for analysis (2.6s). Please upload at least
+      // 3 seconds..."). Safe to show verbatim per R6.
+      const msg = typeof o.wham_error_message === 'string'
+        ? o.wham_error_message
+        : 'Your video could not be analyzed. Please re-upload.';
+      return { kind: 'failed_preprocessing', userMessage: msg };
+    }
+    return { kind: 'failed_other', stage };
+  }
+  // Unknown wham_status value — treat as legacy (don't override UI).
+  return { kind: 'absent' };
+}
+
+// PR-8d.0 R6: short non-PII hash for failed_other support reference.
+// Trivial hash; not crypto. Just a 6-char tag the user can read out so
+// support can grep wham_error_message in logs.
+function shortHash(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0').slice(0, 6);
+}
+
 export default function ResultPage() {
   const router = useRouter();
   const params = useParams();
@@ -67,6 +142,11 @@ export default function ResultPage() {
   // PR-4: 17-COCO frame-level timeline (null when video predates PR-4
   // or the analyzer's validate_timeline gate rejected the data).
   const [poseTimeline, setPoseTimeline] = useState<PoseTimeline | null>(null);
+
+  // PR-8d.0: wham_status branch state (independent of the result-page
+  // load state machine above). Set from swing_analysis.video_metadata_json
+  // after fetch + polled at 2s exp backoff (cap 8s) while in 'processing'.
+  const [whamUiState, setWhamUiState] = useState<WhamUiState>({ kind: 'absent' });
 
   useEffect(() => {
     async function load() {
@@ -122,6 +202,10 @@ export default function ResultPage() {
       const dur = vmJson?.durationSec ?? 3;
       const source = vmJson?.dataSource ?? 'stub';
       setDataSource(source);
+
+      // PR-8d.0: classify wham state from video_metadata_json.
+      // Updates trigger the polling effect below if we land on 'processing'.
+      setWhamUiState(classifyWhamState(ana.video_metadata_json));
 
       const pm: PhaseMarkers = (ana.phase_markers_json as PhaseMarkers | null) ?? {
         setupTime: 0,
@@ -199,6 +283,46 @@ export default function ResultPage() {
     load();
   }, [videoId, router]);
 
+  // PR-8d.0 R1: poll swing_analysis.video_metadata_json every 2s → 4s →
+  // 8s (cap) while wham_status='processing'. Stops on terminal state
+  // (ready / failed_* / absent) OR unmount. Never polls legacy rows
+  // (whamUiState.kind === 'absent' from initial load = no key).
+  useEffect(() => {
+    if (whamUiState.kind !== 'processing') return;
+    const supabase = createClient();
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let delay = 2000;
+
+    const poll = async () => {
+      try {
+        const { data } = await supabase
+          .from('swing_analysis')
+          .select('video_metadata_json')
+          .eq('video_id', videoId)
+          .single();
+        if (cancelled) return;
+        const next = classifyWhamState(data?.video_metadata_json);
+        setWhamUiState(next);
+        if (next.kind !== 'processing') {
+          // Terminal — cleanup will fire via deps change.
+          return;
+        }
+      } catch (err) {
+        console.error('[result/wham-poll] error:', err);
+        // fall through to re-schedule with the same backoff.
+      }
+      delay = Math.min(delay * 2, 8000);
+      if (!cancelled) timeout = setTimeout(poll, delay);
+    };
+
+    timeout = setTimeout(poll, delay);
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [whamUiState.kind, videoId]);
+
   if (state === 'loading') {
     return (
       <div className="page-center">
@@ -218,6 +342,43 @@ export default function ResultPage() {
       </div>
     );
   }
+
+  // ── PR-8d.0: wham_status branch (overrides full result UI) ────────
+  if (whamUiState.kind === 'processing') {
+    return (
+      <ProcessingScreen
+        startedAt={whamUiState.startedAt}
+        expectedSeconds={whamUiState.expectedSeconds}
+        onBack={() => router.push('/history')}
+      />
+    );
+  }
+  if (whamUiState.kind === 'failed_preprocessing') {
+    return (
+      <FailedScreen
+        title="Couldn't analyze this video"
+        message={whamUiState.userMessage}
+        onRetry={() => router.push('/upload')}
+        onBack={() => router.push('/history')}
+      />
+    );
+  }
+  if (whamUiState.kind === 'failed_other') {
+    // R6: NEVER expose wham_error_message — may contain Python traceback.
+    // Show generic message; surface only a stable short hash so support
+    // can grep logs for this specific failure.
+    const ref = shortHash(`${videoId}|${whamUiState.stage ?? 'unknown'}`);
+    return (
+      <FailedScreen
+        title="Analysis failed"
+        message="Something went wrong while analyzing your swing. Please try uploading the video again."
+        onRetry={() => router.push('/upload')}
+        onBack={() => router.push('/history')}
+        supportRef={ref}
+      />
+    );
+  }
+  // kind === 'ready' OR 'absent' → fall through to existing UI.
 
   const issueLabel = ISSUE_LABELS[issue] ?? issue;
 
@@ -261,6 +422,91 @@ export default function ResultPage() {
   );
 }
 
+// ────────────────────────────────────────────────────────────────────
+// PR-8d.0 screens — processing + failed (preprocessing | other).
+// ────────────────────────────────────────────────────────────────────
+
+function ProcessingScreen({
+  startedAt,
+  expectedSeconds,
+  onBack,
+}: {
+  startedAt: number;
+  expectedSeconds: number;
+  onBack: () => void;
+}) {
+  // R2 ETA logic — re-render every 1s to update the elapsed counter.
+  // Frontend NEVER marks the row failed; we just adjust the message.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  const elapsedSec = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const expiredAt = expectedSeconds + 30;
+  const isOver = elapsedSec > expiredAt;
+  const isVeryOver = elapsedSec > 300;
+
+  let headline = 'Building your 3D analysis';
+  let detail = `Usually takes about ${expectedSeconds} seconds.`;
+  if (isVeryOver) {
+    headline = 'Analysis is taking too long';
+    detail = "We're looking into it. You can retry from the upload page.";
+  } else if (isOver) {
+    headline = 'Still analyzing…';
+    detail = 'Taking longer than expected — hang tight.';
+  }
+
+  return (
+    <div className="page-center wham-screen">
+      <button className="btn-corner-back" onClick={onBack}>← History</button>
+      <div className="wham-anim">
+        <div className="wham-anim-ring" />
+        <div className="wham-anim-core" />
+      </div>
+      <h2 className="wham-title">{headline}</h2>
+      <p className="wham-detail">{detail}</p>
+      <p className="wham-elapsed">
+        Elapsed: <span className="mono">{elapsedSec}s</span>
+        {!isOver && expectedSeconds > 0 && (
+          <> · target <span className="mono">{expectedSeconds}s</span></>
+        )}
+      </p>
+      <style>{css}</style>
+    </div>
+  );
+}
+
+function FailedScreen({
+  title,
+  message,
+  onRetry,
+  onBack,
+  supportRef,
+}: {
+  title: string;
+  message: string;
+  onRetry: () => void;
+  onBack: () => void;
+  supportRef?: string;
+}) {
+  return (
+    <div className="page-center wham-screen">
+      <button className="btn-corner-back" onClick={onBack}>← History</button>
+      <div className="wham-fail-icon">!</div>
+      <h2 className="wham-title">{title}</h2>
+      <p className="wham-fail-message">{message}</p>
+      <button className="wham-retry-btn" onClick={onRetry}>Try again →</button>
+      {supportRef && (
+        <p className="wham-support-ref">
+          Error reference: <span className="mono">{supportRef}</span>
+        </p>
+      )}
+      <style>{css}</style>
+    </div>
+  );
+}
+
 const css = `
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 body { background:#050805; }
@@ -286,4 +532,22 @@ body { background:#050805; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .load-txt, .err-txt { font-size:14px; color:#3a4a35; font-family:'DM Sans',system-ui; }
 .btn-back { font-size:14px; font-weight:700; color:#a8f040; background:none; border:none; cursor:pointer; font-family:'DM Sans',system-ui; }
+
+/* PR-8d.0 wham-screen states (processing + failed) */
+.wham-screen { gap:18px; padding:24px; max-width:430px; }
+.btn-corner-back { position:absolute; top:14px; left:14px; font-size:14px; font-weight:600; color:#7a8a72; background:none; border:none; cursor:pointer; font-family:inherit; padding:6px 10px; }
+.wham-anim { position:relative; width:96px; height:96px; display:flex; align-items:center; justify-content:center; margin-bottom:4px; }
+.wham-anim-ring { position:absolute; inset:0; border-radius:50%; background:rgba(168,240,64,0.08); animation:wham-ring 1.8s ease-in-out infinite; }
+.wham-anim-core { width:40px; height:40px; border-radius:50%; background:#a8f040; animation:wham-core 1.8s ease-in-out infinite; }
+@keyframes wham-ring { 0%,100% { transform:scale(1); opacity:0.85; } 50% { transform:scale(1.22); opacity:0.30; } }
+@keyframes wham-core { 0%,100% { transform:scale(1); } 50% { transform:scale(0.78); } }
+.wham-title { font-size:20px; font-weight:800; color:#f0f0ee; letter-spacing:-0.3px; text-align:center; padding:0 12px; }
+.wham-detail { font-size:14px; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; }
+.wham-elapsed { font-size:12px; color:#3a4a35; font-family:'DM Sans',system-ui; margin-top:4px; }
+.mono { font-family:ui-monospace, SFMono-Regular, "Menlo", monospace; color:#a8f040; }
+.wham-fail-icon { width:56px; height:56px; border-radius:50%; background:rgba(240,96,64,0.12); border:1.5px solid rgba(240,96,64,0.4); color:#f06040; font-size:30px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+.wham-fail-message { font-size:14px; color:#c0c0bb; line-height:1.55; text-align:center; max-width:340px; padding:0 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:14px 16px; }
+.wham-retry-btn { margin-top:4px; background:#a8f040; color:#080c08; font-family:inherit; font-size:15px; font-weight:800; height:48px; padding:0 24px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 20px rgba(168,240,64,0.18); }
+.wham-retry-btn:active { transform:scale(0.97); }
+.wham-support-ref { font-size:11px; color:#3a4a35; margin-top:6px; }
 `;
