@@ -334,6 +334,42 @@ if _MODAL_AVAILABLE:
                 f"(expected (T, V, 3))"
             )
 
+        # ── PR-8b.3: median-z stabilization ──────────────────────────────
+        # WHAM's monocular-depth-ambiguity causes trans[:,2] to vary by
+        # ~80cm across a 4-second fixed-tripod swing where the golfer
+        # only moves ~10cm in actual depth. This pollutes camera-frame
+        # verts: per-frame projection scale fluctuates → joints visibly
+        # "breathe in and out" in overlay_full.mp4 (visible only in MP4,
+        # static frames hide it because the modulation is gradual).
+        #
+        # Fix: replace trans_z with its median across the swing. Extract
+        # pose-only verts (verts - per-frame trans) and re-bake with
+        # stabilized trans. Joint regression + head_crown both inherit
+        # the stabilization for free since they read `verts` downstream.
+        #
+        # x and y are NOT touched — those are real body motion on a
+        # fixed-tripod video. Only z (depth) is monocular-ambiguity
+        # noise that needs killing.
+        #
+        # Audit values exposed in meta.joint_index_mapping per spec.
+        trans_raw = np.asarray(track["trans"], dtype=np.float32)  # (T, 3)
+        trans_z_median = float(np.median(trans_raw[:, 2]))
+        trans_z_raw_range = [
+            float(trans_raw[:, 2].min()),
+            float(trans_raw[:, 2].max()),
+        ]
+        trans_stabilized = trans_raw.copy()
+        trans_stabilized[:, 2] = trans_z_median
+        verts_pose_only = verts - trans_raw[:, None, :]   # (T, 6890, 3)
+        verts = verts_pose_only + trans_stabilized[:, None, :]  # stabilized
+        print(
+            f"[wham_runner] PR-8b.3 trans_z stabilization: "
+            f"raw range [{trans_z_raw_range[0]:.3f}, "
+            f"{trans_z_raw_range[1]:.3f}] m (span "
+            f"{trans_z_raw_range[1]-trans_z_raw_range[0]:.3f} m) → "
+            f"median {trans_z_median:.3f} m (constant per-frame)"
+        )
+
         j_regressor_path = "/models/body_models/J_regressor_h36m.npy"
         if not os.path.exists(j_regressor_path):
             raise RuntimeError(
@@ -423,6 +459,9 @@ if _MODAL_AVAILABLE:
             "fps_native":         float(fps_native),
             "n_native":           n_native,
             "primary_track_id":   primary_track_id,
+            # PR-8b.3 audit: stabilization parameters.
+            "trans_z_median_m":   trans_z_median,
+            "trans_z_raw_range_m": trans_z_raw_range,
             "primary_checkpoint": primary_checkpoint,
             "n_frames":           n_frames,
         }
@@ -639,6 +678,181 @@ if _MODAL_AVAILABLE:
             "error_message":       None,
             "meta":                meta,
             "frames":              frames_out,
+        }
+
+
+    # -----------------------------------------------------------------------
+    # PR-8b.2 diagnostics — inspect_pkl
+    #
+    # Refinements #2 + #3 from Jason's spec section 1+3 augmentation:
+    #   #2: audit FULL pkl structure (top-level + nested), find ANY
+    #       cam_int / pred_cam / slam_results / global K hiding.
+    #   #3: dump trans vs trans_world at f=8/44/60/90/119 so we can
+    #       diff them and decide if WHAM SLAM is doing something
+    #       (b32e0f21 is fixed-tripod, expected ~identical).
+    #
+    # Returns a self-contained inspection dict — no projection, no
+    # rendering. Fast (~70s including WHAM run). Cached pkl reused if
+    # the same video_id has been processed before in the same Modal
+    # container.
+    # -----------------------------------------------------------------------
+
+    @app.function(
+        image=wham_image,
+        volumes={"/models": model_volume},
+        gpu="A10G",
+        timeout=600,
+    )
+    def inspect_pkl(
+        video_id: str,
+        video_url: str,
+        sample_frame_indices: list = [0, 8, 30, 44, 60, 90, 119],
+    ) -> dict:
+        """
+        PR-8b.2 audit: full pkl structure dump + trans/trans_world
+        sample. Use to verify refinements #2 and #3 cheaply BEFORE
+        attempting pytorch3d install for the canonical render.
+        """
+        import numpy as np
+
+        pipe = _run_wham_pipeline(video_id=video_id, video_url=video_url)
+        wham_out = pipe["wham_out"]
+        track = pipe["track"]
+        primary_id = pipe["primary_track_id"]
+
+        # Refinement #2: full top-level + nested audit.
+        top_level_audit: dict = {
+            "type": type(wham_out).__name__,
+            "len":  len(wham_out) if hasattr(wham_out, "__len__") else None,
+            "keys": [str(k) for k in (wham_out.keys() if hasattr(wham_out, "keys") else [])],
+        }
+        # For each top-level key, dump nested type+shape.
+        nested_audit: dict = {}
+        for k in (wham_out.keys() if hasattr(wham_out, "keys") else []):
+            v = wham_out[k]
+            entry = {"type": type(v).__name__}
+            if hasattr(v, "keys"):
+                entry["sub_keys"] = []
+                for sk in v.keys():
+                    sv = v[sk]
+                    sub = {"name": str(sk), "type": type(sv).__name__}
+                    if hasattr(sv, "shape"):
+                        sub["shape"] = list(sv.shape)
+                    elif hasattr(sv, "__len__"):
+                        sub["len"] = len(sv)
+                    entry["sub_keys"].append(sub)
+            nested_audit[str(k)] = entry
+
+        # Refinement #3: per-frame trans vs trans_world samples.
+        trans_samples: list = []
+        trans_cam = np.asarray(track["trans"]) if "trans" in track else None
+        trans_world = np.asarray(track["trans_world"]) if "trans_world" in track else None
+        valid_indices = [
+            i for i in sample_frame_indices
+            if (trans_cam is not None and i < len(trans_cam))
+        ]
+        for i in valid_indices:
+            entry: dict = {"frame_idx": int(i)}
+            if trans_cam is not None:
+                entry["trans"] = trans_cam[i].tolist()
+            if trans_world is not None:
+                entry["trans_world"] = trans_world[i].tolist()
+            if trans_cam is not None and trans_world is not None:
+                diff = (trans_world[i] - trans_cam[i]).tolist()
+                entry["diff_world_minus_cam"] = diff
+                entry["diff_norm"] = float(np.linalg.norm(np.asarray(diff)))
+            trans_samples.append(entry)
+
+        # Refinement #3 bonus: trans deltas across samples (drift signal).
+        trans_drift_stats = None
+        if trans_cam is not None and trans_world is not None:
+            cam_range = (trans_cam.max(axis=0) - trans_cam.min(axis=0)).tolist()
+            world_range = (trans_world.max(axis=0) - trans_world.min(axis=0)).tolist()
+            trans_drift_stats = {
+                "trans_xyz_range_meters":       cam_range,
+                "trans_world_xyz_range_meters": world_range,
+                "max_per_frame_delta_meters":   float(
+                    np.max(np.linalg.norm(trans_world - trans_cam, axis=1))
+                ),
+                "mean_per_frame_delta_meters":  float(
+                    np.mean(np.linalg.norm(trans_world - trans_cam, axis=1))
+                ),
+            }
+
+        # Verts at first sample for sanity (camera-frame, vertex 411 = head_crown).
+        verts = np.asarray(track["verts"]) if "verts" in track else None
+        verts_sample = None
+        if verts is not None:
+            verts_sample = {
+                "shape":             list(verts.shape),
+                "vertex_411_at_f0":  verts[0, 411, :].tolist(),
+                "vertex_411_at_f8":  verts[8, 411, :].tolist() if len(verts) > 8 else None,
+                "pelvis_h36m0_at_f0": verts[0, 0, :].tolist(),  # raw vertex 0
+            }
+
+        return {
+            "video_id":           video_id,
+            "primary_track_id":   primary_id,
+            "n_frames":           pipe["n_frames"],
+            "video_w":            pipe["video_w"],
+            "video_h":            pipe["video_h"],
+            "fps_native":         pipe["fps_native"],
+            "top_level_audit":    top_level_audit,
+            "nested_audit":       nested_audit,
+            "trans_samples":      trans_samples,
+            "trans_drift_stats":  trans_drift_stats,
+            "verts_sample":       verts_sample,
+        }
+
+
+    # -----------------------------------------------------------------------
+    # PR-8b.2 diagnostic: sample_mesh_verts
+    #
+    # Returns a stride-sampled subset of the SMPL mesh vertices for
+    # specified frames so local code can project them via the SAME
+    # CLIFF pinhole and visualize whether the cloud aligns with the
+    # body silhouette. Saves a pytorch3d install if our projection
+    # chain matches WHAM's internal math (which it should, since both
+    # use CLIFF focal + identity extrinsics + image-center principal
+    # point per renderer.py initialize_camera_params).
+    # -----------------------------------------------------------------------
+
+    @app.function(
+        image=wham_image,
+        volumes={"/models": model_volume},
+        gpu="A10G",
+        timeout=600,
+    )
+    def sample_mesh_verts(
+        video_id: str,
+        video_url: str,
+        sample_frame_indices: list = [8, 44, 60, 90],
+        stride: int = 12,
+    ) -> dict:
+        """Return a stride-sampled subset of mesh verts per requested
+        frame. Stride 12 → ~574 verts (out of 6890) per frame ≈ 1.7 MB
+        per frame on wire, 4 frames ≈ 7 MB — well under Modal limits."""
+        import numpy as np
+        pipe = _run_wham_pipeline(video_id=video_id, video_url=video_url)
+        verts = np.asarray(pipe["track"]["verts"], dtype=np.float32)
+        n_frames = verts.shape[0]
+        frames_out: list = []
+        for fi in sample_frame_indices:
+            if fi >= n_frames or fi < 0:
+                continue
+            sampled = verts[fi, ::stride, :]  # (n_sampled, 3)
+            frames_out.append({
+                "frame_idx":     int(fi),
+                "n_sampled":     int(sampled.shape[0]),
+                "verts_sampled": sampled.tolist(),
+            })
+        return {
+            "video_id": video_id,
+            "n_frames": int(n_frames),
+            "video_w":  int(pipe["video_w"]),
+            "video_h":  int(pipe["video_h"]),
+            "stride":   int(stride),
+            "frames":   frames_out,
         }
 
 
@@ -880,6 +1094,25 @@ if _MODAL_AVAILABLE:
                 f"(R={R_pf.shape}, t={t_pf.shape if t_pf is not None else None})"
             )
 
+        # PR-8b.3 audit: add trans_z stabilization fields to the joint
+        # index mapping dict (per spec). Done inline here so we don't
+        # change _build_joint_index_mapping's signature.
+        jim = _build_joint_index_mapping()
+        trans_z_median = pipe.get("trans_z_median_m")
+        trans_z_raw_range = pipe.get("trans_z_raw_range_m")
+        if trans_z_median is not None and trans_z_raw_range is not None:
+            jim["_trans_z_stabilization"]   = "median_over_swing"
+            jim["_trans_z_median_value_m"]  = trans_z_median
+            jim["_trans_z_raw_range_m"]     = trans_z_raw_range
+            jim["_notes"] = jim.get("_notes", "") + (
+                f" PR-8b.3: trans_z replaced by median(trans_z) "
+                f"= {trans_z_median:.3f}m (raw range "
+                f"[{trans_z_raw_range[0]:.3f}, {trans_z_raw_range[1]:.3f}]m) "
+                f"to kill monocular depth ambiguity drift. Works for "
+                f"fixed-tripod recording; may need refinement for "
+                f"handheld videos (deferred to PR-8b.4)."
+            )
+
         return {
             "source":                "wham_smplh_v1",
             "joint_type":            "bone_center",
@@ -898,7 +1131,7 @@ if _MODAL_AVAILABLE:
                 "principal_point_px":  [cam["cx"], cam["cy"]],
                 "notes":               notes_full,
             },
-            "joint_index_mapping":   _build_joint_index_mapping(),
+            "joint_index_mapping":   jim,
         }
 
     def _build_pr8b_frames(pipe: dict, cam: dict, save_smpl_params: bool):
