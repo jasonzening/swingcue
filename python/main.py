@@ -57,7 +57,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -106,10 +106,16 @@ def root():
 
 
 @app.post("/analyze")
-async def analyze(req: AnalyzeRequest):
+async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
     """
     Analyze a golf swing video.
     Lazily imports MediaPipe only on first call.
+
+    PR-8c: After MediaPipe response is built (~30s), schedules a
+    BackgroundTask that synchronously waits on Modal infer_video
+    (~55s) and writes WHAM results to Supabase. Background task runs
+    in the same Python process AFTER the response is sent — user gets
+    MediaPipe data immediately, WHAM is non-blocking.
     """
     tmp_path = None
     try:
@@ -306,6 +312,36 @@ async def analyze(req: AnalyzeRequest):
             f"yolo={yolo_summary}, "
             f"pose_timeline_2d={'OK' if pose_timeline_2d else 'NULL'}"
         )
+
+        # PR-8c: schedule WHAM inference + Supabase write as a background
+        # task. Runs AFTER this response is sent — never gates MediaPipe.
+        # Requires video_id + user_id (RLS owner), Modal env auth, and
+        # the same signed_url MediaPipe just used (still valid; we pass
+        # the SAME url so we don't burn a re-sign).
+        if req.video_id and req.user_id and req.video_url:
+            try:
+                from wham_integration import run_wham_and_persist
+                background_tasks.add_task(
+                    run_wham_and_persist,
+                    video_id=req.video_id,
+                    user_id=req.user_id,
+                    signed_url=req.video_url,
+                )
+                logger.info(
+                    f"[main] PR-8c WHAM background task scheduled "
+                    f"for video_id={req.video_id}"
+                )
+            except Exception as exc:
+                # Scheduling failure (e.g., import error) — log and
+                # continue. WHAM is best-effort; MediaPipe must ship.
+                logger.error(
+                    f"[main] PR-8c failed to schedule WHAM task: {exc!r}",
+                    exc_info=True,
+                )
+        else:
+            logger.info(
+                "[main] PR-8c WHAM skipped: missing video_id / user_id / video_url"
+            )
 
         return {
             "status": "success",

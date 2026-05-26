@@ -3,6 +3,12 @@ uvicorn[standard]==0.32.0
 httpx==0.27.2
 pydantic==2.9.2
 
+# PR-8c: Modal client to invoke deployed swingcue-pilot.infer_video
+# from the Railway service. Requires MODAL_TOKEN_ID + MODAL_TOKEN_SECRET
+# env vars in Railway. Pinned to match the local .venv-pilot used to
+# deploy the Modal app (verified against `modal --version` 2026-05-25).
+modal==1.4.3
+
 # Heavy deps — back to the pre-PR-3 production state (proven to work
 # in PR-2B/PR-2C). All three opencv distros are pinned to the same
 # version because mediapipe transitively pulls opencv-contrib-python;
