@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import os
+import traceback
 from typing import Any
 
 import httpx
@@ -39,6 +40,37 @@ logger = logging.getLogger(__name__)
 # python/pilot/runners/wham_runner.py @app.function decorators).
 MODAL_APP_NAME       = "swingcue-pilot"
 MODAL_FUNCTION_NAME  = "infer_video"
+
+# ---------------------------------------------------------------------------
+# PR-8c.3: wham_failure_stage enum.
+#
+# PR-8d.0 frontend will switch on this stage to render targeted error
+# UX (e.g., "video too short" vs "service unavailable" vs "WHAM model
+# crashed"). Stable enum + free-text wham_error_message gives stage-
+# specific messaging without locking us into stage-specific schema.
+#
+# DO NOT add new values without coordinating with PR-8d.0 frontend.
+# Use STAGE_UNKNOWN as the catch-all for unexpected exception classes.
+# ---------------------------------------------------------------------------
+
+STAGE_DISPATCH      = "dispatch"        # Modal call setup/lookup/auth fail
+STAGE_DOWNLOAD      = "download"        # _download_video HTTP/network fail
+STAGE_PREPROCESSING = "preprocessing"   # scene-cut, duration guard (PR-8c.4)
+STAGE_SLAM_INIT     = "slam_init"       # WHAM DPVO/SLAM init fail
+STAGE_INFERENCE     = "inference"       # WHAM inference OOM/exception
+STAGE_POSTPROCESS   = "postprocess"     # pkl load / Supabase persistence fail
+STAGE_TIMEOUT       = "timeout"         # Modal function-level timeout (>180s)
+STAGE_UNKNOWN       = "unknown"         # catch-all
+
+_VALID_STAGES: frozenset[str] = frozenset({
+    STAGE_DISPATCH, STAGE_DOWNLOAD, STAGE_PREPROCESSING, STAGE_SLAM_INIT,
+    STAGE_INFERENCE, STAGE_POSTPROCESS, STAGE_TIMEOUT, STAGE_UNKNOWN,
+})
+
+# Max length for wham_error_message stored in jsonb — full traceback
+# can be 10+ KB which bloats swing_analysis rows + jsonb queries.
+# 4KB covers a deep traceback comfortably.
+_WHAM_ERROR_MESSAGE_MAX_CHARS = 4000
 
 # PR-8b.1 audit constant — folded into joint_index_mapping jsonb so
 # wham_video_meta DDL doesn't need a wham_commit column. wham_runner
@@ -86,6 +118,7 @@ def run_wham_and_persist(
     user_id: str,
     signed_url: str,
     expected_seconds: int | None = None,
+    duration_sec: float | None = None,
 ) -> None:
     """
     Synchronous WHAM → Supabase pipeline. Safe to call from a FastAPI
@@ -125,6 +158,22 @@ def run_wham_and_persist(
                 retry_delay_sec=1.0,
             )
 
+        # ── PR-8c.4: pre-flight checks (duration + scene-cut) ─────────
+        # Reject obvious incompatibilities BEFORE burning Modal $ on
+        # WHAM inference. Rejection writes failure context to
+        # swing_analysis only (no wham_video_meta row — that table is
+        # for actual WHAM runs, not preprocessing rejections).
+        preflight = _preflight_check_video(video_id, signed_url, duration_sec)
+        if not preflight["ok"]:
+            stage = preflight["stage"]
+            err = preflight["error_message"]
+            logger.info(
+                f"[wham_integration] {video_id} REJECTED at preflight "
+                f"stage={stage}: {err}"
+            )
+            set_wham_failed_status(video_id, stage, err)
+            return  # do NOT dispatch Modal
+
         # ── Idempotency ──────────────────────────────────────────────
         existing = _select_wham_video_meta_status(video_id)
         if existing == "completed":
@@ -133,7 +182,21 @@ def run_wham_and_persist(
         is_retry = existing == "failed"
 
         # ── Modal call (synchronous, ~55s) ───────────────────────────
-        result = _call_modal_infer_video(video_id, signed_url)
+        # Stage-classify exceptions here so dispatch / network / WHAM-
+        # internal errors all flow through set_wham_failed_status with
+        # the correct stage instead of generic 'unknown'.
+        try:
+            result = _call_modal_infer_video(video_id, signed_url)
+        except Exception as modal_exc:
+            stage = classify_exception_to_stage(modal_exc)
+            tb = traceback.format_exc()
+            logger.error(
+                f"[wham_integration] {video_id} Modal call raised "
+                f"{type(modal_exc).__name__} (stage={stage})"
+            )
+            set_wham_failed_status(video_id, stage, tb)
+            return
+
         modal_status = result.get("status", "unknown")
         logger.info(
             f"[wham_integration] {video_id} modal returned "
@@ -153,21 +216,34 @@ def run_wham_and_persist(
             _write_wham_pose_timeline(video_id, user_id, result.get("frames", []))
             _set_swing_analysis_wham_status(video_id, "ready")
         else:
-            # Failed Modal call — meta row already records the error.
-            _set_swing_analysis_wham_status(video_id, "failed")
+            # Modal returned status='failed'. The error_message from
+            # WHAM is in result['error_message']; classify by its content
+            # to pick a stage (download / slam_init / inference / etc.).
+            err_msg = result.get("error_message") or "Modal returned status=failed"
+            # Build a synthetic exception just to reuse the classifier.
+            fake_exc = RuntimeError(err_msg)
+            stage = classify_exception_to_stage(fake_exc)
+            logger.info(
+                f"[wham_integration] {video_id} Modal returned failed "
+                f"(stage={stage})"
+            )
+            set_wham_failed_status(video_id, stage, err_msg)
 
         logger.info(f"[wham_integration] {video_id} done (status={modal_status})")
 
     except Exception as exc:
+        # Outer catch — pkl write, wham_pose_timeline INSERT, or any
+        # unexpected error after Modal returned. Stage-classify and
+        # record full traceback.
+        stage = classify_exception_to_stage(exc)
+        tb = traceback.format_exc()
         logger.error(
-            f"[wham_integration] {video_id} FAILED: {exc!r}",
+            f"[wham_integration] {video_id} FAILED in outer handler "
+            f"(stage={stage}): {exc!r}",
             exc_info=True,
         )
-        # Best-effort: record the failure on swing_analysis even if the
-        # meta/timeline write didn't complete. Don't re-raise — this is
-        # a background task and the user response is already served.
         try:
-            _set_swing_analysis_wham_status(video_id, "failed")
+            set_wham_failed_status(video_id, stage, tb)
         except Exception:
             logger.exception(
                 f"[wham_integration] {video_id} also failed to mark wham_status"
@@ -470,16 +546,15 @@ def set_wham_processing_status(
 
 def _set_swing_analysis_wham_status(video_id: str, status: str) -> None:
     """
-    PR-8c: write final wham_status='ready'|'failed' to
-    swing_analysis.video_metadata_json. PR-8c.1 R3: failure paths
-    MUST call this with 'failed' to clear the 'processing' state
-    that PR-8c.1 set synchronously — otherwise frontend polling sees
-    the row stuck at 'processing' forever.
+    PR-8c: write final wham_status='ready' to swing_analysis.video_metadata_json.
+
+    For 'failed', use set_wham_failed_status (PR-8c.3) instead — it
+    writes the full 4-field failure context (status + failed_at +
+    failure_stage + error_message) atomically.
 
     Preserves wham_started_at + wham_expected_completion_seconds set
-    by set_wham_processing_status (read-modify-write merges; doesn't
-    clobber). Frontend can compute wham_actual_seconds from
-    (now - wham_started_at) if useful.
+    by set_wham_processing_status. Frontend can compute
+    wham_actual_seconds from (now - wham_started_at) if useful.
 
     Raises on PATCH failure (caller catches in the outer try in
     run_wham_and_persist + re-attempts in its own except block).
@@ -490,6 +565,237 @@ def _set_swing_analysis_wham_status(video_id: str, status: str) -> None:
             f"[wham_integration] {video_id} swing_analysis.wham_status = {status}"
         )
     except Exception:
-        # Re-raise with context — outer caller in run_wham_and_persist
-        # has its own try/except for the final status update.
         raise
+
+
+def set_wham_failed_status(
+    video_id: str,
+    stage: str,
+    error_message: str,
+) -> None:
+    """
+    PR-8c.3: write the FULL failure context to swing_analysis.video_metadata_json
+    atomically (single PATCH). All 4 fields together so frontend can't
+    poll mid-write and see partial state.
+
+      wham_status         = 'failed'
+      wham_failed_at      = UTC ISO timestamp (now)
+      wham_failure_stage  = stage (validated against _VALID_STAGES)
+      wham_error_message  = error_message (truncated to 4KB)
+
+    wham_started_at + wham_expected_completion_seconds preserved
+    (read-modify-write merge).
+
+    PR-8c.3 acceptance: wham_status='failed' must NEVER be context-free.
+    Every failure path in run_wham_and_persist + pre-flight rejection
+    in PR-8c.4 routes through here.
+
+    Never raises — failures are logged and swallowed (UX hint, not
+    correctness).
+    """
+    from datetime import datetime, timezone
+    if stage not in _VALID_STAGES:
+        logger.warning(
+            f"[wham_integration] invalid stage '{stage}' → coercing to '{STAGE_UNKNOWN}'"
+        )
+        stage = STAGE_UNKNOWN
+    msg = (error_message or "")[:_WHAM_ERROR_MESSAGE_MAX_CHARS]
+    updates = {
+        "wham_status":         "failed",
+        "wham_failed_at":      datetime.now(timezone.utc).isoformat(),
+        "wham_failure_stage":  stage,
+        "wham_error_message":  msg,
+    }
+    try:
+        _patch_swing_analysis_meta(video_id, updates, raise_on_missing=False)
+        # Truncate the logged message to a sane preview.
+        preview = msg.replace("\n", " ")[:140]
+        logger.info(
+            f"[wham_integration] {video_id} swing_analysis.wham_status=failed "
+            f"stage={stage} msg={preview!r}"
+        )
+    except Exception:
+        logger.exception(
+            f"[wham_integration] {video_id} failed to write wham_failed status"
+        )
+
+
+def classify_exception_to_stage(exc: BaseException) -> str:
+    """
+    PR-8c.3 R1: map an exception to a wham_failure_stage enum value
+    using class name + message heuristics. Used by run_wham_and_persist's
+    outer except so the failure stage isn't a free-form string.
+
+    Priority order:
+      1. Modal-specific exception classes (auth, timeout)
+      2. Substring hints in str(exc) (download / SLAM / OOM / postprocess)
+      3. STAGE_UNKNOWN fallback
+
+    Caller still records the full traceback in wham_error_message;
+    stage is the coarse-grained category for frontend dispatch.
+    """
+    typename = type(exc).__name__
+    msg = str(exc) or ""
+    msg_lower = msg.lower()
+
+    # Modal exception classes — pattern match by name since modal lib
+    # may not be available everywhere this helper is called.
+    if (
+        "AuthError" in typename
+        or "InvalidError" in typename
+        or "Authentication" in msg
+        or "token" in msg_lower and "missing" in msg_lower
+    ):
+        return STAGE_DISPATCH
+    if "FunctionTimeoutError" in typename or "TimeoutError" in typename:
+        return STAGE_TIMEOUT
+    if "timeout" in msg_lower and "modal" in msg_lower:
+        return STAGE_TIMEOUT
+
+    # WHAM-internal hints.
+    if (
+        "dpvo" in msg_lower
+        or "slam" in msg_lower
+        or "slam_init" in msg_lower
+    ):
+        return STAGE_SLAM_INIT
+    if (
+        "http error" in msg_lower
+        or "urlretrieve" in msg_lower
+        or "url error" in msg_lower
+        or "_download_video" in msg
+    ):
+        return STAGE_DOWNLOAD
+    if (
+        "cuda out of memory" in msg_lower
+        or "out of memory" in msg_lower
+        or "oom" in msg_lower
+    ):
+        return STAGE_INFERENCE
+    if (
+        "pkl" in msg_lower
+        or "joblib" in msg_lower
+        or "supabase" in msg_lower
+        or "PATCH failed" in msg
+        or "INSERT failed" in msg
+    ):
+        return STAGE_POSTPROCESS
+
+    return STAGE_UNKNOWN
+
+
+def _preflight_check_video(
+    video_id: str,
+    signed_url: str,
+    duration_sec: float | None,
+) -> dict:
+    """
+    PR-8c.4: gate WHAM dispatch on cheap pre-checks. Saves Modal $
+    when the video is obviously incompatible with single-clip WHAM
+    inference.
+
+    Checks (in order):
+      1. Duration guard (R3): duration_sec < 3.0 → reject preprocessing.
+      2. Scene-cut detection (R4): cv2 HSV BHATTACHARYYA over the
+         downloaded video; any cut → reject preprocessing.
+
+    Returns:
+      {"ok": True}                              — pass, dispatch WHAM
+      {"ok": False, "stage": str,
+       "error_message": str}                    — reject; caller skips
+                                                  Modal + writes failure
+                                                  context to
+                                                  swing_analysis only
+                                                  (no wham_video_meta).
+
+    Per PR-8c.4 R2: rejection uses wham_status='failed' + stage=
+    'preprocessing' — does NOT introduce a 4th status state.
+    """
+    MIN_DURATION_SEC = 3.0
+
+    if duration_sec is None:
+        # Not enough info to evaluate; pass and let Modal decide.
+        # (Should rarely happen since main.py always has durationSec
+        # from MediaPipe by this point.)
+        logger.warning(
+            f"[wham_integration] {video_id} preflight: duration_sec is None; "
+            f"skipping duration guard"
+        )
+    elif duration_sec < MIN_DURATION_SEC:
+        return {
+            "ok": False,
+            "stage": STAGE_PREPROCESSING,
+            "error_message": (
+                f"Video too short for analysis ({duration_sec:.1f}s). "
+                f"Please upload at least {MIN_DURATION_SEC:.0f} seconds of "
+                f"a single golf swing."
+            ),
+        }
+
+    # Scene-cut detection requires a local copy of the video.
+    # Download to /tmp via the same urllib helper Modal uses, then
+    # run the cv2 detector. ~1-3 sec for a typical 4-8s clip.
+    import tempfile
+    import urllib.parse
+    import urllib.request
+
+    parts = urllib.parse.urlsplit(signed_url)
+    safe_path = urllib.parse.quote(parts.path, safe="/")
+    encoded_url = urllib.parse.urlunsplit((
+        parts.scheme, parts.netloc, safe_path, parts.query, parts.fragment,
+    ))
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            suffix=".mp4", delete=False, prefix=f"preflight_{video_id}_",
+        ) as f:
+            tmp_path = f.name
+        urllib.request.urlretrieve(encoded_url, tmp_path)
+        from scene_detect import detect_scene_cuts
+        cuts = detect_scene_cuts(tmp_path)
+    except Exception as exc:
+        # Could not download or scan — treat as suspicious + reject
+        # so Modal $ isn't burned. The user will get a clear message.
+        logger.warning(
+            f"[wham_integration] {video_id} preflight scene-cut scan failed: {exc!r}"
+        )
+        return {
+            "ok": False,
+            "stage": STAGE_PREPROCESSING,
+            "error_message": (
+                "Could not analyze video for preprocessing checks. "
+                "Please re-upload a single continuous clip of one golf swing."
+            ),
+        }
+    finally:
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    if cuts < 0:
+        return {
+            "ok": False,
+            "stage": STAGE_PREPROCESSING,
+            "error_message": (
+                "Could not read video for scene-cut analysis. "
+                "Please upload a single continuous clip of one golf swing."
+            ),
+        }
+    if cuts >= 1:
+        return {
+            "ok": False,
+            "stage": STAGE_PREPROCESSING,
+            "error_message": (
+                f"Multi-scene video detected ({cuts} scene cut(s)). "
+                f"SwingCue MVP only supports a single continuous clip of one "
+                f"golf swing — no edited/TikTok/multi-scene compilations. "
+                f"Please re-upload."
+            ),
+        }
+    logger.info(
+        f"[wham_integration] {video_id} preflight OK: duration={duration_sec}s, cuts=0"
+    )
+    return {"ok": True}

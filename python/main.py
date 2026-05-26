@@ -353,6 +353,11 @@ async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
                     user_id=req.user_id,
                     signed_url=req.video_url,
                     expected_seconds=expected_seconds,
+                    # PR-8c.4: BackgroundTask runs preflight (duration +
+                    # scene-cut) before dispatching Modal. Pass the real
+                    # MediaPipe-derived duration so the < 3s guard fires
+                    # without re-decoding the video.
+                    duration_sec=duration_sec,
                 )
                 logger.info(
                     f"[main] PR-8c WHAM background task scheduled "
