@@ -285,11 +285,25 @@ if _MODAL_AVAILABLE:
             )
 
         # Locate the pkl — preferred path or fallback tree scan.
+        #
+        # CRITICAL: scope the fallback walk to THIS video's out_dir only.
+        # Previous bug (discovered 2026-05-26 PR-8c.1 dual-gate test):
+        # if we walked the whole /opt/wham/output tree, warm Modal
+        # containers would yield a previous video's pkl as found_pkls[0],
+        # silently contaminating the current run's output. This made
+        # every second-and-later video in a warm container return the
+        # FIRST video's WHAM data (joints, verts, trans). Affected
+        # PR-8b and PR-8b.3 too — hidden because we only ever ran one
+        # video at a time before today.
+        #
+        # WHAM's actual pkl path is under out_dir per its --output_pth
+        # join with sequence (demo.py L220), so scoping to out_dir is
+        # always sufficient to find the current run's output.
         pkl_path = f"{out_dir}/wham_output.pkl"
         if not os.path.exists(pkl_path):
-            print(f"[wham_runner] {pkl_path} not present; scanning WHAM output tree:")
+            print(f"[wham_runner] {pkl_path} not present; scanning {out_dir} tree:")
             found_pkls: list[str] = []
-            for root, _dirs, files in os.walk(f"{WHAM_REPO_ROOT}/output"):
+            for root, _dirs, files in os.walk(out_dir):
                 for f in files:
                     fp = os.path.join(root, f)
                     sz_kb = os.path.getsize(fp) / 1024
@@ -301,9 +315,10 @@ if _MODAL_AVAILABLE:
                 print(f"[wham_runner] using pkl fallback: {pkl_path}")
             else:
                 raise RuntimeError(
-                    f"WHAM produced no .pkl anywhere under "
-                    f"{WHAM_REPO_ROOT}/output (demo exit was 0 — output dir "
-                    f"layout differs from expected)"
+                    f"WHAM produced no .pkl anywhere under {out_dir} "
+                    f"(demo exit was 0 — check WHAM output dir layout). "
+                    f"Note: per-video scoping intentional to prevent "
+                    f"cross-video pkl contamination in warm containers."
                 )
 
         wham_out = joblib.load(pkl_path)
