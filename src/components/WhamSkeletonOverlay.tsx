@@ -78,6 +78,47 @@ const ALL_JOINTS: readonly JointName[] = [
   ...LEFT_JOINTS, ...RIGHT_JOINTS, ...CENTER_JOINTS,
 ];
 
+// PR-8e.1: when the backend (PR-8e.0) provides anatomical surface
+// landmarks via SMPL mesh vertices, render shoulder/hip dots at those
+// positions instead of the SMPL joint centers. SMPL pelvis ≈ L5
+// vertebra (above the visible hip surface) and SMPL shoulder = the
+// internal glenohumeral joint (medial to the visible acromion) — so
+// SMPL-joint dots sit a few cm off the actual body surface. The
+// anatomical landmark names are L/R-swapped by the backend to match
+// our image-orientation convention, so swapping `left_shoulder` →
+// `acromion_left` keeps the cyan dot on the same side it was before.
+//
+// Backward compatibility: older WHAM rows (pre-PR-8e.0) don't include
+// the anatomical keys at all. The resolver falls back to the original
+// SMPL joint when the override key is missing or null. Old videos
+// render identically to PR-8d.1.
+//
+// Elbow + ankle: PROBE inventory includes lateral_epicondyle_l/r and
+// lateral_malleolus_l/r, and PR-8e.0 emits them. They're not in this
+// override map for MVP — the visual difference vs SMPL elbow/ankle
+// is small (those H36M joints sit close to the surface already). Add
+// entries here in a future PR if user testing shows they matter.
+const ANATOMICAL_OVERRIDE: Partial<Record<JointName, string>> = {
+  left_shoulder:  'acromion_left',
+  right_shoulder: 'acromion_right',
+  left_hip:       'greater_trochanter_left',
+  right_hip:      'greater_trochanter_right',
+};
+
+function resolveJointPos(
+  kp: Record<string, { x: number; y: number } | null>,
+  name: JointName,
+): { x: number; y: number } | null {
+  const overrideKey = ANATOMICAL_OVERRIDE[name];
+  if (overrideKey) {
+    const anatomical = kp[overrideKey];
+    if (anatomical) return anatomical;
+    // override key present in schema but null this frame (e.g., Z<0.1
+    // guard fired for the vertex) — fall through to SMPL joint
+  }
+  return kp[name] ?? null;
+}
+
 // Edges. Color of an edge follows side: L=cyan, R=amber, centerline=white.
 // Crossbody (l_shoulder<->r_shoulder, l_hip<->r_hip) is white per spec.
 type Edge = readonly [JointName, JointName];
@@ -163,11 +204,13 @@ export function WhamSkeletonOverlay({ timeline, videoEl }: Props) {
 
       const kp = frame.keypoints_2d_projected;
 
-      // Update joint circles.
+      // Update joint circles. PR-8e.1: resolveJointPos picks the
+      // anatomical surface landmark when available (acromion for
+      // shoulder, greater trochanter for hip), else SMPL joint.
       for (const name of ALL_JOINTS) {
         const el = circleRefs.current[name];
         if (!el) continue;
-        const p = kp[name];
+        const p = resolveJointPos(kp, name);
         if (!p) {
           el.setAttribute('visibility', 'hidden');
           continue;
@@ -177,13 +220,15 @@ export function WhamSkeletonOverlay({ timeline, videoEl }: Props) {
         el.setAttribute('visibility', 'visible');
       }
 
-      // Update edge lines.
+      // Update edge lines. Same resolveJointPos for endpoints so the
+      // bone connects the rendered dots (not a mix of anatomical-dot +
+      // SMPL-endpoint).
       for (const { edge } of allEdges) {
         const [a, b] = edge;
         const el = edgeRefs.current[`${a}__${b}`];
         if (!el) continue;
-        const pa = kp[a];
-        const pb = kp[b];
+        const pa = resolveJointPos(kp, a);
+        const pb = resolveJointPos(kp, b);
         if (!pa || !pb) {
           el.setAttribute('visibility', 'hidden');
           continue;
