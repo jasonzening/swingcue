@@ -85,6 +85,7 @@ def run_wham_and_persist(
     video_id: str,
     user_id: str,
     signed_url: str,
+    expected_seconds: int | None = None,
 ) -> None:
     """
     Synchronous WHAM → Supabase pipeline. Safe to call from a FastAPI
@@ -102,9 +103,27 @@ def run_wham_and_persist(
         video_id:    swing_videos.id (UUID string).
         user_id:     swing_videos.user_id (UUID string, RLS owner).
         signed_url:  Supabase signed URL (~1200s expiry) for Modal to fetch.
+        expected_seconds: PR-8c.1 — dynamic ETA for the 'processing'
+            UX hint. If provided, retry-writes wham_status='processing'
+            as the FIRST step (catches the race with Next.js INSERT
+            that may have caused main.py's synchronous attempt to fail).
+            If None (legacy callers), skips the retry-write entirely.
     """
     try:
         logger.info(f"[wham_integration] start video_id={video_id} user={user_id[:8]}...")
+
+        # ── PR-8c.1: ensure wham_status='processing' is set (race retry) ──
+        # main.py's synchronous attempt may have failed because Next.js
+        # hasn't INSERTed swing_analysis yet (~100-200ms race window).
+        # Retry up to 5x with 1s backoff so the UX state machine sees
+        # 'processing' even on cold first-time-analysis paths.
+        if expected_seconds is not None:
+            set_wham_processing_status(
+                video_id,
+                expected_seconds=expected_seconds,
+                max_retries=5,
+                retry_delay_sec=1.0,
+            )
 
         # ── Idempotency ──────────────────────────────────────────────
         existing = _select_wham_video_meta_status(video_id)
@@ -332,17 +351,30 @@ def _write_wham_pose_timeline(
     )
 
 
-def _set_swing_analysis_wham_status(video_id: str, status: str) -> None:
-    """
-    UPDATE swing_analysis.video_metadata_json with a wham_status field.
-    Per spec: this is the flag PR-8d (frontend) will query.
+class _RowNotFound(Exception):
+    """Raised by _patch_swing_analysis_meta when swing_analysis row
+    doesn't exist yet (race vs Next.js INSERT). Distinguishable from
+    other errors so the BackgroundTask retry loop knows when to wait
+    vs when to give up."""
 
-    Uses PostgREST's `||` jsonb merge via raw SQL is not natively
-    available through PostgREST. Instead, fetch existing
-    video_metadata_json, merge wham_status, write back.
+
+def _patch_swing_analysis_meta(
+    video_id: str,
+    updates: dict,
+    raise_on_missing: bool = True,
+) -> bool:
+    """
+    Read-modify-write swing_analysis.video_metadata_json with the
+    given updates dict (merged into existing jsonb so other keys
+    like durationSec / fps / dataSource are preserved).
+
+    Returns True on successful PATCH. If swing_analysis row doesn't
+    exist for this video_id:
+      - raise_on_missing=True → raises _RowNotFound
+      - raise_on_missing=False → logs warning + returns False
+    Other errors (network / RLS / 5xx) always raise.
     """
     url, key = _get_supa_config()
-    # Read current video_metadata_json.
     r = httpx.get(
         f"{url}/rest/v1/swing_analysis",
         headers=_supa_headers(key),
@@ -352,29 +384,112 @@ def _set_swing_analysis_wham_status(video_id: str, status: str) -> None:
     r.raise_for_status()
     rows = r.json()
     if not rows:
-        logger.warning(
-            f"[wham_integration] {video_id} no swing_analysis row yet — "
-            f"skipping wham_status update (will be set on next analyze call)"
+        msg = (
+            f"swing_analysis row not found for video_id={video_id} "
+            f"(likely race vs Next.js INSERT)"
         )
-        return
+        if raise_on_missing:
+            raise _RowNotFound(msg)
+        logger.warning(f"[wham_integration] {msg}; PATCH skipped")
+        return False
     analysis_id = rows[0]["id"]
-    current_meta = rows[0].get("video_metadata_json") or {}
-    if not isinstance(current_meta, dict):
-        current_meta = {}
-    current_meta["wham_status"] = status
-    # Write back merged dict.
+    current = rows[0].get("video_metadata_json") or {}
+    if not isinstance(current, dict):
+        current = {}
+    current.update(updates)
     patch_url = f"{url}/rest/v1/swing_analysis?id=eq.{analysis_id}"
     patch_headers = _supa_headers(key) | {"Prefer": "return=minimal"}
     r2 = httpx.patch(
         patch_url, headers=patch_headers,
-        json={"video_metadata_json": current_meta},
+        json={"video_metadata_json": current},
         timeout=SUPA_TIMEOUT_SEC,
     )
     if r2.status_code not in (200, 204):
         raise RuntimeError(
-            f"swing_analysis wham_status PATCH failed "
-            f"{r2.status_code}: {r2.text[:400]}"
+            f"swing_analysis PATCH failed {r2.status_code}: {r2.text[:400]}"
         )
-    logger.info(
-        f"[wham_integration] {video_id} swing_analysis.wham_status = {status}"
+    return True
+
+
+def set_wham_processing_status(
+    video_id: str,
+    expected_seconds: int,
+    max_retries: int = 1,
+    retry_delay_sec: float = 1.0,
+) -> bool:
+    """
+    PR-8c.1 (R1+R2): Write wham_status='processing' + wham_started_at +
+    wham_expected_completion_seconds to swing_analysis.video_metadata_json.
+
+    Returns True on success, False on any failure (per R2: UX hint, not
+    correctness — caller continues regardless).
+
+    Usage:
+      - main.py synchronous attempt (max_retries=1): may fail if
+        swing_analysis row doesn't exist yet (Next.js INSERT race);
+        caller logs + continues.
+      - BackgroundTask retry loop (max_retries=5, delay=1.0s): catches
+        the Next.js INSERT race window. ~5s budget covers a ~200ms race
+        with margin.
+
+    Never raises — all failures are caught + logged.
+    """
+    import time
+    from datetime import datetime, timezone
+
+    updates = {
+        "wham_status":                       "processing",
+        "wham_started_at":                   datetime.now(timezone.utc).isoformat(),
+        "wham_expected_completion_seconds":  int(expected_seconds),
+    }
+    last_err: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            if _patch_swing_analysis_meta(video_id, updates, raise_on_missing=True):
+                logger.info(
+                    f"[wham_integration] {video_id} wham_status='processing' "
+                    f"(expected={expected_seconds}s, attempt {attempt+1}/{max_retries})"
+                )
+                return True
+        except _RowNotFound as exc:
+            last_err = exc
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay_sec)
+                continue
+        except Exception as exc:
+            # Non-race error — don't retry, just give up.
+            last_err = exc
+            break
+
+    logger.warning(
+        f"[wham_integration] {video_id} wham_status='processing' write failed "
+        f"after {max_retries} attempt(s): {last_err!r}"
     )
+    return False
+
+
+def _set_swing_analysis_wham_status(video_id: str, status: str) -> None:
+    """
+    PR-8c: write final wham_status='ready'|'failed' to
+    swing_analysis.video_metadata_json. PR-8c.1 R3: failure paths
+    MUST call this with 'failed' to clear the 'processing' state
+    that PR-8c.1 set synchronously — otherwise frontend polling sees
+    the row stuck at 'processing' forever.
+
+    Preserves wham_started_at + wham_expected_completion_seconds set
+    by set_wham_processing_status (read-modify-write merges; doesn't
+    clobber). Frontend can compute wham_actual_seconds from
+    (now - wham_started_at) if useful.
+
+    Raises on PATCH failure (caller catches in the outer try in
+    run_wham_and_persist + re-attempts in its own except block).
+    """
+    try:
+        _patch_swing_analysis_meta(video_id, {"wham_status": status}, raise_on_missing=False)
+        logger.info(
+            f"[wham_integration] {video_id} swing_analysis.wham_status = {status}"
+        )
+    except Exception:
+        # Re-raise with context — outer caller in run_wham_and_persist
+        # has its own try/except for the final status update.
+        raise

@@ -320,16 +320,43 @@ async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
         # the SAME url so we don't burn a re-sign).
         if req.video_id and req.user_id and req.video_url:
             try:
-                from wham_integration import run_wham_and_persist
+                from wham_integration import (
+                    run_wham_and_persist,
+                    set_wham_processing_status,
+                )
+                # PR-8c.1 R1: dynamic ETA based on video duration.
+                # 13x realtime is the safe multiplier (b32e0f21 4s × 13 =
+                # 52s, observed 51s); pads slightly without being absurd.
+                # Floor at 60s so the UX ETA never reads less than a
+                # minute (covers Modal cold-start + small clips).
+                duration_sec = float(metadata.durationSec)
+                expected_seconds = max(60, int(duration_sec * 13))
+
+                # PR-8c.1 R2: synchronously try to write wham_status=
+                # 'processing' so the UX state-machine flips off "absent"
+                # immediately when Next.js polls swing_analysis. Note:
+                # the swing_analysis row is created by Next.js AFTER this
+                # function returns (race window ~100-200ms), so this
+                # synchronous attempt commonly fails on first-time
+                # analyses. R2 explicitly allows this — log + continue,
+                # and the BackgroundTask retries with backoff to catch
+                # the race.
+                set_wham_processing_status(
+                    req.video_id,
+                    expected_seconds=expected_seconds,
+                    max_retries=1,  # synchronous; don't block response
+                )
+
                 background_tasks.add_task(
                     run_wham_and_persist,
                     video_id=req.video_id,
                     user_id=req.user_id,
                     signed_url=req.video_url,
+                    expected_seconds=expected_seconds,
                 )
                 logger.info(
                     f"[main] PR-8c WHAM background task scheduled "
-                    f"for video_id={req.video_id}"
+                    f"for video_id={req.video_id} (ETA {expected_seconds}s)"
                 )
             except Exception as exc:
                 # Scheduling failure (e.g., import error) — log and
