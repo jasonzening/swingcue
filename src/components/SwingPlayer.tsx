@@ -66,6 +66,15 @@ const AnchorTuningPanel = dynamic(
 // SkeletonOverlay). Auto-enabled whenever poseTimeline is present.
 import { CoachingAnchorOverlay } from '@/components/CoachingAnchorOverlay';
 import { EnhancedCoachingBadge } from '@/components/EnhancedCoachingBadge';
+// PR-8d.1: WHAM bone-center full-skeleton overlay. Renders when the
+// result page passes whamPoseTimeline (wham_status='ready' branch).
+// Hides MediaPipe-derived overlays (CoachingAnchorOverlay + canvas
+// disc) so user only sees the trusted WHAM analysis, not stale
+// MediaPipe placeholders mixed with WHAM data.
+import {
+  WhamSkeletonOverlay,
+  type WhamPoseTimelineForOverlay,
+} from '@/components/WhamSkeletonOverlay';
 // PR-5: frame-level disc geometry from PR-4 pose_timeline_2d.
 // PR-5.9: `frameAt` kept (deprecated) for any out-of-tree consumer;
 // SwingPlayer now uses `interpolatedFrame` for continuous tracking.
@@ -123,6 +132,11 @@ interface Props {
   // (when present) as small blue dots alongside the final keypoints.
   // URL-sourced (?debug=pose) by the result page.
   debugMode?: 'pose';
+  // PR-8d.1: trusted WHAM bone-center skeleton. When present (result
+  // page passes from wham_status='ready' + wham_pose_timeline rows),
+  // SwingPlayer renders WhamSkeletonOverlay INSTEAD of the MediaPipe-
+  // derived CoachingAnchorOverlay + canvas disc + skeleton toggle.
+  whamPoseTimeline?: WhamPoseTimelineForOverlay | null;
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
@@ -256,6 +270,7 @@ export function SwingPlayer({
   // PR-5.8A: coaching-anchor expansion factors. Defaults applied here
   // so internal call sites (SkeletonOverlay, computeShoulderDisc/Hip)
   // see a guaranteed number.
+  whamPoseTimeline,
   shoulderExpand = SHOULDER_EXPAND_DEFAULT,
   hipExpand = HIP_EXPAND_DEFAULT,
   // PR-5.9 Task 5: debug overlay mode forwarded to SkeletonOverlay.
@@ -284,6 +299,12 @@ export function SwingPlayer({
   // analyzed video). Replaces the v1 Supabase-Storage corrected-timeline
   // fetch which was per-video opt-in.
   const enhancedMode = !!poseTimeline;
+
+  // PR-8d.1: WHAM mode takes precedence over MediaPipe enhancedMode.
+  // When the trusted WHAM bone-center skeleton is available, hide all
+  // MediaPipe-derived overlays (CoachingAnchorOverlay magenta dots,
+  // canvas disc, layer toggle) so the user sees ONLY WHAM data.
+  const whamMode = !!whamPoseTimeline;
 
   // PR-7c-frontend-v8: `?tune=anchors` opt-in tuning mode. When active,
   // mounts AnchorTuningPanel with live sliders for the 4 visual-anchor
@@ -647,7 +668,9 @@ export function SwingPlayer({
           onLoadedMetadata={syncCanvas}
           onLoadedData={syncCanvas}
         />
-        {!enhancedMode && <canvas ref={canvasRef} className="sp-cvs" />}
+        {/* PR-8d.1: hide canvas in WHAM mode too — disc is MediaPipe-era
+            chrome irrelevant to WHAM-only result page. */}
+        {!enhancedMode && !whamMode && <canvas ref={canvasRef} className="sp-cvs" />}
 
         {/* PR-4: skeleton overlay (toggle, default off).
             PR-7c-frontend: hidden when enhanced mode is active so the
@@ -667,8 +690,11 @@ export function SwingPlayer({
         {/* PR-7c-frontend-v2: enhanced coaching anchors sourced from
             production MediaPipe pose_timeline_2d. Mounted whenever
             poseTimeline is available — replaces the MediaPipe
-            SkeletonOverlay visually but reads the SAME underlying data. */}
-        {enhancedMode && poseTimeline && (
+            SkeletonOverlay visually but reads the SAME underlying data.
+            PR-8d.1: HIDDEN when WHAM mode is active — WHAM skeleton
+            replaces MediaPipe-derived anchors on the trusted-analysis
+            ready branch. */}
+        {!whamMode && enhancedMode && poseTimeline && (
           <CoachingAnchorOverlay
             videoId={videoId}
             poseTimeline={poseTimeline}
@@ -679,8 +705,21 @@ export function SwingPlayer({
           />
         )}
 
-        {/* PR-7c-frontend: badge — only visible in enhanced mode. */}
-        {enhancedMode && !tuneMode && <EnhancedCoachingBadge />}
+        {/* PR-8d.1: trusted WHAM bone-center skeleton. Renders ONLY
+            when result page passes whamPoseTimeline (wham_status=
+            'ready'). Locked palette: cyan L / amber R / white center. */}
+        {whamMode && whamPoseTimeline && (
+          <WhamSkeletonOverlay
+            timeline={whamPoseTimeline}
+            videoEl={videoRef.current}
+          />
+        )}
+
+        {/* PR-7c-frontend: badge — only visible in enhanced mode.
+            PR-8d.1: also hidden in WHAM mode — label "Enhanced Coaching
+            Overlay" refers to MediaPipe path; misleading on WHAM trusted
+            analysis. */}
+        {enhancedMode && !tuneMode && !whamMode && <EnhancedCoachingBadge />}
 
         {/* PR-7c-frontend-v8: tuning panel (?tune=anchors only).
             v10: when sideBySide is true, panel renders OUTSIDE .sp-vw

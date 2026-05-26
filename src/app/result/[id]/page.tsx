@@ -19,6 +19,10 @@ import type { MainIssueType, PhaseMarkers, VideoMetadata, OverlayTimeline, Keypo
 import { ISSUE_LABELS } from '@/types/analysis';
 // PR-5.8A: render-time coaching-anchor expansion (URL-tunable).
 import { readExpandFactorsFromURL } from '@/lib/skeleton/coachingAnchors';
+// PR-8d.1: WHAM bone-center skeleton type (the result page assembles
+// the timeline object from wham_video_meta + wham_pose_timeline rows
+// and passes it down to SwingPlayer).
+import type { WhamPoseTimelineForOverlay } from '@/components/WhamSkeletonOverlay';
 
 // ────────────────────────────────────────────────────────────────────
 // PR-8d.0: wham_status state machine.
@@ -147,6 +151,16 @@ export default function ResultPage() {
   // load state machine above). Set from swing_analysis.video_metadata_json
   // after fetch + polled at 2s exp backoff (cap 8s) while in 'processing'.
   const [whamUiState, setWhamUiState] = useState<WhamUiState>({ kind: 'absent' });
+
+  // PR-8d.1: trusted WHAM bone-center skeleton assembled from
+  // wham_video_meta + wham_pose_timeline rows. Fetched lazily when
+  // whamUiState.kind === 'ready'.
+  //   undefined → not yet attempted to fetch
+  //   null       → fetched but rows missing (R5 preparing fallback)
+  //   object     → fetched and present (pass to SwingPlayer)
+  const [whamTimeline, setWhamTimeline] = useState<
+    WhamPoseTimelineForOverlay | null | undefined
+  >(undefined);
 
   useEffect(() => {
     async function load() {
@@ -283,6 +297,55 @@ export default function ResultPage() {
     load();
   }, [videoId, router]);
 
+  // PR-8d.1: when wham_status flips to 'ready', fetch the per-frame
+  // skeleton from wham_video_meta + wham_pose_timeline. Result page
+  // then passes whamTimeline into SwingPlayer; SwingPlayer renders
+  // WhamSkeletonOverlay instead of MediaPipe-derived overlays.
+  useEffect(() => {
+    if (whamUiState.kind !== 'ready') return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const [metaRes, rowsRes] = await Promise.all([
+        supabase.from('wham_video_meta')
+          .select('image_width,image_height,processed_fps')
+          .eq('video_id', videoId).maybeSingle(),
+        supabase.from('wham_pose_timeline')
+          .select('frame_idx,frame_timestamp_ms,fit_ok,keypoints_2d_projected')
+          .eq('video_id', videoId)
+          .order('frame_idx', { ascending: true })
+          .limit(1000),
+      ]);
+      if (cancelled) return;
+      const meta = metaRes.data;
+      const rows = rowsRes.data;
+      if (!meta || !rows || rows.length === 0) {
+        // R5: ready but data missing — do NOT fall back to MediaPipe.
+        console.warn('[result] wham_status=ready but data missing', {
+          metaPresent: !!meta,
+          rowCount: rows?.length ?? 0,
+          metaErr: metaRes.error,
+          rowsErr: rowsRes.error,
+        });
+        setWhamTimeline(null);
+        return;
+      }
+      setWhamTimeline({
+        image_width: meta.image_width,
+        image_height: meta.image_height,
+        processed_fps: meta.processed_fps,
+        frames: rows.map((r) => ({
+          frame_idx:              r.frame_idx as number,
+          frame_timestamp_ms:     (r.frame_timestamp_ms as number | null) ?? null,
+          fit_ok:                 (r.fit_ok as boolean | null) ?? false,
+          keypoints_2d_projected: r.keypoints_2d_projected as
+            Record<string, { x: number; y: number } | null> | null,
+        })),
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [whamUiState.kind, videoId]);
+
   // PR-8d.0 R1: poll swing_analysis.video_metadata_json every 2s → 4s →
   // 8s (cap) while wham_status='processing'. Stops on terminal state
   // (ready / failed_* / absent) OR unmount. Never polls legacy rows
@@ -378,7 +441,37 @@ export default function ResultPage() {
       />
     );
   }
-  // kind === 'ready' OR 'absent' → fall through to existing UI.
+
+  // PR-8d.1 R5: wham_status='ready' but the timeline rows are missing
+  // (rare race / Modal write incomplete). Do NOT silently fall back to
+  // MediaPipe — show a soft "preparing" message and let the user refresh.
+  if (whamUiState.kind === 'ready' && whamTimeline === null) {
+    return (
+      <div className="page-center wham-screen">
+        <button className="btn-corner-back" onClick={() => router.push('/history')}>← History</button>
+        <div className="spinner" />
+        <h2 className="wham-title">Analysis data is still preparing</h2>
+        <p className="wham-detail">Please refresh in a moment.</p>
+        <button className="wham-retry-btn" onClick={() => window.location.reload()}>Refresh</button>
+        <style>{css}</style>
+      </div>
+    );
+  }
+  // ready but fetch in flight — show a lightweight spinner instead of
+  // briefly flashing the MediaPipe placeholder UI.
+  if (whamUiState.kind === 'ready' && whamTimeline === undefined) {
+    return (
+      <div className="page-center">
+        <div className="spinner" />
+        <p className="load-txt">Loading 3D analysis…</p>
+        <style>{css}</style>
+      </div>
+    );
+  }
+  // kind === 'ready' (with whamTimeline present) OR 'absent'
+  // → fall through to existing UI; SwingPlayer gets whamPoseTimeline
+  //   when present and renders the WHAM skeleton path. Otherwise the
+  //   legacy placeholder UI shows.
 
   const issueLabel = ISSUE_LABELS[issue] ?? issue;
 
@@ -402,20 +495,34 @@ export default function ResultPage() {
           shoulderExpand={expandFactors.shoulder}
           hipExpand={expandFactors.hip}
           debugMode={debugMode}
+          // PR-8d.1: pass the WHAM timeline when ready + present. When
+          // SwingPlayer sees this prop it renders WhamSkeletonOverlay
+          // instead of MediaPipe-derived overlays.
+          whamPoseTimeline={
+            whamUiState.kind === 'ready' && whamTimeline ? whamTimeline : null
+          }
         />
       ) : (
         <div className="no-vid"><p>Video loading…</p></div>
       )}
 
-      <div className="coaching-bar">
-        <div className="issue-row">
-          <span className="issue-dot">⚡</span>
-          <span className="issue-text">{issueLabel}</span>
+      {/* PR-8d.1 R4: hide the static "Head Movement / Keep your head
+          centered" placeholder coaching cue when WHAM trusted analysis
+          is rendering. Leaving the cue while showing real WHAM skeleton
+          would falsely suggest the cue is WHAM-derived insight; it's
+          actually a template carried over from the MediaPipe era.
+          Real WHAM-derived coaching is PR-8d.2+ territory. */}
+      {whamUiState.kind !== 'ready' && (
+        <div className="coaching-bar">
+          <div className="issue-row">
+            <span className="issue-dot">⚡</span>
+            <span className="issue-text">{issueLabel}</span>
+          </div>
+          <div className="cue-row">
+            <span className="cue-quote">&ldquo;{cue}&rdquo;</span>
+          </div>
         </div>
-        <div className="cue-row">
-          <span className="cue-quote">&ldquo;{cue}&rdquo;</span>
-        </div>
-      </div>
+      )}
 
       <style>{css}</style>
     </div>
