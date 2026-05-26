@@ -1,0 +1,24 @@
+{
+  "video_id": "88ef44a5-2f4b-4a7c-9ec1-e328c1fedf64",
+  "duration_sec": 4.0,
+  "r1_expected_seconds": 60,
+  "elapsed_sec": 8.5,
+  "gate_1_meta": {
+    "status": "failed",
+    "error_message": "HTTP Error 400: Bad Request",
+    "inference_ms_total": 754
+  },
+  "gate_2_timeline_count": 0,
+  "gate_3_wham_status": "failed",
+  "gate_3_video_meta": {
+    "fps": 30,
+    "width": 720,
+    "height": 1280,
+    "dataSource": "mediapipe",
+    "durationSec": 4,
+    "wham_status": "failed",
+    "wham_started_at": "2026-05-26T05:09:43.436781+00:00",
+    "wham_expected_completion_seconds": 60
+  },
+  "gate_4_mp_intact": true
+}
