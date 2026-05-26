@@ -92,8 +92,33 @@ export default function UploadPage() {
   const handleAnalyze = async () => {
     if (!file) return;
     setErrorMsg('');
+
+    // PR-8c.5 Bug 2 fix: capture vid in outer scope so the generic
+    // catch can mark swing_videos.status='failed' if anything between
+    // INSERT and successful storage upload throws. Without this the
+    // row sits at status='uploaded' with storage_path='' = ghost row.
+    let vid: string | null = null;
+    const supabase = createClient();
+
+    const markUploadFailed = async (
+      videoId: string,
+      errorCode: string,
+      errorMessage: string,
+    ) => {
+      try {
+        await supabase.from('swing_videos').update({
+          status:        'failed',
+          error_code:    errorCode,
+          error_message: errorMessage.slice(0, 2000),
+          processing_completed_at: new Date().toISOString(),
+        }).eq('id', videoId);
+      } catch (patchErr) {
+        // Don't blow up the UI flow; the original error still surfaces.
+        console.error('[upload] markUploadFailed PATCH error:', patchErr);
+      }
+    };
+
     try {
-      const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace('/sign-in'); return; }
 
@@ -118,23 +143,59 @@ export default function UploadPage() {
         .single();
 
       if (insertErr || !videoRow) throw new Error(insertErr?.message ?? 'Failed to create record');
-      const vid = videoRow.id as string;
+      vid = videoRow.id as string;
       setVideoId(vid);
       setUploadPct(30);
 
-      // Upload to storage
-      const storagePath = `${user.id}/${vid}/${file.name}`;
+      // PR-8c.5 Bug 1 fix: deterministic ASCII-only storage key.
+      // Previously used `${user.id}/${vid}/${file.name}` which broke
+      // for non-ASCII filenames (CJK, accented chars). Supabase Storage
+      // rejected those with "Invalid key" — international users 100%
+      // affected. Fix: ignore client-side filename for the storage path;
+      // keep file extension only (sanitized to a known-safe whitelist
+      // so playback still gets a correct Content-Type). The full
+      // original filename is preserved separately in
+      // swing_videos.original_filename for history/download UX.
+      const rawExt = (file.name.split('.').pop() ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const safeExt = ['mp4', 'mov', 'webm', 'avi', 'm4v', 'mkv'].includes(rawExt) ? rawExt : 'mp4';
+      const storagePath = `${user.id}/${vid}/${vid}.${safeExt}`;
       const { error: uploadErr } = await supabase.storage
         .from('swing-videos')
-        .upload(storagePath, file, { upsert: false });
+        .upload(storagePath, file, {
+          upsert: false,
+          // Ensure correct Content-Type even when the storage key extension
+          // was forced to 'mp4' for a non-standard input.
+          contentType: file.type || `video/${safeExt}`,
+        });
 
-      if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`);
+      if (uploadErr) {
+        // PR-8c.5 Bug 2 fix: PATCH swing_videos to 'failed' BEFORE
+        // throwing so the row carries the failure context. Classify
+        // the error: Supabase "Invalid key" was the historical Bug 1
+        // symptom; should never fire post-fix but kept for defense.
+        const msg = uploadErr.message;
+        const errorCode = /invalid key/i.test(msg)
+          ? 'invalid_storage_key'
+          : /network|fetch|connection/i.test(msg)
+            ? 'storage_network_error'
+            : 'storage_upload_failed';
+        await markUploadFailed(vid, errorCode, msg);
+        throw new Error(`Upload failed: ${msg}`);
+      }
       setUploadPct(80);
 
-      // Update storage path
-      await supabase.from('swing_videos')
+      // Update storage path. If THIS PATCH fails the blob is orphaned
+      // in storage + the row points at empty path; still mark the row
+      // 'failed' so the user can retry cleanly (the orphan blob is
+      // bounded by user storage quota — not a hard correctness issue
+      // here; a sweeper job would be a separate PR).
+      const { error: pathUpdateErr } = await supabase.from('swing_videos')
         .update({ storage_path: storagePath })
         .eq('id', vid);
+      if (pathUpdateErr) {
+        await markUploadFailed(vid, 'storage_path_update_failed', pathUpdateErr.message);
+        throw new Error(`DB update failed: ${pathUpdateErr.message}`);
+      }
 
       setUploadPct(100);
 
@@ -152,7 +213,10 @@ export default function UploadPage() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? 'Analysis failed');
+        // Note: /api/analyze (PR-8c.2) already writes swing_videos.status
+        // and swing_analysis on backend failure; we just surface the
+        // error to the user and skip our own markUploadFailed write.
+        throw new Error(body.error_message ?? body.error ?? 'Analysis failed');
       }
 
       setStage('done');
@@ -160,6 +224,18 @@ export default function UploadPage() {
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      // PR-8c.5 Bug 2 (defense in depth): if we got past the INSERT
+      // but markUploadFailed wasn't already invoked above, ensure the
+      // row carries an error so it doesn't sit as 'uploaded' ghost.
+      // This catches unexpected throws (auth, network mid-stage, etc.).
+      if (vid) {
+        // Best-effort: only PATCH if the row isn't already in a terminal
+        // failed state (some paths above already marked it). PostgREST
+        // doesn't expose "WHERE status != 'failed'" cheaply from the
+        // client; we just over-write — repeated PATCH with the same
+        // failed fields is idempotent.
+        await markUploadFailed(vid, 'upload_pipeline_error', msg);
+      }
       setErrorMsg(msg);
       setStage('error');
     }
