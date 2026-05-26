@@ -133,6 +133,68 @@ HEAD_CROWN_VERTEX_INDEX = 411
 
 
 # ---------------------------------------------------------------------------
+# PR-8e.0: anatomical surface landmarks via SMPL mesh vertices.
+#
+# PR-8d.1 frontend exposed 4 systemic offsets between WHAM skeleton and
+# anatomical body surface:
+#   * Hip dots above hip joint surface  (SMPL pelvis joint ≈ L5 vertebra,
+#                                        5-8cm above greater trochanter)
+#   * Shoulder distance < real shoulder width
+#                                       (SMPL shoulder = glenohumeral joint,
+#                                        medial to visible acromion)
+#   * Skeleton-vs-body global offset    (same root cause: SMPL joints are
+#                                        kinematic centers inside mesh,
+#                                        not surface landmarks)
+#
+# Solution per PR-7a4 PROBE (docs/PR-7a4_PROBE/smpl_landmark_indices.json):
+# read specific SMPL mesh vertices that DO sit on the anatomical surface.
+# Vertices stay in the same WHAM camera frame as the H36M joints, so the
+# same CLIFF projection + median-z stabilization path applies — just
+# different mesh index.
+#
+# Naming convention: image-orientation (chirality-swapped) to match the
+# PR-7a.2 H36M joint convention. PROBE labels its indices by ANATOMICAL
+# side (vertex 4721 = anatomical-left acromion). For frontend
+# consistency with H36M-derived `left_shoulder` (which after PR-7a.2
+# swap holds anatomical-right data → image-left for face-on cameras),
+# we swap the L/R vertex assignment here too: `acromion_left` →
+# PROBE's anatomical-right vertex (1238), so `acromion_left` renders
+# on image-left, same side as `left_shoulder`.
+#
+# Scope:
+#   CRITICAL (PR-8e.1 frontend will swap render position to these):
+#     acromion_left / acromion_right        — fixes shoulder-width
+#     greater_trochanter_left / _right      — fixes hip-above-joint
+#   OPTIONAL (stored in DB now; rendered in a future PR):
+#     c7 / throat                            — neck centerline detail
+#     lateral_epicondyle_left / _right       — elbow surface
+#     lateral_malleolus_left / _right        — ankle surface
+#
+# Schema additive: new jsonb keys on existing keypoints_2d_projected +
+# keypoints_3d_smpl. Old WHAM-run rows (pre-PR-8e.0) won't have the
+# anatomical keys; PR-8e.1 frontend falls back to SMPL joints in that
+# case. No DDL.
+# ---------------------------------------------------------------------------
+
+_ANATOMICAL_LANDMARK_VERTEX_INDICES: dict[str, int] = {
+    # Centerline — no L/R, no chirality concern.
+    "c7":                       414,
+    "throat":                   444,
+    # Critical paired landmarks. L/R SWAPPED relative to PROBE's
+    # anatomical naming to match PR-7a.2 image-orientation convention.
+    "acromion_left":            1238,   # PROBE anat-right; image-left for face-on
+    "acromion_right":           4721,   # PROBE anat-left
+    "greater_trochanter_left":  2915,   # PROBE anat-right
+    "greater_trochanter_right": 6375,   # PROBE anat-left
+    # Optional paired landmarks — same swap rationale.
+    "lateral_epicondyle_left":   959,   # PROBE anat-right
+    "lateral_epicondyle_right": 4447,   # PROBE anat-left
+    "lateral_malleolus_left":   3348,   # PROBE anat-right
+    "lateral_malleolus_right":  6749,   # PROBE anat-left
+}
+
+
+# ---------------------------------------------------------------------------
 # Workspace + video setup helpers (unchanged from PR-7a.5).
 # ---------------------------------------------------------------------------
 
@@ -463,11 +525,30 @@ if _MODAL_AVAILABLE:
             f"(frame[0] xyz = {head_crown_3d[0].tolist()})"
         )
 
+        # PR-8e.0: anatomical surface landmarks via SMPL mesh vertices.
+        # Same camera-frame meters as joints_3d / head_crown_3d → same
+        # projection path applies per-landmark in the formatter. Stored
+        # as a dict[name → (T, 3) ndarray] so the formatter can iterate
+        # without touching the index table.
+        anatomical_landmarks_3d: dict[str, "np.ndarray"] = {}
+        for _name, _vidx in _ANATOMICAL_LANDMARK_VERTEX_INDICES.items():
+            anatomical_landmarks_3d[_name] = (
+                verts[:, _vidx, :].astype(np.float32)
+            )
+        print(
+            f"[wham_runner] anatomical_landmarks_3d "
+            f"n={len(anatomical_landmarks_3d)} "
+            f"keys={sorted(anatomical_landmarks_3d.keys())} "
+            f"(frame[0] acromion_left xyz = "
+            f"{anatomical_landmarks_3d['acromion_left'][0].tolist()})"
+        )
+
         return {
             "track":              track,
             "wham_out":           wham_out,
             "joints_3d":          joints_3d,
             "head_crown_3d":      head_crown_3d,
+            "anatomical_landmarks_3d": anatomical_landmarks_3d,
             "frame_ids":          frame_ids,
             "video_w":            video_w,
             "video_h":            video_h,
@@ -1076,6 +1157,15 @@ if _MODAL_AVAILABLE:
         # for evidence + backward compat only.
         m["head_crown_vertex_index"] = HEAD_CROWN_VERTEX_INDEX
         m["_landmark_source_for_head_crown"] = "smpl_mesh_vertex"
+        # PR-8e.0: anatomical surface landmarks. Each name in this dict
+        # appears as a new key on every frame's keypoints_2d_projected +
+        # keypoints_3d_smpl sub-dicts. Names use image-orientation
+        # convention (L/R chirality-swapped vs PROBE's anatomical
+        # naming) to stay consistent with the H36M joint names —
+        # frontend can swap `left_shoulder`→`acromion_left` without
+        # flipping sides.
+        m["anatomical_landmark_source"] = "smpl_mesh_vertex"
+        m["anatomical_vertex_indices"] = dict(_ANATOMICAL_LANDMARK_VERTEX_INDICES)
         m["_notes"] = (
             f"head_crown derived from SMPL mesh vertex "
             f"{HEAD_CROWN_VERTEX_INDEX} (per PR-7a4 PROBE: "
@@ -1083,7 +1173,15 @@ if _MODAL_AVAILABLE:
             f"is distinct from the H36M `head` joint which lies in the "
             f"face/nose region. Use head_crown for golf head-sway "
             f"metrics; H36M head is retained for evidence and backward "
-            f"compat only."
+            f"compat only. "
+            f"PR-8e.0: additional anatomical surface landmarks "
+            f"({sorted(_ANATOMICAL_LANDMARK_VERTEX_INDICES.keys())}) "
+            f"emitted on each frame from PROBE-derived SMPL mesh "
+            f"vertices. L/R names chirality-swapped to match H36M "
+            f"convention. Frontends should prefer these over the "
+            f"corresponding SMPL joint centers (left_shoulder, "
+            f"left_hip, etc.) when present — SMPL joints are kinematic "
+            f"centers inside the mesh, not surface landmarks."
         )
         return m
 
@@ -1170,6 +1268,10 @@ if _MODAL_AVAILABLE:
 
         joints_3d_all = pipe["joints_3d"]   # (T, 17, 3) chirality-swapped
         head_crown_3d_all = pipe.get("head_crown_3d")  # (T, 3) or None
+        # PR-8e.0: anatomical surface landmarks from SMPL mesh vertices.
+        # dict[name → (T, 3)]. May be missing on older pipeline paths;
+        # formatter degrades gracefully (skips the landmark loop).
+        anatomical_landmarks_3d_all = pipe.get("anatomical_landmarks_3d")
         frame_ids     = pipe["frame_ids"]
         fps_native    = pipe["fps_native"]
         track         = pipe["track"]
@@ -1287,6 +1389,39 @@ if _MODAL_AVAILABLE:
                 # emit None so the schema field exists.
                 keypoints_2d["head_crown"] = None
                 keypoints_3d["head_crown"] = None
+
+            # PR-8e.0: anatomical surface landmarks (acromion, greater
+            # trochanter, c7, throat, lateral epicondyle, lateral
+            # malleolus). Same per-frame Z<0.1 / NaN guard as head_crown:
+            # individual landmark failure emits null for that landmark
+            # only, does NOT set fit_ok=False. Out-of-bounds checks
+            # follow the same ±10% slack rule as H36M joints but are
+            # NOT counted in n_oob — anatomical landmarks are render
+            # overrides, not part of the original fit-quality budget.
+            if anatomical_landmarks_3d_all is not None:
+                for _lname, _lall in anatomical_landmarks_3d_all.items():
+                    _l3d = _lall[i]   # (3,)
+                    _lx = float(_l3d[0]); _ly = float(_l3d[1]); _lz = float(_l3d[2])
+                    _lvalid = np.isfinite(_l3d).all() and _lz >= 0.1
+                    if _lvalid:
+                        _lproj = _project_joints_2d(
+                            _l3d[None, :], R_i, t_i, focal, cx, cy,
+                        )
+                        keypoints_2d[_lname] = {
+                            "x": float(_lproj[0, 0]),
+                            "y": float(_lproj[0, 1]),
+                        }
+                        keypoints_3d[_lname] = {"x": _lx, "y": _ly, "z": _lz}
+                    else:
+                        keypoints_2d[_lname] = None
+                        keypoints_3d[_lname] = None
+            else:
+                # Older pipeline path — emit None for every anatomical
+                # landmark so the schema is uniform across rows. Frontend
+                # falls back to SMPL joints when these are null.
+                for _lname in _ANATOMICAL_LANDMARK_VERTEX_INDICES.keys():
+                    keypoints_2d[_lname] = None
+                    keypoints_3d[_lname] = None
 
             # Rule 2: >50% of joints OOB → flag low-quality but still emit.
             fit_ok = (n_oob <= n_named // 2)
