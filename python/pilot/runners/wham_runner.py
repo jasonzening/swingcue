@@ -152,14 +152,18 @@ HEAD_CROWN_VERTEX_INDEX = 411
 # same CLIFF projection + median-z stabilization path applies — just
 # different mesh index.
 #
-# Naming convention: image-orientation (chirality-swapped) to match the
-# PR-7a.2 H36M joint convention. PROBE labels its indices by ANATOMICAL
-# side (vertex 4721 = anatomical-left acromion). For frontend
-# consistency with H36M-derived `left_shoulder` (which after PR-7a.2
-# swap holds anatomical-right data → image-left for face-on cameras),
-# we swap the L/R vertex assignment here too: `acromion_left` →
-# PROBE's anatomical-right vertex (1238), so `acromion_left` renders
-# on image-left, same side as `left_shoulder`.
+# Naming convention (corrected in PR-8e.0.1): use PROBE's anatomical
+# naming as-is. PR-7a.2 chirality swap operates on the H36M JOINT
+# ARRAY ordering, not on the WHAM camera frame — joints_3d[11]
+# (named `left_shoulder` after swap) ends up holding the joint
+# coordinates that project to image-left for face-on cameras BECAUSE
+# of where WHAM's camera frame places anatomical-left tissue. Mesh
+# vertices (e.g., 4721 = PROBE anat-left acromion) flow through the
+# same camera frame to the same image side. So `acromion_left` =
+# PROBE vertex 4721 lands on image-left, same screen side as
+# H36M `left_shoulder`. Initial PR-8e.0 mistakenly swapped vertex
+# indices on top of the array-level swap, putting cyan on
+# image-right; SQL evidence on T3 reupload (a3f7b0d8) confirmed.
 #
 # Scope:
 #   CRITICAL (PR-8e.1 frontend will swap render position to these):
@@ -180,17 +184,24 @@ _ANATOMICAL_LANDMARK_VERTEX_INDICES: dict[str, int] = {
     # Centerline — no L/R, no chirality concern.
     "c7":                       414,
     "throat":                   444,
-    # Critical paired landmarks. L/R SWAPPED relative to PROBE's
-    # anatomical naming to match PR-7a.2 image-orientation convention.
-    "acromion_left":            1238,   # PROBE anat-right; image-left for face-on
-    "acromion_right":           4721,   # PROBE anat-left
-    "greater_trochanter_left":  2915,   # PROBE anat-right
-    "greater_trochanter_right": 6375,   # PROBE anat-left
-    # Optional paired landmarks — same swap rationale.
-    "lateral_epicondyle_left":   959,   # PROBE anat-right
-    "lateral_epicondyle_right": 4447,   # PROBE anat-left
-    "lateral_malleolus_left":   3348,   # PROBE anat-right
-    "lateral_malleolus_right":  6749,   # PROBE anat-left
+    # PR-8e.0.1 chirality correction: PR-8e.0 originally SWAPPED L/R
+    # relative to PROBE's anatomical naming, on the assumption that the
+    # PR-7a.2 H36M swap convention would carry over to mesh-vertex
+    # landmarks. SQL evidence on T3 reupload (a3f7b0d8 frame 0) showed
+    # the assumption was wrong: SMPL `left_shoulder` projects to x≈167
+    # (screen-left), but PROBE's anat-right vertex 1238 projected to
+    # x≈213 (screen-right). The H36M-level swap and the vertex-level
+    # naming need to MATCH, not invert — vertex 4721 (PROBE anat-left)
+    # projects to the same screen side as H36M `left_shoulder`.
+    "acromion_left":            4721,   # was 1238 (PR-8e.0)
+    "acromion_right":           1238,   # was 4721
+    "greater_trochanter_left":  6375,   # was 2915
+    "greater_trochanter_right": 2915,   # was 6375
+    # Optional paired landmarks — same correction.
+    "lateral_epicondyle_left":  4447,   # was 959
+    "lateral_epicondyle_right":  959,   # was 4447
+    "lateral_malleolus_left":   6749,   # was 3348
+    "lateral_malleolus_right":  3348,   # was 6749
 }
 
 
@@ -1177,11 +1188,15 @@ if _MODAL_AVAILABLE:
             f"PR-8e.0: additional anatomical surface landmarks "
             f"({sorted(_ANATOMICAL_LANDMARK_VERTEX_INDICES.keys())}) "
             f"emitted on each frame from PROBE-derived SMPL mesh "
-            f"vertices. L/R names chirality-swapped to match H36M "
-            f"convention. Frontends should prefer these over the "
-            f"corresponding SMPL joint centers (left_shoulder, "
-            f"left_hip, etc.) when present — SMPL joints are kinematic "
-            f"centers inside the mesh, not surface landmarks."
+            f"vertices. PR-8e.0.1: L/R names use PROBE's anatomical "
+            f"naming directly (vertex 4721 → acromion_left). "
+            f"Camera-frame projection lands `*_left` on image-left "
+            f"for face-on cameras — same side as H36M `left_*` after "
+            f"the PR-7a.2 array-level swap. Frontends should prefer "
+            f"these over the corresponding SMPL joint centers "
+            f"(left_shoulder, left_hip, etc.) when present — SMPL "
+            f"joints are kinematic centers inside the mesh, not "
+            f"surface landmarks."
         )
         return m
 
