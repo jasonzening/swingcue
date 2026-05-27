@@ -195,15 +195,14 @@ _ANATOMICAL_LANDMARK_VERTEX_INDICES: dict[str, int] = {
     # projects to the same screen side as H36M `left_shoulder`.
     "acromion_left":            4721,   # was 1238 (PR-8e.0)
     "acromion_right":           1238,   # was 4721
-    # PR-8e.2 candidate swap: PROBE-labeled vertex 6375/2915 projects
-    # 9-11px ABOVE SMPL pelvis joint in production SQL (T3 reupload
-    # 92a483fc, all 7 sampled frames). Anatomical trochanter should
-    # sit 30-50px BELOW. Likely PROBE found iliac crest or ASIS, not
-    # the lateral femoral prominence. Trying 4934/1490 as empirical
-    # candidates (further down the mesh). If still wrong after this
-    # deploy, escalate to direct SMPL T-pose mesh inspection.
-    "greater_trochanter_left":  4934,   # PR-8e.2 try (was 6375 in PR-8e.0.1)
-    "greater_trochanter_right": 1490,   # PR-8e.2 try (was 2915 in PR-8e.0.1)
+    # NOTE: greater_trochanter is NOT in this vertex-lookup dict. Both
+    # PROBE candidates 6375/2915 (PR-8e.0.1) and 4934/1490 (PR-8e.2
+    # step 1) projected ABOVE the SMPL pelvis joint in production
+    # SQL, when anatomical reality places the visible trochanter
+    # 30-50px BELOW. PR-8e.2 step 2 (Option W) derives trochanter as
+    # SMPL hip pixel position + fixed Y offset directly in the
+    # formatter — see _build_pr8b_frames. Deterministic, symmetric,
+    # no further mesh probing required.
     # Optional paired landmarks — same correction.
     "lateral_epicondyle_left":  4447,   # was 959
     "lateral_epicondyle_right":  959,   # was 4447
@@ -1184,6 +1183,25 @@ if _MODAL_AVAILABLE:
         # flipping sides.
         m["anatomical_landmark_source"] = "smpl_mesh_vertex"
         m["anatomical_vertex_indices"] = dict(_ANATOMICAL_LANDMARK_VERTEX_INDICES)
+        # PR-8e.2 step 2: greater_trochanter is derived (not vertex-
+        # sourced). Document the derivation so consumers can spot the
+        # difference vs the vertex-sourced landmarks.
+        m["anatomical_derived_landmarks"] = {
+            "greater_trochanter_left": {
+                "method": "hip_plus_y_offset_px",
+                "source_joint": "left_hip",
+                "y_offset_base_px": 30.0,
+                "y_offset_base_image_height_px": 1024,
+                "y_offset_scaling": "linear_with_image_height",
+            },
+            "greater_trochanter_right": {
+                "method": "hip_plus_y_offset_px",
+                "source_joint": "right_hip",
+                "y_offset_base_px": 30.0,
+                "y_offset_base_image_height_px": 1024,
+                "y_offset_scaling": "linear_with_image_height",
+            },
+        }
         m["_notes"] = (
             f"head_crown derived from SMPL mesh vertex "
             f"{HEAD_CROWN_VERTEX_INDEX} (per PR-7a4 PROBE: "
@@ -1203,7 +1221,13 @@ if _MODAL_AVAILABLE:
             f"these over the corresponding SMPL joint centers "
             f"(left_shoulder, left_hip, etc.) when present — SMPL "
             f"joints are kinematic centers inside the mesh, not "
-            f"surface landmarks."
+            f"surface landmarks. PR-8e.2 step 2: greater_trochanter "
+            f"is DERIVED rather than vertex-sourced (mesh-vertex "
+            f"PROBE candidates 6375/2915 and 4934/1490 both projected "
+            f"above the pelvis joint, opposite of anatomical reality)."
+            f" Derivation: trochanter (u, v) = hip (u, v + 30 * "
+            f"image_h/1024). See anatomical_derived_landmarks for "
+            f"the exact rule."
         )
         return m
 
@@ -1380,6 +1404,39 @@ if _MODAL_AVAILABLE:
                     and -slack_y <= v <= image_h + slack_y
                 ):
                     n_oob += 1
+
+            # PR-8e.2 step 2 (Option W): derive greater_trochanter from
+            # SMPL hip pixel position + fixed Y offset. Vertex-PROBE
+            # attempts (6375/2915 in PR-8e.0.1, 4934/1490 in PR-8e.2
+            # step 1) both projected ABOVE the SMPL pelvis joint; mesh-
+            # vertex PROBE labels don't track the lateral femoral
+            # prominence on the WHAM mesh. Deterministic offset:
+            # 30px at image_h=1024 baseline, scaled linearly with
+            # image height (~10cm at typical golfer-to-camera depth,
+            # focal-corrected per video). Out-of-bounds is NOT counted
+            # in n_oob — trochanter is a render override.
+            _TROCH_Y_OFFSET_BASE_PX = 30.0
+            _TROCH_Y_OFFSET_BASE_H  = 1024.0
+            _troch_dy_px = _TROCH_Y_OFFSET_BASE_PX * (image_h / _TROCH_Y_OFFSET_BASE_H)
+            for _troch_side, _hip_name in (
+                ("left",  "left_hip"),
+                ("right", "right_hip"),
+            ):
+                _troch_name = f"greater_trochanter_{_troch_side}"
+                _hip_2d = keypoints_2d.get(_hip_name)
+                _hip_3d = keypoints_3d.get(_hip_name)
+                if _hip_2d is not None:
+                    keypoints_2d[_troch_name] = {
+                        "x": _hip_2d["x"],
+                        "y": _hip_2d["y"] + _troch_dy_px,
+                    }
+                else:
+                    keypoints_2d[_troch_name] = None
+                # 3D: copy hip 3D as best-effort anchor. Downstream
+                # currently consumes only 2D; defer correct 3D
+                # derivation (e.g., along the pelvis→head_crown axis,
+                # 10cm caudal) until a consumer needs it.
+                keypoints_3d[_troch_name] = _hip_3d
 
             # PR-8b.1: head_crown — SMPL vertex 411 (cranial top), in
             # the same camera-frame meters as the H36M joints. Project
