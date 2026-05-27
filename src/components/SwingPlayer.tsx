@@ -787,16 +787,23 @@ export function SwingPlayer({
         {/* PR-7c-frontend: hide PR-5 disc/skeleton chrome in enhanced
             mode. The disc canvas is inert (SkeletonOverlay hidden),
             so layer-badge / skel-toggle / legend all label things
-            that no longer render. */}
-        {!enhancedMode && (
+            that no longer render.
+            PR-8d.2 Part 2 2B-polish: also hide in plainMode — the
+            "ALL"/"Body"/etc pill is dead UI on legacy_absent (no
+            layers to filter for). */}
+        {!enhancedMode && !plainMode && (
           <div className="sp-layer-badge">{layerBadgeText()}</div>
         )}
 
         {/* PR-4: skeleton toggle. Disabled when no timeline data — older
             videos predate PR-4 (re-analyze to enable).
             PR-7c-frontend: hidden in enhanced mode (toggle is a visual
-            no-op since SkeletonOverlay returns null via hidden=true). */}
-        {!enhancedMode && (
+            no-op since SkeletonOverlay returns null via hidden=true).
+            PR-8d.2 Part 2 2B-polish: also hidden in plainMode — even
+            though it'd render as disabled, the 🦴 button visually
+            implies a skeleton view exists, which contradicts
+            legacy_absent's "no 3D analysis" framing. */}
+        {!enhancedMode && !plainMode && (
           <button
             type="button"
             className={`sp-skel-toggle ${skeletonOn ? 'sp-skel-on' : ''} ${!poseTimeline ? 'sp-skel-disabled' : ''}`}
