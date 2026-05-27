@@ -96,7 +96,9 @@ function shortHash(input: string): string {
     h ^= input.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
-  return h.toString(16).padStart(8, '0').slice(0, 6);
+  // PR-8d.2 part 2 Q4: kebab-split 3+3 for readability — `a7f3-k2`.
+  const hex = h.toString(16).padStart(8, '0').slice(0, 6);
+  return `${hex.slice(0, 3)}-${hex.slice(3)}`;
 }
 
 export default function ResultPage() {
@@ -417,10 +419,20 @@ export default function ResultPage() {
     );
   }
   if (whamUiState.kind === 'failed_preprocessing') {
+    // PR-8d.2 part 2 Q9: verbose userMessage preserved verbatim
+    // (e.g. "Video too short (2.6s) — needs at least 3 seconds").
+    // PR-8d.2 part 2 2A: + 3-bullet help row so the user knows
+    // what "Try again" should actually look like.
     return (
       <FailedScreen
         title="Couldn't analyze this video"
         message={whamUiState.userMessage}
+        helpHeader="What to try:"
+        helpBullets={[
+          'Record a longer clip (4-8 seconds works best)',
+          'Use a single continuous take',
+          'Avoid scene cuts or zoom changes',
+        ]}
         onRetry={() => router.push('/upload')}
         onBack={() => router.push('/history')}
       />
@@ -430,11 +442,18 @@ export default function ResultPage() {
     // R6: NEVER expose wham_error_message — may contain Python traceback.
     // Show generic message; surface only a stable short hash so support
     // can grep logs for this specific failure.
+    //
+    // PR-8d.2 part 2 Q3/Q4: simplified to honest copy. Earlier "we're
+    // already looking into it" + "this isn't your video" + "send the
+    // error reference" lines were [PROMISE] — implied monitoring +
+    // support channel that don't exist today. Reference hash kept
+    // standalone, no instruction text. Future support-flow PR can
+    // layer in the instruction when a real channel exists.
     const ref = shortHash(`${videoId}|${whamUiState.stage ?? 'unknown'}`);
     return (
       <FailedScreen
         title="Analysis failed"
-        message="Something went wrong while analyzing your swing. Please try uploading the video again."
+        message="Something went wrong. Please try uploading again."
         onRetry={() => router.push('/upload')}
         onBack={() => router.push('/history')}
         supportRef={ref}
@@ -571,11 +590,30 @@ function ProcessingScreen({
   let detail = `Usually takes about ${expectedSeconds} seconds.`;
   if (isVeryOver) {
     headline = 'Analysis is taking too long';
-    detail = "We're looking into it. You can retry from the upload page.";
+    // PR-8d.2 part 2 Q2: honest [SHIPPING NOW] rewrite. Previous copy
+    // "We're looking into it. You can retry from the upload page."
+    // implied real-time monitoring that doesn't exist yet.
+    detail = 'Still processing — this is taking longer than expected. You can wait or try a different upload.';
   } else if (isOver) {
     headline = 'Still analyzing…';
     detail = 'Taking longer than expected — hang tight.';
   }
+
+  // PR-8d.2 part 2 R3 + Q8: client-side stage bucketization by
+  // elapsed / expectedSeconds fraction. Real wham_status flips
+  // override this animation at the polling layer above. Once
+  // fraction >= 0.95, label freezes on `Finalizing` indefinitely
+  // (Q8 Option A) — never "Almost done", never "Step 6". Past
+  // 300s elapsed, hide the stage label entirely so the screen is
+  // just headline + detail + counter.
+  const fraction = expectedSeconds > 0 ? elapsedSec / expectedSeconds : 0;
+  const stageLabel: string | null = isVeryOver
+    ? null
+    : fraction >= 0.95 ? 'Step 5 of 5 · Finalizing'
+    : fraction >= 0.50 ? 'Step 4 of 5 · Building 3D'
+    : fraction >= 0.15 ? 'Step 3 of 5 · Detecting pose'
+    : fraction >= 0.05 ? 'Step 2 of 5 · Preparing'
+    : 'Step 1 of 5 · Uploaded';
 
   return (
     <div className="page-center wham-screen">
@@ -585,12 +623,21 @@ function ProcessingScreen({
         <div className="wham-anim-core" />
       </div>
       <h2 className="wham-title">{headline}</h2>
+      {stageLabel && <p className="wham-stage">{stageLabel}</p>}
       <p className="wham-detail">{detail}</p>
       <p className="wham-elapsed">
         Elapsed: <span className="mono">{elapsedSec}s</span>
         {!isOver && expectedSeconds > 0 && (
           <> · target <span className="mono">{expectedSeconds}s</span></>
         )}
+      </p>
+      {/* PR-8d.2 part 2 2A: pre-disclaimer footer — sets the
+          "approximate" expectation BEFORE the skeleton overlay
+          loads so the ready-state disclaimer (PR-8d.2 Part 1)
+          isn't a surprise. */}
+      <p className="wham-pre-disclaimer">
+        Body alignment in the analysis will be approximate — a
+        coaching anchor, not a precise measurement.
       </p>
       <style>{css}</style>
     </div>
@@ -600,12 +647,16 @@ function ProcessingScreen({
 function FailedScreen({
   title,
   message,
+  helpHeader,
+  helpBullets,
   onRetry,
   onBack,
   supportRef,
 }: {
   title: string;
   message: string;
+  helpHeader?: string;
+  helpBullets?: readonly string[];
   onRetry: () => void;
   onBack: () => void;
   supportRef?: string;
@@ -616,6 +667,18 @@ function FailedScreen({
       <div className="wham-fail-icon">!</div>
       <h2 className="wham-title">{title}</h2>
       <p className="wham-fail-message">{message}</p>
+      {/* PR-8d.2 part 2 2A: optional help row. Used by
+          failed_preprocessing to spell out what "Try again"
+          should look like. NOT used by failed_system per
+          Q3/Q4 simplification. */}
+      {helpBullets && helpBullets.length > 0 && (
+        <div className="wham-help-row">
+          {helpHeader && <p className="wham-help-header">{helpHeader}</p>}
+          <ul className="wham-help-bullets">
+            {helpBullets.map((b, i) => <li key={i}>{b}</li>)}
+          </ul>
+        </div>
+      )}
       <button className="wham-retry-btn" onClick={onRetry}>Try again →</button>
       {supportRef && (
         <p className="wham-support-ref">
@@ -665,6 +728,15 @@ body { background:#050805; }
 .wham-title { font-size:20px; font-weight:800; color:#f0f0ee; letter-spacing:-0.3px; text-align:center; padding:0 12px; }
 .wham-detail { font-size:14px; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; }
 .wham-elapsed { font-size:12px; color:#3a4a35; font-family:'DM Sans',system-ui; margin-top:4px; }
+/* PR-8d.2 part 2 2A — processing stage hint + pre-disclaimer footer. */
+.wham-stage { font-size:13px; color:#7a8a72; text-align:center; font-weight:600; letter-spacing:0.2px; margin-top:-6px; margin-bottom:-2px; }
+.wham-pre-disclaimer { font-size:11px; color:#5a6a55; text-align:center; line-height:1.5; max-width:320px; padding:14px 16px 0; margin:8px 0 0; border-top:1px solid rgba(255,255,255,0.05); }
+/* PR-8d.2 part 2 2A — failed_preprocessing "What to try" help row. */
+.wham-help-row { width:100%; max-width:340px; padding:0 12px; }
+.wham-help-header { font-size:13px; font-weight:700; color:#a8f040; margin:0 0 8px; text-align:left; }
+.wham-help-bullets { list-style:none; padding:0; margin:0; }
+.wham-help-bullets li { font-size:13px; color:#7a8a72; line-height:1.5; padding-left:16px; position:relative; margin-bottom:6px; text-align:left; }
+.wham-help-bullets li::before { content:"•"; position:absolute; left:2px; top:0; color:#a8f040; font-weight:700; }
 .mono { font-family:ui-monospace, SFMono-Regular, "Menlo", monospace; color:#a8f040; }
 .wham-fail-icon { width:56px; height:56px; border-radius:50%; background:rgba(240,96,64,0.12); border:1.5px solid rgba(240,96,64,0.4); color:#f06040; font-size:30px; font-weight:800; display:flex; align-items:center; justify-content:center; }
 .wham-fail-message { font-size:14px; color:#c0c0bb; line-height:1.55; text-align:center; max-width:340px; padding:0 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:14px 16px; }
