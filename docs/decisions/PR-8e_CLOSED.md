@@ -84,6 +84,33 @@ synchronized with swing phase.**
 
 PR-8f scope. Deferred.
 
+### 4. Projected skeleton scale underestimates real body proportions
+**Source: clean-video acid test, 2026-05-26.**
+
+Acid test with a user-recorded clean video (close-distance, single
+person, face-on, ~6-8s) failed. Real shoulder width estimated at
+25-30% of frame width (180-220px on a 720-wide frame); WHAM projects
+the acromion-to-acromion distance to ~108px (~15% of frame width).
+The projected skeleton is ~50% of real body scale.
+
+The PR-8e acromion shift adds ~8px lateral offset per shoulder over
+the SMPL glenohumeral joint position — too small to bridge a 70-100px
+shortfall in shoulder width. Acromion vertex selection is NOT the
+right knob.
+
+Root cause is in projection scale, not landmark anatomy. Candidates:
+- CLIFF focal formula assumption (`sqrt(w² + h²)`) may not match
+  WHAM's internal projection convention
+- PR-8b.3 median-z stabilization may bias trans_z too high vs the
+  user's actual camera distance, shrinking the projection
+- SMPL β shape parameters fit by WHAM may be biased toward a narrow
+  body for this video class
+
+Investigation routed to **PR-8f** (scope expanded — see below).
+**Not magic-constant tunable.** Do not nudge acromion vertex offsets
+or trochanter constants to compensate; the deficit is too large to
+land in any vertex-choice or per-pixel offset.
+
 ### 3. Trochanter offset is calibrated for a typical case
 The `30 * image_h/1024` constant was derived from:
 - ~10cm anatomical pelvis-to-trochanter distance
@@ -139,6 +166,26 @@ If the clean video shows visible drift after PR-8e ship, escalate to
 **PR-8f phase-aware z-stab**. If it looks fine, the WHAM-skeleton
 rendering work is complete for MVP and the next priority is
 **PR-8d.2 progress UX**.
+
+**Update 2026-05-26**: clean-video acid test failed, but on a
+different root cause than the original PR-8f scope (z-stab phase
+distortion). The dominant visible issue is body-scale
+underestimation (limitation #4), not phase-aware depth drift.
+**PR-8f scope is therefore expanded** from "phase-aware
+z-stabilization" to "projection-calibration investigation":
+
+| Sub-question | What it tests | How |
+|---|---|---|
+| (A) CLIFF focal | Is `sqrt(w² + h²)` the right focal? | Read WHAM/CLIFF source for the focal formula it actually uses internally; compare to ours |
+| (B) Z-stab phase distortion | Is trans_z biased high vs reality? | SQL on the clean video's `_trans_z_median_value_m` + `_trans_z_raw_range_m`; back-derive expected scale from a known anatomical reference (e.g., assume adult height ~1.7m, compute pixel head-to-foot, derive implied focal/Z) |
+| (C) SMPL β shape | Is WHAM fitting a narrow body? | Read `smpl_shape` β-10 vector via the existing `inspect_pkl` Modal function (reads from per-video cached pkl, no backend edit) |
+
+Output of PR-8f is **data, not code**: which of A/B/C dominates,
+backed by numbers. Then a targeted fix proposal — not a magic-
+constant adjustment.
+
+PR-8d.2 progress UX remains gated until PR-8f investigation has
+identified the dominant contributor and shipped its targeted fix.
 
 ## Commit trail
 
