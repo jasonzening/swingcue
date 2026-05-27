@@ -903,6 +903,37 @@ if _MODAL_AVAILABLE:
                 "pelvis_h36m0_at_f0": verts[0, 0, :].tolist(),  # raw vertex 0
             }
 
+        # PR-8f investigation: SMPL β-10 shape parameter dump. Strictly
+        # additive, no production codepath. Diagnostic-only. Tries
+        # common WHAM/SMPL key names in order.
+        betas = None
+        betas_key_used = None
+        for _bk in ("betas", "shape", "smpl_shape"):
+            if _bk in track:
+                _arr = np.asarray(track[_bk])
+                if _arr.size > 0:
+                    betas = _arr
+                    betas_key_used = _bk
+                    break
+        betas_audit = None
+        if betas is not None:
+            betas_audit = {
+                "key_used": betas_key_used,
+                "shape":    list(betas.shape),
+                "dtype":    str(betas.dtype),
+                "min":      float(betas.min()),
+                "max":      float(betas.max()),
+            }
+            if betas.ndim == 2:
+                # Per-frame β-10 array (T, 10). Dump first few rows +
+                # mean/std across frames to see if it's frame-stable.
+                betas_audit["per_frame_first_5"] = betas[:5].tolist()
+                betas_audit["mean_over_frames"]  = betas.mean(axis=0).tolist()
+                betas_audit["std_over_frames"]   = betas.std(axis=0).tolist()
+            else:
+                # Single β-10 vector (10,).
+                betas_audit["values"] = betas.tolist()
+
         return {
             "video_id":           video_id,
             "primary_track_id":   primary_id,
@@ -915,6 +946,7 @@ if _MODAL_AVAILABLE:
             "trans_samples":      trans_samples,
             "trans_drift_stats":  trans_drift_stats,
             "verts_sample":       verts_sample,
+            "betas_audit":        betas_audit,
         }
 
 
