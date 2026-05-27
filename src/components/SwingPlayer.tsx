@@ -759,10 +759,15 @@ export function SwingPlayer({
           />
         )}
 
-        {/* Badges */}
+        {/* Badges. Phase badge (SETUP / TOP / etc) stays in plainMode —
+            it's basic video-chrome navigation context. dataSource badge
+            (YOLO 11m / Real keypoints / etc) is SUPPRESSED in plainMode
+            per PR-8d.2 Part 2 2B-fix: it labels analysis provenance,
+            which is misleading on legacy_absent videos that have no
+            current-pipeline analysis. */}
         <div className="sp-badges">
           <span className="sp-phase-badge">{phase.toUpperCase()}</span>
-          {dataSource && (() => {
+          {dataSource && !plainMode && (() => {
             const isReal =
               dataSource === 'mediapipe' ||
               dataSource === 'sam3d' ||
@@ -806,8 +811,10 @@ export function SwingPlayer({
 
         {/* Legend — disc color key (Current/Target/Path).
             PR-7c-frontend: hidden in enhanced mode where disc doesn't
-            render. Visible in fallback mode for existing users. */}
-        {!enhancedMode && (
+            render. Visible in fallback mode for existing users.
+            PR-8d.2 Part 2 2B-fix: also hidden in plainMode —
+            legacy_absent has no disc to legend. */}
+        {!enhancedMode && !plainMode && (
           <div className="sp-legend">
             <span className="leg-r">● Current</span>
             <span className="leg-g">● Target</span>
@@ -839,8 +846,10 @@ export function SwingPlayer({
       {/* ══ LAYER TOGGLE ══
           PR-7c-frontend: hidden in enhanced mode. setLayer() gates
           disc-layer rendering which is inert when CoachingAnchorOverlay
-          owns the visual. Visible in fallback mode for existing users. */}
-      {!enhancedMode && (
+          owns the visual. Visible in fallback mode for existing users.
+          PR-8d.2 Part 2 2B-fix: also hidden in plainMode — legacy_absent
+          videos have no anchor disc to toggle layers for. */}
+      {!enhancedMode && !plainMode && (
         <div className="sp-layers">
           {LAYERS.map(({ key, icon, label }) => (
             <button
