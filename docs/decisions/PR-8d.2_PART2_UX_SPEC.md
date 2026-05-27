@@ -212,7 +212,7 @@ Specifically watched (per R1):
 | Stage 5 label | `Step 5 of 5 · Finalizing` | [SHIPPING NOW] — DB write + projection is real. **Intentionally NOT "Preparing coaching cues"** since no cues are computed; that'd be [FUTURE PR]. |
 | Detail default | `Usually takes about Ns.` (N = expectedSeconds) | [SHIPPING NOW] |
 | Detail at `elapsed > expectedSec + 30s` | `Taking longer than expected — hang tight.` | [SHIPPING NOW] |
-| Detail at `elapsed > 300s` | `We're looking into it. You can retry from the upload page.` | **[PROMISE]** — "we're looking into it" implies real-time monitoring/alerting. No such system wired up today. Either change copy or build monitoring first. Open question for sign-off. |
+| Detail at `elapsed > 300s` | `Still processing — this is taking longer than expected. You can wait or try a different upload.` | [SHIPPING NOW] — locked rewrite. Drops "we're looking into it" which would have implied monitoring/alerting that doesn't exist today. New copy is factual: a long elapsed and a real choice. |
 | Counter | `Elapsed: 23s · target 60s` (drop "target" segment after expectedSec+30s) | [SHIPPING NOW] |
 | Pre-disclaimer | `Body alignment in the analysis will be approximate — a coaching anchor, not a precise measurement.` | [SHIPPING NOW] — matches PR-8h.0 closure path 1 + PR-8d.2 Part 1 |
 
@@ -222,6 +222,22 @@ Specifically watched (per R1):
 |---|---|---|---|
 | Top-left chip | `← History` | navigate to `/history` | Always |
 | (no retry CTA) | — | — | During processing, retry would create a duplicate Modal call. |
+
+### Stage 5 → `ready` transition behavior (sign-off locked)
+
+When animation reaches Stage 5 (`f ≥ 0.95`) but the next poll has
+not yet returned `wham_status='ready'`, the screen MUST NOT visually
+imply completion. Three options were considered:
+
+| Option | Behavior at f ≥ 0.95, wham_status still 'processing' |
+|---|---|
+| A (locked) | Stage 5 label stays `Step 5 of 5 · Finalizing` indefinitely. Counter keeps ticking. Ring stays at 4-of-5-filled with segment 5 actively pulsing. Backend signal is the ONLY thing that flips to ready. |
+| B (rejected) | Progress bar caps visually at 95% with `Almost done...` subtext. Risk: "stuck at 95%" user confusion. |
+| C (rejected) | Drop percentage entirely once at Stage 5, show only spinner. Risk: feels regressed; user loses progress affordance. |
+
+**Locked Option A.** Most honest. Users learn that "Finalizing"
+takes a variable amount of time and the backend is the source of
+truth. No "almost done" promises the spec can't keep.
 
 ### Edge cases
 
@@ -363,6 +379,24 @@ written by Modal in PR-8c.4. Frontend reads verbatim. **Never** show
 raw exception text. **Never** show Python traceback. **Never** show
 `wham_failure_stage` raw value to user.
 
+### Verbose reason copy preserved (sign-off locked)
+
+PR-8d.0 already ships verbose `wham_user_message` content
+(e.g., `"Multi-scene video detected (6 scene cut(s)). SwingCue MVP
+only supports single-take swings…"`). This spec **keeps that
+verbosity** — does not flatten to a 3-word summary.
+
+Rationale: diagnostic specifics are the highest-value content of a
+failure screen. `"Video too short (2.6s) — needs at least 3 seconds"`
+gives the user a measurable thing to fix; `"Video too short"` alone
+doesn't. As long as the copy is pre-sanitized by Modal (no traceback,
+no internals — already true per PR-8c.3 `wham_user_message`
+contract), keep the detail.
+
+If a future `wham_user_message` value reveals over-promising or
+internal info, fix at the Modal-side message-construction layer
+(PR-8c.x), not by post-processing on the frontend.
+
 ### CTAs
 
 | Element | Label | onClick action | When shown |
@@ -388,16 +422,20 @@ not bugs.
 | `0e9153db-65a8-4ee0-9100-71f9d4fee65b` | **NOT IN DB** as of audit (row doesn't exist) | Listed in spec as the canonical T2 "video too short" fixture from prior PR docs. Either create via SQL force or recover from history. |
 | `b353a7ca-1700-411b-93e1-25ad8b4d8000` | **NOT IN DB** as of audit | Canonical T1 "multi-scene" fixture from PR-8c.4 docs. Same — recover or recreate. |
 
-**Fixture provisioning gap.** The named failed_preprocessing fixtures
-referenced in PR-8d.0 / PR-8d.1 docs don't currently exist as rows.
-Either (a) create them by uploading a too-short clip + a multi-scene
-clip via UI, OR (b) force-write rows via SQL with synthetic data
-matching the expected `wham_failure_stage='preprocessing'` +
-`wham_user_message` shape.
+**Fixture provisioning (Q6 locked):** create real failures via
+genuine bad-clip uploads through a **dedicated test account**
+(`test+swingcue-fixtures@…`) so they don't pollute production
+user history. Upload:
+- A 2-second clip → produces "too short" preprocessing failure
+- A multi-scene clip (manually-concat two takes) → produces
+  "multi-scene detected" preprocessing failure
+
+Do NOT create stable test fixtures under production user_ids.
 
 Expected behavior on each (whenever they exist):
 - Page renders failed_preprocessing screen
-- Reason copy matches the failure type
+- Reason copy matches the failure type, verbose per Q9 (not flattened)
+- 3-bullet "What to try" help-row visible
 - `Try again →` button → `/upload`
 - `← History` → `/history`
 - No traceback, no internal info shown
@@ -416,34 +454,35 @@ Expected behavior on each (whenever they exist):
 │                                                  │
 │            Analysis failed                       │  headline 22px
 │                                                  │
-│   Something went wrong on our end while          │  message 16px
-│   analyzing your swing. This isn't your video    │
-│   — we're already looking into it.               │
-│                                                  │
-│   You can:                                       │  help-row 14px
-│   • Try uploading again (sometimes it just       │
-│     works the second time)                       │
-│   • Send the error reference below if it keeps   │
-│     failing                                      │
+│   Something went wrong. Please try uploading    │  message 16px
+│   again.                                         │
 │                                                  │
 │              [Try again →]                       │  primary CTA
 │                                                  │
-│   Error reference: A7F3-K2                       │  hash 12px mono
+│   Error reference: a7f3-k2                       │  hash 12px mono,
+│                                                  │  standalone, NO
+│                                                  │  instruction text
 └─────────────────────────────────────────────────┘
 ```
+
+Intentionally minimal. The earlier draft proposed a longer message
++ a "You can:" bullet section + a "send the error reference"
+instruction. All three were [PROMISE] copy because no monitoring,
+no support channel, and no "send to" target exists today. Per
+sign-off, the spec now ships only what is true today: a generic
+honest message, a working retry CTA, and a stable reference hash
+that future support flow (PR-9+) can surface instructions for.
 
 ### Copy (per R1)
 
 | Element | Copy | Tag |
 |---|---|---|
 | Headline | `Analysis failed` | [SHIPPING NOW] |
-| Message paragraph | `Something went wrong on our end while analyzing your swing. This isn't your video — we're already looking into it.` | **[PROMISE]** on the "we're already looking into it" clause. There is NO automated alerting / on-call system wired to these failures today. Either build monitoring first OR change copy to drop that implication (e.g., `…analyzing your swing. This isn't your video — please try again.`). Open question for sign-off. |
-| Help-row header | `You can:` | [SHIPPING NOW] |
-| Bullet 1 | `Try uploading again (sometimes it just works the second time)` | [SHIPPING NOW] — transient Modal / network issues do recover on retry. Honest. |
-| Bullet 2 | `Send the error reference below if it keeps failing` | **[PROMISE]** — there's no actual "send to" channel set up (no support email, no support form linked). Either add a contact target OR change copy. Open question. |
+| Message paragraph | `Something went wrong. Please try uploading again.` | [SHIPPING NOW] — locked rewrite. Dropped the "we're already looking into it" clause (no monitoring system) and the "this isn't your video" framing (overpromises; the rare case where backend stage WAS user-influenced gets called out as preprocessing failure separately). New copy: short, honest, points to the working retry CTA. |
+| (help-row removed) | — | — |
 | Primary CTA label | `Try again →` | [SHIPPING NOW] |
 | Error reference label | `Error reference:` | [SHIPPING NOW] |
-| Error reference value format | `A7F3-K2` — 7 alphanumeric chars with hyphen separator | [SHIPPING NOW] — `shortHash(videoId + failureStage)` already implemented in PR-8d.0 |
+| Error reference value format | `a7f3-k2` — 6 alphanumeric chars (kebab-cased 3+3 split) | [SHIPPING NOW] — `shortHash(videoId + failureStage)` already implemented in PR-8d.0. Spec switches casing from `A7F3-K2` → `a7f3-k2` to match standard short-hash convention. Implementation choice. |
 
 **Never shown** (R6 invariant): `wham_error_message` field, Modal
 call IDs, internal stage names verbatim, file paths.
@@ -475,14 +514,28 @@ channel).
 | `b8d9e821-c30c-4d40-9bce-bc4f1f717f87` | **NOT IN DB** as of audit | Canonical "inference failed" fixture from PR-8d.0 docs. |
 | `88ef44a5-3367-446c-a8df-be3c98edc8c1` | **NOT IN DB** as of audit | Canonical "very early failure, null stage" fixture from PR-8d.0 docs. |
 
-**Same fixture provisioning gap as failed_preprocessing.** Either
-recover from history (if they were deleted between sessions) or
-synthesize via SQL force on a test row.
+**Fixture provisioning (Q6 locked):** SQL-force ghost rows.
+Unlike preprocessing failures which can be reproduced by uploading
+bad clips, `failed_system` underlying stages (Modal token error,
+network mid-stream, DPVO init crash) aren't cheap to reproduce on
+demand. Synthesize via SQL: insert `swing_analysis` rows under the
+dedicated test account's user_id with
+`video_metadata_json` shapes:
+```json
+{ "wham_status": "failed",
+  "wham_failure_stage": "inference",   /* or 'unknown' for null-stage variant */
+  "wham_error_message": "<sanitized synthetic message>" }
+```
+
+The `wham_error_message` field is NEVER rendered (R6) — only
+present for log-trace symmetry with real rows.
 
 Expected behavior:
-- Page renders failed_system screen
-- Same copy regardless of which underlying stage failed
+- Page renders failed_system screen with SIMPLIFIED copy per Q3/Q4
+- `Something went wrong. Please try uploading again.` message
+- No "you can:" bullet section (removed)
 - Stable error reference per (videoId, stage) pair
+- Bare `Error reference: a7f3-k2` line with no instruction text
 - `Try again →` → `/upload`
 - `← History` → `/history`
 - No internal info leaked
@@ -498,7 +551,14 @@ These are pre-WHAM-integration uploads — they have MediaPipe-based
 `pose_timeline_2d` data only. The video plays; there's no 3D
 analysis to render.
 
-### Layout (Option B — recommended)
+### Layout (Option B — locked)
+
+Option A (banner over legacy MediaPipe view) is REJECTED at sign-off.
+Rationale: a banner invites the question "why would my new upload
+also look like this?" → drags the user into the full WHAM trust
+model. Legacy gets a clean dedicated screen instead; old videos
+are old, no extra cognitive load.
+
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -520,16 +580,11 @@ analysis to render.
 └─────────────────────────────────────────────────┘
 ```
 
-**Why Option B:** legacy MediaPipe placeholder dots look broken to
-a post-WHAM user; replacing them with a clean "older data" screen +
-plain video playback is more honest than silently showing a degraded
-overlay.
-
-**Alternative Option A (banner over legacy view):** thin banner
-across the top of the existing MediaPipe placeholder UI. Keeps
-backward visual sentiment but invites unfair comparison.
-
-Open question (#1 below): A vs B.
+**Why Option B (sign-off locked):** legacy MediaPipe placeholder
+dots look broken to a post-WHAM user. Replacing them with a clean
+"older data" screen + plain video playback is more honest than
+silently showing a degraded overlay. Plus: avoids dragging legacy-
+viewing users into the full WHAM trust model explanation.
 
 ### Copy (per R1, Option B variant)
 
@@ -619,52 +674,53 @@ Expected behavior on each (whenever they exist):
 
 ---
 
-## Open questions for sign-off
+## Decisions (sign-off locked 2026-05-27)
 
-1. **`legacy_absent` Option A vs Option B.** Spec recommends B
-   (clean replacement screen). Banner-over-legacy (A) preserves the
-   MediaPipe placeholder but invites unfair comparison.
-2. **`failed_system` "we're already looking into it" copy
-   ([PROMISE]).** No real monitoring/alerting wired up. Three
-   options:
-   (a) Build basic Sentry / log alerting first, keep copy
-   (b) Soften copy: `This isn't your video — please try again.`
-   (c) Punt: keep copy, schedule monitoring as a follow-up PR
-3. **`failed_system` "Send the error reference below if it keeps
-   failing" copy ([PROMISE]).** No support channel exists. Either
-   add a contact target (email/form) OR change copy to remove the
-   implied "send to" target.
-4. **`processing` 300s+ detail copy ([PROMISE]).** Same `we're
-   looking into it` issue — same decision.
-5. **Stage 5 label — `Finalizing` vs `Preparing coaching cues`?**
-   Spec uses `Finalizing` because no cues are computed today.
-   Switching to `Preparing coaching cues` would be [FUTURE PR] until
-   real cue computation ships (PR-8d.3+). Confirm `Finalizing`.
-6. **Fixture provisioning.** 6 of the 10 named R4 fixtures don't
-   currently exist as DB rows. Implementation will need:
-   (a) Recover the rows from a backup if they were deleted between
-   sessions
-   (b) OR synthesize via SQL force (insert test rows)
-   (c) OR genuinely fail uploads (upload too-short clip, multi-scene
-   clip) to populate the failed_* states from real Modal calls
-   Picking (c) is the most representative. Decide.
-7. **Phased implementation rollout.** Spec contains 3 logical
-   chunks (A: enrich existing screens; B: legacy_absent new screen;
-   C: animated 5-segment ring). Ship as one PR, or three separate
-   commits in sequence?
+All 7 original open questions resolved. 2 additional questions
+(Q8, Q9) raised and resolved at sign-off. R1 honesty annotation
+process caught 3 real [PROMISE] copy violations on its first use —
+all 3 rewritten as honest [SHIPPING NOW] in this revision.
 
-## Implementation phasing proposal (for sign-off)
+| # | Decision | Notes |
+|---|---|---|
+| Q1 | **`legacy_absent` = Option B (clean replacement screen)** | Option A (banner-over-legacy) rejected. Avoids dragging legacy-viewing users into the WHAM trust-model explanation. Old videos = old. |
+| Q2 | **`processing` 300s+ detail copy rewritten** | Was [PROMISE] `"We're looking into it. You can retry from the upload page."` → now [SHIPPING NOW] `"Still processing — this is taking longer than expected. You can wait or try a different upload."` Drops the implied monitoring system. |
+| Q3 | **`failed_system` message rewritten** | Was [PROMISE] long copy with "we're already looking into it" + "this isn't your video" → now [SHIPPING NOW] short copy `"Something went wrong. Please try uploading again."` |
+| Q4 | **`failed_system` "Send the error reference" instruction REMOVED** | Was [PROMISE] (no support channel exists). Help-bullet section entirely removed. Hash kept as standalone `Error reference: a7f3-k2` line with NO instruction text. Future support-flow PR (PR-9+) can add an instruction layer when the channel exists. |
+| Q5 | **Stage 5 label = `Finalizing`** | NOT `Preparing coaching cues` (would be [FUTURE PR] until real cue computation ships). |
+| Q6 | **Fixture provisioning = HYBRID** | `failed_preprocessing` fixtures via (c) genuine bad-clip uploads through a dedicated test account (`test+swingcue-fixtures@…`). `failed_system` fixtures via (b) SQL-force ghost rows (the underlying failure stages — Modal token error, network mid-stream — are not cheap to reproduce). Do NOT create stable test fixtures under production user_ids. |
+| Q7 | **Phased rollout = SEPARATE COMMITS** | 2A / 2B / 2C ship as separate commits in sequence. Acceptance surface narrow, bisect-friendly. State-machine work is high-risk per PR-8d.0 history. If any sub-phase grows beyond ~1.5 hours during implementation, split further. |
+| Q8 | **Stage 5 → ready transition = Option A** | When animation reaches Stage 5 but `wham_status` is still `processing`, label stays `Finalizing` indefinitely, counter ticks, segment 5 pulses. Backend signal is the only completion trigger. (Sections "Stage 5 → ready transition behavior" above.) |
+| Q9 | **`failed_preprocessing` verbose reason copy PRESERVED** | Verbatim `wham_user_message` (e.g. `"Video too short (2.6s) — needs at least 3 seconds"`) — does NOT get flattened. Diagnostic specifics are the highest-value content of a failure screen. Pre-sanitization (no traceback) is enforced at the Modal-side message-construction contract (PR-8c.3). |
 
-Spec is one document; implementation can split:
+## R1 honesty annotation process — first run-through
+
+The annotation legend caught 3 [PROMISE] copy lines on its first
+real use:
+- `processing` 300s+ "we're looking into it"
+- `failed_system` "we're already looking into it"
+- `failed_system` "Send the error reference below if it keeps failing"
+
+All 3 implied capabilities (real-time monitoring, support-channel
+inbound) that don't exist yet. Rewritten this revision. Pattern
+worth recording as SwingCue long-term review-process culture: every
+new UX spec gets R1-annotated; every [PROMISE] gets surfaced for
+sign-off before ship.
+
+## Implementation phasing (sign-off locked: separate commits)
+
+3 commits in sequence. If any sub-phase grows beyond ~1.5 hours
+during implementation, split further (state-machine work is
+high-risk per PR-8d.0 history).
 
 | Phase | Scope | Cost | Risk |
 |---|---|---|---|
-| **2A** | Stage hints, pre-disclaimer, What-to-try section, You-can section, copy updates | ~1 hr | Low — pure JSX edits in existing components |
-| **2B** | `legacy_absent` dedicated screen + plain-video render path in SwingPlayer (no-overlay mode) | ~1 hr | Medium — touches SwingPlayer's overlay-rendering branch |
-| **2C** | Animated 5-segment progress ring (CSS-only) | ~1 hr | Low — purely visual polish |
+| **2A** | Processing-screen enrichment: 5-stage bucketization logic, stage labels, pre-disclaimer footer, headline/detail escalation thresholds (30s, 300s), Stage-5-stay-on-Finalizing (Q8) behavior. `failed_preprocessing` keeps verbose `wham_user_message` (Q9) + adds 3-bullet "What to try" help-row. `failed_system` SIMPLIFIES per Q3/Q4 (drop "you can" section, drop monitoring-implying copy, keep bare reference line). | ~1.5 hr | Low–Medium — pure JSX edits in existing components, copy updates, time-based stage logic |
+| **2B** | `legacy_absent` Option B (Q1): dedicated screen + plain-video render path in SwingPlayer (no-overlay mode). Wire `/upload?from=legacy&original=<id>` query-param contract. | ~1 hr | Medium — touches SwingPlayer's overlay-rendering branch |
+| **2C** | Animated 5-segment progress ring (CSS-only). Pure visual polish over 2A's time-based stage logic. | ~1 hr | Low |
 
-2A → 2B → 2C delivers most user value at lowest risk first. Bundling
-into one PR is also acceptable; ~3 hours total work.
+2A → 2B → 2C in order. Acceptance verification fixture-by-fixture
+at each phase boundary before opening the next.
 
 ## Files this spec WILL touch when implementing
 
