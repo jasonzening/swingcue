@@ -602,55 +602,65 @@ function ProcessingScreen({
     return () => clearInterval(tick);
   }, []);
   const elapsedSec = Math.max(0, Math.floor((now - startedAt) / 1000));
-  const expiredAt = expectedSeconds + 30;
-  const isOver = elapsedSec > expiredAt;
   const isVeryOver = elapsedSec > 300;
 
-  let headline = 'Building your 3D analysis';
-  let detail = `Usually takes about ${expectedSeconds} seconds.`;
-  if (isVeryOver) {
-    headline = 'Analysis is taking too long';
-    // PR-8d.2 part 2 Q2: honest [SHIPPING NOW] rewrite. Previous copy
-    // "We're looking into it. You can retry from the upload page."
-    // implied real-time monitoring that doesn't exist yet.
-    detail = 'Still processing — this is taking longer than expected. You can wait or try a different upload.';
-  } else if (isOver) {
-    headline = 'Still analyzing…';
-    detail = 'Taking longer than expected — hang tight.';
-  }
+  // PR-8d.2 part 2 2C-1: replaced the 5-stage bucketization label
+  // (shipped in 2A) with a body-scan visual. The 5 step labels
+  // suggested 5 backend stages that don't actually exist — only
+  // 'processing' → 'ready'|'failed' are real transitions. Body-
+  // scan makes no specific milestone claims, only "analysis in
+  // progress", which is honest. The expectedSeconds prop is still
+  // received (kept in API for upstream callers) but only used now
+  // for the 300s isVeryOver threshold escalation.
+  //
+  // 2C-1 ships static silhouette + scanning line + text. 2C-2
+  // (body fill-up animation) is a follow-up commit, gated on
+  // 2C-1 sign-off.
 
-  // PR-8d.2 part 2 R3 + Q8: client-side stage bucketization by
-  // elapsed / expectedSeconds fraction. Real wham_status flips
-  // override this animation at the polling layer above. Once
-  // fraction >= 0.95, label freezes on `Finalizing` indefinitely
-  // (Q8 Option A) — never "Almost done", never "Step 6". Past
-  // 300s elapsed, hide the stage label entirely so the screen is
-  // just headline + detail + counter.
-  const fraction = expectedSeconds > 0 ? elapsedSec / expectedSeconds : 0;
-  const stageLabel: string | null = isVeryOver
-    ? null
-    : fraction >= 0.95 ? 'Step 5 of 5 · Finalizing'
-    : fraction >= 0.50 ? 'Step 4 of 5 · Building 3D'
-    : fraction >= 0.15 ? 'Step 3 of 5 · Detecting pose'
-    : fraction >= 0.05 ? 'Step 2 of 5 · Preparing'
-    : 'Step 1 of 5 · Uploaded';
+  const title = 'Building your 3D swing model';
+  const subtitle = 'Analyzing your body rotation, spine angle, hip movement, and head stability.';
+  const eta = isVeryOver
+    ? 'Still processing — taking longer than expected. You can wait or try a different upload.'
+    : 'This usually takes about 60-90 seconds.';
 
   return (
     <div className="page-center wham-screen">
       <button className="btn-corner-back" onClick={onBack}>← History</button>
-      <div className="wham-anim">
-        <div className="wham-anim-ring" />
-        <div className="wham-anim-core" />
+
+      <h2 className="wham-title wham-title-accent">{title}</h2>
+
+      {/* Body silhouette + scanning line. Static SVG (head + torso +
+          arms + legs as primitive shapes). Scan line is a CSS-
+          animated absolute-positioned div above the SVG. No JS rAF,
+          no per-frame state — just a CSS keyframe. */}
+      <div className="wham-silhouette" aria-hidden="true">
+        <svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+          {/* head */}
+          <ellipse cx="100" cy="46" rx="26" ry="32" />
+          {/* neck */}
+          <rect x="92" y="76" width="16" height="14" rx="4" />
+          {/* torso (shoulders to waist) */}
+          <path d="M 60 92 Q 60 90 70 90 L 130 90 Q 140 90 140 92 L 142 200 Q 142 208 134 208 L 66 208 Q 58 208 58 200 Z" />
+          {/* left arm */}
+          <rect x="44" y="96" width="18" height="120" rx="9" />
+          {/* right arm */}
+          <rect x="138" y="96" width="18" height="120" rx="9" />
+          {/* left leg */}
+          <rect x="74" y="208" width="22" height="170" rx="11" />
+          {/* right leg */}
+          <rect x="104" y="208" width="22" height="170" rx="11" />
+        </svg>
+        <div className="wham-scan-line" />
       </div>
-      <h2 className="wham-title">{headline}</h2>
-      {stageLabel && <p className="wham-stage">{stageLabel}</p>}
-      <p className="wham-detail">{detail}</p>
-      <p className="wham-elapsed">
-        Elapsed: <span className="mono">{elapsedSec}s</span>
-        {!isOver && expectedSeconds > 0 && (
-          <> · target <span className="mono">{expectedSeconds}s</span></>
-        )}
+
+      <p className="wham-subtitle">{subtitle}</p>
+
+      <p className="wham-elapsed-mini">
+        ({elapsedSec}s elapsed)
       </p>
+
+      <p className="wham-eta">{eta}</p>
+
       {/* PR-8d.2 part 2 2A: pre-disclaimer footer — sets the
           "approximate" expectation BEFORE the skeleton overlay
           loads so the ready-state disclaimer (PR-8d.2 Part 1)
@@ -815,15 +825,34 @@ body { background:#050805; }
 /* PR-8d.0 wham-screen states (processing + failed) */
 .wham-screen { gap:18px; padding:24px; max-width:430px; }
 .btn-corner-back { position:absolute; top:14px; left:14px; font-size:14px; font-weight:600; color:#7a8a72; background:none; border:none; cursor:pointer; font-family:inherit; padding:6px 10px; }
+/* PR-8d.0 wham-anim retained for any non-ProcessingScreen reuse
+   (the R5 'preparing' spinner uses .spinner, not these). 2C-1
+   removed the call site from ProcessingScreen but the rules stay
+   dead-code-safe for now. */
 .wham-anim { position:relative; width:96px; height:96px; display:flex; align-items:center; justify-content:center; margin-bottom:4px; }
 .wham-anim-ring { position:absolute; inset:0; border-radius:50%; background:rgba(168,240,64,0.08); animation:wham-ring 1.8s ease-in-out infinite; }
 .wham-anim-core { width:40px; height:40px; border-radius:50%; background:#a8f040; animation:wham-core 1.8s ease-in-out infinite; }
 @keyframes wham-ring { 0%,100% { transform:scale(1); opacity:0.85; } 50% { transform:scale(1.22); opacity:0.30; } }
 @keyframes wham-core { 0%,100% { transform:scale(1); } 50% { transform:scale(0.78); } }
 .wham-title { font-size:20px; font-weight:800; color:#f0f0ee; letter-spacing:-0.3px; text-align:center; padding:0 12px; }
+/* PR-8d.2 part 2 2C-1 — body-scan ProcessingScreen accent title. */
+.wham-title-accent { color:#a8f040; }
 .wham-detail { font-size:14px; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; }
 .wham-elapsed { font-size:12px; color:#3a4a35; font-family:'DM Sans',system-ui; margin-top:4px; }
-/* PR-8d.2 part 2 2A — processing stage hint + pre-disclaimer footer. */
+/* PR-8d.2 part 2 2C-1 — body silhouette + scanning line. SVG uses
+   currentColor for fill+stroke so the muted color flows from the
+   container. Scan line is a CSS-only absolutely-positioned bar
+   that animates top: 0% → 100% → 0% (alternate). */
+.wham-silhouette { position:relative; width:200px; height:400px; margin:24px 0 8px; color:#5a6a55; }
+.wham-silhouette svg { width:100%; height:100%; display:block; fill:rgba(26,34,24,0.5); stroke:currentColor; stroke-width:2; }
+.wham-scan-line { position:absolute; left:10%; right:10%; top:0%; height:3px; background:#a8f040; border-radius:2px; filter:drop-shadow(0 0 8px #a8f040); animation:wham-scan 2.5s linear infinite alternate; pointer-events:none; }
+@keyframes wham-scan { 0% { top:0%; } 100% { top:calc(100% - 3px); } }
+.wham-subtitle { font-size:13px; font-weight:500; color:#c0c0bb; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; margin:0; }
+.wham-elapsed-mini { font-size:11px; font-weight:400; color:#5a6a55; text-align:center; font-family:'DM Sans',system-ui; margin:6px 0 0; }
+.wham-eta { font-size:12px; font-weight:400; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; margin:4px 0 0; }
+/* PR-8d.2 part 2 2A — processing stage hint (RETIRED in 2C-1 but
+   class kept dead-code-safe for any external reference) +
+   pre-disclaimer footer. */
 .wham-stage { font-size:13px; color:#7a8a72; text-align:center; font-weight:600; letter-spacing:0.2px; margin-top:-6px; margin-bottom:-2px; }
 .wham-pre-disclaimer { font-size:11px; color:#5a6a55; text-align:center; line-height:1.5; max-width:320px; padding:14px 16px 0; margin:8px 0 0; border-top:1px solid rgba(255,255,255,0.05); }
 /* PR-8d.2 part 2 2A — failed_preprocessing "What to try" help row. */
