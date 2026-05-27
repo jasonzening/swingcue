@@ -506,6 +506,19 @@ export default function ResultPage() {
         <div className="no-vid"><p>Video loading…</p></div>
       )}
 
+      {/* PR-8d.2 part 1: surface the known WHAM body-width limitation
+          (PR-8h.0 audit closure path 1) directly under the skeleton on
+          the ready branch. Small + subtle so it informs without
+          interrupting. Other branches keep their own UI — never shown
+          on processing / failed / absent. Aligned with the coaching-bar
+          gate below so only one of {disclaimer, cue} occupies this
+          vertical slot at any time. */}
+      {whamUiState.kind === 'ready' && whamTimeline && (
+        <p className="wham-disclaimer" role="note">
+          Body alignment is approximate — used as a coaching anchor.
+        </p>
+      )}
+
       {/* PR-8d.1 R4: hide the static "Head Movement / Keep your head
           centered" placeholder coaching cue when WHAM trusted analysis
           is rendering. Leaving the cue while showing real WHAM skeleton
@@ -635,6 +648,7 @@ body { background:#050805; }
 .issue-text { font-size:17px; font-weight:800; color:#a8f040; letter-spacing:-0.4px; line-height:1.1; }
 .cue-row { padding-left:24px; }
 .cue-quote { font-size:14px; font-style:italic; font-weight:600; color:#7a8a72; line-height:1.4; }
+.wham-disclaimer { margin:10px 18px 14px; padding:0; font-size:12px; color:#5a6a55; text-align:center; line-height:1.4; font-weight:400; }
 .spinner { width:32px; height:32px; border:3px solid rgba(168,240,64,0.15); border-top-color:#a8f040; border-radius:50%; animation:spin 0.8s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .load-txt, .err-txt { font-size:14px; color:#3a4a35; font-family:'DM Sans',system-ui; }
