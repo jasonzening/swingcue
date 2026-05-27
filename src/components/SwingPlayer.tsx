@@ -137,6 +137,16 @@ interface Props {
   // SwingPlayer renders WhamSkeletonOverlay INSTEAD of the MediaPipe-
   // derived CoachingAnchorOverlay + canvas disc + skeleton toggle.
   whamPoseTimeline?: WhamPoseTimelineForOverlay | null;
+  // PR-8d.2 Part 2 2B: plain-playback mode for legacy_absent videos.
+  // Suppresses ALL pose overlays (canvas disc, CoachingAnchorOverlay,
+  // WhamSkeletonOverlay, EnhancedCoachingBadge). Video + scrub-bar
+  // chrome stays. Both flags trigger the same suppression — kept as
+  // two explicit signals per spec so the call site can express
+  // intent: legacyMode = semantic "this is a pre-WHAM video",
+  // plainPlayback = rendering "suppress all overlays". OR'd at
+  // render time.
+  legacyMode?: boolean;
+  plainPlayback?: boolean;
 }
 
 type LayerKey = 'body' | 'arms' | 'club' | 'all';
@@ -275,6 +285,9 @@ export function SwingPlayer({
   hipExpand = HIP_EXPAND_DEFAULT,
   // PR-5.9 Task 5: debug overlay mode forwarded to SkeletonOverlay.
   debugMode,
+  // PR-8d.2 Part 2 2B: plain-playback mode for legacy_absent videos.
+  legacyMode,
+  plainPlayback,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -305,6 +318,13 @@ export function SwingPlayer({
   // MediaPipe-derived overlays (CoachingAnchorOverlay magenta dots,
   // canvas disc, layer toggle) so the user sees ONLY WHAM data.
   const whamMode = !!whamPoseTimeline;
+
+  // PR-8d.2 Part 2 2B: plain-playback mode for legacy_absent videos.
+  // Wins over both enhancedMode and whamMode — suppresses every pose-
+  // related overlay so old videos play as pure video. The result page
+  // routes pre-WHAM uploads through this mode via its dedicated
+  // LegacyAbsentScreen component.
+  const plainMode = !!plainPlayback || !!legacyMode;
 
   // PR-7c-frontend-v8: `?tune=anchors` opt-in tuning mode. When active,
   // mounts AnchorTuningPanel with live sliders for the 4 visual-anchor
@@ -669,14 +689,15 @@ export function SwingPlayer({
           onLoadedData={syncCanvas}
         />
         {/* PR-8d.1: hide canvas in WHAM mode too — disc is MediaPipe-era
-            chrome irrelevant to WHAM-only result page. */}
-        {!enhancedMode && !whamMode && <canvas ref={canvasRef} className="sp-cvs" />}
+            chrome irrelevant to WHAM-only result page.
+            PR-8d.2 Part 2 2B: hide in plainMode too (legacy_absent). */}
+        {!enhancedMode && !whamMode && !plainMode && <canvas ref={canvasRef} className="sp-cvs" />}
 
         {/* PR-4: skeleton overlay (toggle, default off).
             PR-7c-frontend: hidden when enhanced mode is active so the
             magenta anchors don't visually compete with the MediaPipe
             skeleton. SkeletonOverlay early-returns null on hidden=true. */}
-        {skeletonOn && poseTimeline && (
+        {skeletonOn && poseTimeline && !plainMode && (
           <SkeletonOverlay
             timeline={poseTimeline}
             videoEl={videoRef.current}
@@ -694,7 +715,7 @@ export function SwingPlayer({
             PR-8d.1: HIDDEN when WHAM mode is active — WHAM skeleton
             replaces MediaPipe-derived anchors on the trusted-analysis
             ready branch. */}
-        {!whamMode && enhancedMode && poseTimeline && (
+        {!whamMode && !plainMode && enhancedMode && poseTimeline && (
           <CoachingAnchorOverlay
             videoId={videoId}
             poseTimeline={poseTimeline}
@@ -708,7 +729,7 @@ export function SwingPlayer({
         {/* PR-8d.1: trusted WHAM bone-center skeleton. Renders ONLY
             when result page passes whamPoseTimeline (wham_status=
             'ready'). Locked palette: cyan L / amber R / white center. */}
-        {whamMode && whamPoseTimeline && (
+        {whamMode && !plainMode && whamPoseTimeline && (
           <WhamSkeletonOverlay
             timeline={whamPoseTimeline}
             videoEl={videoRef.current}
@@ -719,7 +740,7 @@ export function SwingPlayer({
             PR-8d.1: also hidden in WHAM mode — label "Enhanced Coaching
             Overlay" refers to MediaPipe path; misleading on WHAM trusted
             analysis. */}
-        {enhancedMode && !tuneMode && !whamMode && <EnhancedCoachingBadge />}
+        {enhancedMode && !tuneMode && !whamMode && !plainMode && <EnhancedCoachingBadge />}
 
         {/* PR-7c-frontend-v8: tuning panel (?tune=anchors only).
             v10: when sideBySide is true, panel renders OUTSIDE .sp-vw

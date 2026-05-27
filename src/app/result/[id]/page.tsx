@@ -487,10 +487,30 @@ export default function ResultPage() {
       </div>
     );
   }
-  // kind === 'ready' (with whamTimeline present) OR 'absent'
+  // PR-8d.2 Part 2 2B: dedicated legacy_absent screen for videos with
+  // no wham_status key. Replaces the silent fall-through to the
+  // MediaPipe placeholder UI + Head Movement template cue (which
+  // looked broken post-WHAM era). Renders the original video in
+  // plain-playback SwingPlayer mode (no MediaPipe canvas, no
+  // coaching anchors, no skeleton) with a clear upgrade CTA.
+  if (whamUiState.kind === 'absent') {
+    return (
+      <LegacyAbsentScreen
+        videoId={videoId}
+        videoUrl={videoUrl}
+        timeline={overlayTimeline}
+        phases={phases}
+        duration={meta.durationSec}
+        dataSource={dataSource}
+        onUpload={() => router.push(`/upload?from=legacy&original=${videoId}`)}
+        onBack={() => router.push('/history')}
+      />
+    );
+  }
+
+  // kind === 'ready' (with whamTimeline present)
   // → fall through to existing UI; SwingPlayer gets whamPoseTimeline
-  //   when present and renders the WHAM skeleton path. Otherwise the
-  //   legacy placeholder UI shows.
+  //   and renders the WHAM skeleton path.
 
   const issueLabel = ISSUE_LABELS[issue] ?? issue;
 
@@ -644,6 +664,81 @@ function ProcessingScreen({
   );
 }
 
+// PR-8d.2 Part 2 2B: legacy_absent dedicated screen.
+//
+// For videos with no `wham_status` key (pre-WHAM-integration uploads).
+// Renders the original video in SwingPlayer plainPlayback mode +
+// shows a clean "this is older data" pitch with a primary CTA to
+// upload a new video for 3D analysis. Replaces the old silent
+// fall-through to the MediaPipe placeholder dots + Head Movement
+// template cue, which looked broken post-WHAM era and invited the
+// user to compare degraded legacy data with the new trusted skeleton
+// (PR-8h.0 calibration audit closure: "older videos = older videos,
+// no extra cognitive load").
+function LegacyAbsentScreen({
+  videoId,
+  videoUrl,
+  timeline,
+  phases,
+  duration,
+  dataSource,
+  onUpload,
+  onBack,
+}: {
+  videoId: string;
+  videoUrl: string;
+  timeline: OverlayTimeline;
+  phases: PhaseMarkers;
+  duration: number;
+  dataSource?: string;
+  onUpload: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="page">
+      <header className="hdr">
+        <button className="btn-hdr-back" onClick={onBack}>←</button>
+        <span className="hdr-logo">SwingCue</span>
+        <button className="btn-new" onClick={onUpload}>+ New</button>
+      </header>
+
+      <div className="legacy-pitch">
+        <p className="legacy-message">
+          This video was analyzed before our 3D pipeline.<br />
+          Upload a new video for full analysis.
+        </p>
+        <button className="legacy-cta" onClick={onUpload}>
+          Upload for 3D analysis →
+        </button>
+      </div>
+
+      {/* Original video below in plain-playback mode.
+          legacyMode + plainPlayback BOTH set per spec — explicit
+          dual signal so SwingPlayer doesn't accidentally render any
+          pose overlay even if upstream data races (e.g.
+          keypoint_timeline_json present from a long-ago MediaPipe
+          run). */}
+      {videoUrl ? (
+        <SwingPlayer
+          videoId={videoId}
+          videoUrl={videoUrl}
+          timeline={timeline}
+          phases={phases}
+          duration={duration}
+          dataSource={dataSource}
+          legacyMode
+          plainPlayback
+          whamPoseTimeline={null}
+        />
+      ) : (
+        <div className="no-vid"><p>Video loading…</p></div>
+      )}
+
+      <style>{css}</style>
+    </div>
+  );
+}
+
 function FailedScreen({
   title,
   message,
@@ -737,6 +832,11 @@ body { background:#050805; }
 .wham-help-bullets { list-style:none; padding:0; margin:0; }
 .wham-help-bullets li { font-size:13px; color:#7a8a72; line-height:1.5; padding-left:16px; position:relative; margin-bottom:6px; text-align:left; }
 .wham-help-bullets li::before { content:"•"; position:absolute; left:2px; top:0; color:#a8f040; font-weight:700; }
+/* PR-8d.2 part 2 2B — legacy_absent pitch (message + upload CTA above the bare video). */
+.legacy-pitch { display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px 18px 18px; background:rgba(168,240,64,0.04); border-bottom:1px solid rgba(168,240,64,0.10); }
+.legacy-message { font-size:14px; color:#c0c0bb; text-align:center; line-height:1.55; max-width:340px; margin:0; padding:0 4px; }
+.legacy-cta { background:#a8f040; color:#080c08; font-family:inherit; font-size:14px; font-weight:800; height:44px; padding:0 22px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 16px rgba(168,240,64,0.18); white-space:nowrap; }
+.legacy-cta:active { transform:scale(0.97); }
 .mono { font-family:ui-monospace, SFMono-Regular, "Menlo", monospace; color:#a8f040; }
 .wham-fail-icon { width:56px; height:56px; border-radius:50%; background:rgba(240,96,64,0.12); border:1.5px solid rgba(240,96,64,0.4); color:#f06040; font-size:30px; font-weight:800; display:flex; align-items:center; justify-content:center; }
 .wham-fail-message { font-size:14px; color:#c0c0bb; line-height:1.55; text-align:center; max-width:340px; padding:0 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:14px 16px; }
