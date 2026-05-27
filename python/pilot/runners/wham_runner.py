@@ -195,8 +195,15 @@ _ANATOMICAL_LANDMARK_VERTEX_INDICES: dict[str, int] = {
     # projects to the same screen side as H36M `left_shoulder`.
     "acromion_left":            4721,   # was 1238 (PR-8e.0)
     "acromion_right":           1238,   # was 4721
-    "greater_trochanter_left":  6375,   # was 2915
-    "greater_trochanter_right": 2915,   # was 6375
+    # PR-8e.2 candidate swap: PROBE-labeled vertex 6375/2915 projects
+    # 9-11px ABOVE SMPL pelvis joint in production SQL (T3 reupload
+    # 92a483fc, all 7 sampled frames). Anatomical trochanter should
+    # sit 30-50px BELOW. Likely PROBE found iliac crest or ASIS, not
+    # the lateral femoral prominence. Trying 4934/1490 as empirical
+    # candidates (further down the mesh). If still wrong after this
+    # deploy, escalate to direct SMPL T-pose mesh inspection.
+    "greater_trochanter_left":  4934,   # PR-8e.2 try (was 6375 in PR-8e.0.1)
+    "greater_trochanter_right": 1490,   # PR-8e.2 try (was 2915 in PR-8e.0.1)
     # Optional paired landmarks — same correction.
     "lateral_epicondyle_left":  4447,   # was 959
     "lateral_epicondyle_right":  959,   # was 4447
