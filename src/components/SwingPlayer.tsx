@@ -951,23 +951,23 @@ const css = `
 
   /* ── Badges ── */
   .sp-badges { position:absolute; top:9px; left:10px; z-index:3; pointer-events:none; }
-  .sp-phase-badge { display:inline-block; background:rgba(0,0,0,0.72); color:#a8f040; font-size:9px; font-weight:800; letter-spacing:.12em; padding:3px 9px; border-radius:100px; font-family:'DM Sans',system-ui; }
+  .sp-phase-badge { display:inline-block; background:rgba(0,0,0,0.72); color:var(--accent-primary); font-size:9px; font-weight:800; letter-spacing:.12em; padding:3px 9px; border-radius:100px; font-family:'DM Sans',system-ui; }
   .sp-src-badge { display:inline-block; margin-left:6px; font-size:8px; font-weight:700; letter-spacing:.06em; padding:3px 8px; border-radius:100px; font-family:'DM Sans',system-ui; }
-  .sp-src-real { background:rgba(60,238,60,0.18); color:#3cee3c; }
+  .sp-src-real { background:color-mix(in srgb, var(--accent-primary) 18%, transparent); color:var(--accent-primary); }
   .sp-src-demo { background:rgba(255,180,40,0.18); color:#ffb428; }
   .sp-layer-badge { position:absolute; top:9px; right:10px; display:inline-block; background:rgba(0,0,0,0.65); color:rgba(255,255,255,0.60); font-size:9px; font-weight:700; letter-spacing:.08em; padding:3px 9px; border-radius:100px; font-family:'DM Sans',system-ui; pointer-events:none; z-index:3; }
 
   /* PR-4 skeleton toggle */
-  .sp-skel-toggle { position:absolute; top:36px; right:10px; z-index:4; width:30px; height:30px; padding:0; font-size:16px; line-height:1; border-radius:50%; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.10); color:#a8f040; cursor:pointer; display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent; transition:transform 0.12s, background 0.12s; }
+  .sp-skel-toggle { position:absolute; top:36px; right:10px; z-index:4; width:30px; height:30px; padding:0; font-size:16px; line-height:1; border-radius:50%; background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.10); color:var(--accent-primary); cursor:pointer; display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent; transition:transform 0.12s, background 0.12s; }
   .sp-skel-toggle:active { transform:scale(0.88); }
-  .sp-skel-on { background:rgba(168,240,64,0.18) !important; border-color:rgba(168,240,64,0.45) !important; }
+  .sp-skel-on { background:color-mix(in srgb, var(--accent-primary) 18%, transparent) !important; border-color:color-mix(in srgb, var(--accent-primary) 45%, transparent) !important; }
   .sp-skel-disabled { opacity:0.35; cursor:not-allowed; color:rgba(255,255,255,0.40); }
 
   /* ── Legend ── */
   .sp-legend { position:absolute; bottom:8px; right:10px; background:rgba(0,0,0,0.70); display:flex; gap:8px; padding:5px 10px; border-radius:100px; z-index:3; pointer-events:none; }
   .sp-legend span { font-size:9px; font-weight:700; font-family:'DM Sans',system-ui; }
   .leg-r { color:#ff3c3c; }
-  .leg-g { color:#3cee3c; }
+  .leg-g { color:var(--verdict-correct); }
   .leg-y { color:#ffd040; }
 
   /* ── Layer toggle ── */
@@ -975,32 +975,32 @@ const css = `
   .sp-layers::-webkit-scrollbar { display:none; }
   .sp-lb { display:flex; align-items:center; gap:5px; flex-shrink:0; font-family:'DM Sans',system-ui; font-size:12px; font-weight:700; color:#2a3a25; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); padding:7px 14px; border-radius:8px; cursor:pointer; margin-right:7px; -webkit-tap-highlight-color:transparent; transition:all 0.12s; }
   .sp-lb:active { transform:scale(0.93); }
-  .sp-lb-on { color:#a8f040 !important; background:rgba(168,240,64,0.11) !important; border-color:rgba(168,240,64,0.28) !important; }
+  .sp-lb-on { color:var(--accent-primary) !important; background:color-mix(in srgb, var(--accent-primary) 12%, transparent) !important; border-color:color-mix(in srgb, var(--accent-primary) 30%, transparent) !important; }
   .sp-lb-icon { font-size:14px; }
   .sp-lb-text { font-size:12px; }
 
   /* ── Controls ── */
   .sp-ctrl { display:flex; align-items:center; gap:8px; padding:9px 14px; background:#0a100a; border-bottom:1px solid rgba(255,255,255,0.05); }
-  .sp-play { font-size:17px; background:#a8f040; color:#080c08; border:none; border-radius:50%; width:38px; height:38px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; -webkit-tap-highlight-color:transparent; transition:transform 0.1s; }
+  .sp-play { font-size:17px; background:var(--accent-primary); color:#080c08; border:none; border-radius:50%; width:38px; height:38px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; -webkit-tap-highlight-color:transparent; transition:transform 0.1s; }
   .sp-play:active { transform:scale(0.88); }
   .sp-step { font-size:13px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.09); color:#6a7a62; border-radius:7px; width:34px; height:34px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; -webkit-tap-highlight-color:transparent; }
   .sp-spd-row { display:flex; gap:5px; margin-left:auto; }
   .sp-spd { font-size:12px; font-weight:700; font-family:'DM Sans',system-ui; background:rgba(255,255,255,0.04); color:#3a4a35; border:1px solid rgba(255,255,255,0.07); border-radius:6px; padding:5px 10px; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:all 0.12s; }
-  .sp-spd-on { background:rgba(168,240,64,0.11) !important; color:#a8f040 !important; border-color:rgba(168,240,64,0.28) !important; }
+  .sp-spd-on { background:color-mix(in srgb, var(--accent-primary) 12%, transparent) !important; color:var(--accent-primary) !important; border-color:color-mix(in srgb, var(--accent-primary) 30%, transparent) !important; }
 
   /* ── Scrub ── */
   .sp-scrub-wrap { display:flex; align-items:center; gap:8px; padding:5px 14px 7px; background:#0a100a; border-bottom:1px solid rgba(255,255,255,0.05); }
   .sp-time { font-size:11px; font-weight:600; color:#2a3a25; font-family:'DM Sans',system-ui; white-space:nowrap; width:28px; }
   .sp-bar { flex:1; height:24px; display:flex; align-items:center; position:relative; cursor:pointer; touch-action:none; }
   .sp-bar::before { content:''; position:absolute; left:0; right:0; top:50%; height:4px; background:rgba(255,255,255,0.09); border-radius:2px; transform:translateY(-50%); }
-  .sp-fill { position:absolute; left:0; top:50%; height:4px; background:#a8f040; border-radius:2px; transform:translateY(-50%); pointer-events:none; }
+  .sp-fill { position:absolute; left:0; top:50%; height:4px; background:var(--accent-primary); border-radius:2px; transform:translateY(-50%); pointer-events:none; }
   .sp-thumb { position:absolute; top:50%; width:14px; height:14px; background:#fff; border-radius:50%; transform:translateY(-50%); box-shadow:0 1px 5px rgba(0,0,0,0.6); pointer-events:none; z-index:2; }
-  .sp-tick { position:absolute; top:50%; width:2px; height:8px; background:rgba(168,240,64,0.45); transform:translate(-50%,-50%); border-radius:1px; pointer-events:none; }
+  .sp-tick { position:absolute; top:50%; width:2px; height:8px; background:color-mix(in srgb, var(--accent-primary) 45%, transparent); transform:translate(-50%,-50%); border-radius:1px; pointer-events:none; }
 
   /* ── Phase buttons ── */
   .sp-phases { display:flex; background:#0a100a; padding:7px 14px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .sp-phases::-webkit-scrollbar { display:none; }
   .sp-pb { flex-shrink:0; font-size:12px; font-weight:700; font-family:'DM Sans',system-ui; color:#2a3a25; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); padding:6px 14px; border-radius:8px; cursor:pointer; margin-right:6px; white-space:nowrap; -webkit-tap-highlight-color:transparent; transition:all 0.12s; }
   .sp-pb:active { transform:scale(0.93); }
-  .sp-pb-on { color:#a8f040 !important; background:rgba(168,240,64,0.10) !important; border-color:rgba(168,240,64,0.24) !important; }
+  .sp-pb-on { color:var(--accent-primary) !important; background:color-mix(in srgb, var(--accent-primary) 10%, transparent) !important; border-color:color-mix(in srgb, var(--accent-primary) 26%, transparent) !important; }
 `;

@@ -128,11 +128,11 @@ const css = `
   }
   .card {
     width: 100%; max-width: 390px;
-    background: #0c130b; border: 1px solid rgba(168,240,64,0.12);
+    background: #0c130b; border: 1px solid color-mix(in srgb, var(--accent-primary) 12%, transparent);
     border-radius: 24px; padding: 36px 28px 32px;
     display: flex; flex-direction: column; gap: 8px;
   }
-  .logo { font-size: 18px; font-weight: 800; color: #a8f040; letter-spacing: -0.3px; margin-bottom: 8px; }
+  .logo { font-size: 18px; font-weight: 800; color: var(--accent-primary); letter-spacing: -0.3px; margin-bottom: 8px; }
   .title { font-size: 26px; font-weight: 800; color: #f0f0ee; letter-spacing: -0.6px; }
   .sub { font-size: 13px; color: #3a4a35; margin-bottom: 16px; }
 
@@ -145,7 +145,7 @@ const css = `
     font-family: inherit; width: 100%; outline: none; -webkit-appearance: none;
     transition: border-color 0.15s;
   }
-  .input:focus { border-color: rgba(168,240,64,0.5); }
+  .input:focus { border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent); }
   .input::placeholder { color: #2a3a25; }
 
   .error-box {
@@ -155,7 +155,7 @@ const css = `
   .error-box p { font-size: 13px; color: #f06040; line-height: 1.5; }
 
   .btn {
-    background: #a8f040; color: #080c08;
+    background: var(--accent-primary); color: #080c08;
     font-family: inherit; font-size: 16px; font-weight: 800;
     height: 52px; border-radius: 100px; border: none; cursor: pointer; width: 100%;
     transition: opacity 0.15s, transform 0.12s; -webkit-appearance: none;
@@ -167,15 +167,15 @@ const css = `
     background: none; border: none; cursor: pointer; font-family: inherit;
     font-size: 13px; color: #4a5a44; text-align: center; padding: 4px 0;
   }
-  .link-btn:hover { color: #a8f040; }
+  .link-btn:hover { color: var(--accent-primary); }
 
   .reset-sent {
-    background: rgba(168,240,64,0.06); border: 1px solid rgba(168,240,64,0.15);
+    background: color-mix(in srgb, var(--accent-primary) 6%, transparent); border: 1px solid color-mix(in srgb, var(--accent-primary) 15%, transparent);
     border-radius: 12px; padding: 20px; display: flex; flex-direction: column;
     gap: 10px; margin-top: 8px;
   }
   .reset-sent p { font-size: 14px; color: #8a9a82; line-height: 1.5; }
-  .reset-sent strong { color: #a8f040; }
+  .reset-sent strong { color: var(--accent-primary); }
 
   .back-link { font-size: 13px; color: #2a3a25; text-decoration: none; text-align: center; margin-top: 8px; }
 `;

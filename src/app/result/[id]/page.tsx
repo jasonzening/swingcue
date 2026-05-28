@@ -953,21 +953,21 @@ body { background:#050805; }
 .page.page-tune-wide { max-width:820px; }
 .page-center { min-height:100dvh; background:#050805; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:40px; font-family:'DM Sans',system-ui; }
 .hdr { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#050805; border-bottom:1px solid rgba(255,255,255,0.05); flex-shrink:0; }
-.hdr-logo { font-size:16px; font-weight:800; color:#a8f040; letter-spacing:-0.3px; }
+.hdr-logo { font-size:16px; font-weight:800; color:var(--accent-primary); letter-spacing:-0.3px; }
 .btn-hdr-back { font-size:18px; color:#4a5a44; background:none; border:none; cursor:pointer; padding:4px 8px; font-family:inherit; }
-.btn-new { font-size:12px; font-weight:700; color:#a8f040; background:rgba(168,240,64,0.10); border:1px solid rgba(168,240,64,0.25); padding:6px 14px; border-radius:100px; cursor:pointer; font-family:inherit; }
+.btn-new { font-size:12px; font-weight:700; color:var(--accent-primary); background:color-mix(in srgb, var(--accent-primary) 10%, transparent); border:1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent); padding:6px 14px; border-radius:100px; cursor:pointer; font-family:inherit; }
 .no-vid { background:#0a100a; padding:60px 24px; text-align:center; color:#3a4a35; font-size:14px; }
 .coaching-bar { padding:14px 18px 20px; display:flex; flex-direction:column; gap:8px; border-top:1px solid rgba(255,255,255,0.05); background:#050805; }
 .issue-row { display:flex; align-items:center; gap:8px; }
 .issue-dot { font-size:16px; flex-shrink:0; }
-.issue-text { font-size:17px; font-weight:800; color:#a8f040; letter-spacing:-0.4px; line-height:1.1; }
+.issue-text { font-size:17px; font-weight:800; color:var(--accent-primary); letter-spacing:-0.4px; line-height:1.1; }
 .cue-row { padding-left:24px; }
 .cue-quote { font-size:14px; font-style:italic; font-weight:600; color:#7a8a72; line-height:1.4; }
-.wham-disclaimer { margin:10px 18px 14px; padding:0; font-size:12px; color:#5a6a55; text-align:center; line-height:1.4; font-weight:400; }
-.spinner { width:32px; height:32px; border:3px solid rgba(168,240,64,0.15); border-top-color:#a8f040; border-radius:50%; animation:spin 0.8s linear infinite; }
+.wham-disclaimer { margin:10px 18px 14px; padding:0; font-size:12px; color:var(--text-muted); text-align:center; line-height:1.4; font-weight:400; }
+.spinner { width:32px; height:32px; border:3px solid color-mix(in srgb, var(--accent-primary) 15%, transparent); border-top-color:var(--accent-primary); border-radius:50%; animation:spin 0.8s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .load-txt, .err-txt { font-size:14px; color:#3a4a35; font-family:'DM Sans',system-ui; }
-.btn-back { font-size:14px; font-weight:700; color:#a8f040; background:none; border:none; cursor:pointer; font-family:'DM Sans',system-ui; }
+.btn-back { font-size:14px; font-weight:700; color:var(--accent-primary); background:none; border:none; cursor:pointer; font-family:'DM Sans',system-ui; }
 
 /* PR-8d.0 wham-screen states (processing + failed) */
 .wham-screen { gap:18px; padding:24px; max-width:430px; }
@@ -977,13 +977,13 @@ body { background:#050805; }
    removed the call site from ProcessingScreen but the rules stay
    dead-code-safe for now. */
 .wham-anim { position:relative; width:96px; height:96px; display:flex; align-items:center; justify-content:center; margin-bottom:4px; }
-.wham-anim-ring { position:absolute; inset:0; border-radius:50%; background:rgba(168,240,64,0.08); animation:wham-ring 1.8s ease-in-out infinite; }
-.wham-anim-core { width:40px; height:40px; border-radius:50%; background:#a8f040; animation:wham-core 1.8s ease-in-out infinite; }
+.wham-anim-ring { position:absolute; inset:0; border-radius:50%; background:color-mix(in srgb, var(--accent-primary) 8%, transparent); animation:wham-ring 1.8s ease-in-out infinite; }
+.wham-anim-core { width:40px; height:40px; border-radius:50%; background:var(--accent-primary); animation:wham-core 1.8s ease-in-out infinite; }
 @keyframes wham-ring { 0%,100% { transform:scale(1); opacity:0.85; } 50% { transform:scale(1.22); opacity:0.30; } }
 @keyframes wham-core { 0%,100% { transform:scale(1); } 50% { transform:scale(0.78); } }
 .wham-title { font-size:20px; font-weight:800; color:#f0f0ee; letter-spacing:-0.3px; text-align:center; padding:0 12px; }
 /* PR-8d.2 part 2 2C-1 — body-scan ProcessingScreen accent title. */
-.wham-title-accent { color:#a8f040; }
+.wham-title-accent { color:var(--accent-primary); }
 .wham-detail { font-size:14px; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; }
 .wham-elapsed { font-size:12px; color:#3a4a35; font-family:'DM Sans',system-ui; margin-top:4px; }
 /* PR-8d.2 part 2 2C-3 — video-frame body-scan visual.
@@ -1004,7 +1004,7 @@ body { background:#050805; }
 
 /* Container — portrait aspect ratio, max-height 60vh for mobile, with a
    subtle inset border so the scan visual reads as a contained "scope". */
-.wham-video-scan { position:relative; width:min(100%, 280px); aspect-ratio:9/16; max-height:60vh; margin:18px 0 6px; background:#080c08; overflow:hidden; border-radius:10px; border:1px solid rgba(168,240,64,0.12); box-shadow:0 0 24px rgba(168,240,64,0.08), inset 0 0 0 1px rgba(255,255,255,0.04); }
+.wham-video-scan { position:relative; width:min(100%, 280px); aspect-ratio:9/16; max-height:60vh; margin:18px 0 6px; background:#080c08; overflow:hidden; border-radius:10px; border:1px solid color-mix(in srgb, var(--scan-cyan) 18%, transparent); box-shadow:0 0 24px color-mix(in srgb, var(--scan-cyan) 12%, transparent), inset 0 0 0 1px rgba(255,255,255,0.04); }
 
 /* Base video frame. Paused. Opacity 0 until first frame paints (set
    by .wham-video-frame-ready class on onSeeked) so we don't flash a
@@ -1018,21 +1018,21 @@ body { background:#050805; }
 .wham-fallback-svg { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); width:70%; height:90%; display:block; pointer-events:none; }
 .wham-silhouette-outline > * { fill:rgba(26,34,24,0.5); stroke:#5a6a55; stroke-width:2; }
 .wham-silhouette-fill { clip-path:inset(0 0 100% 0); animation:wham-fill 2.5s linear infinite alternate; }
-.wham-silhouette-fill > * { fill:rgba(168,240,64,0.22); stroke:none; }
+.wham-silhouette-fill > * { fill:color-mix(in srgb, var(--scan-cyan) 28%, transparent); stroke:none; }
 
 /* Grid mesh — horizontal lines every 24px @ 5% opacity. Gives the
    scope a faint coordinate readout feel without adding noise. */
-.wham-video-grid { position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg, rgba(168,240,64,0.05) 0, rgba(168,240,64,0.05) 1px, transparent 1px, transparent 24px); }
+.wham-video-grid { position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg, color-mix(in srgb, var(--scan-cyan) 7%, transparent) 0, color-mix(in srgb, var(--scan-cyan) 7%, transparent) 1px, transparent 1px, transparent 24px); }
 
 /* Scanned-region tint — full rectangle of accent wash, clipped via
    animated CSS clip-path to only show below the scan line. As the
    scan moves down the wash extends; on reverse it retracts. Same
    2.5s alternate timing as the line and beam. */
-.wham-scan-tint { position:absolute; inset:0; pointer-events:none; background:rgba(168,240,64,0.10); clip-path:inset(0 0 100% 0); animation:wham-fill 2.5s linear infinite alternate; }
+.wham-scan-tint { position:absolute; inset:0; pointer-events:none; background:color-mix(in srgb, var(--scan-cyan) 12%, transparent); clip-path:inset(0 0 100% 0); animation:wham-fill 2.5s linear infinite alternate; }
 
 /* HUD corner brackets — sci-fi targeting frame. Two perpendicular
    borders meeting at a right angle at each corner. */
-.wham-corner-bracket { position:absolute; width:14px; height:14px; border-color:rgba(168,240,64,0.4); pointer-events:none; }
+.wham-corner-bracket { position:absolute; width:14px; height:14px; border-color:color-mix(in srgb, var(--scan-cyan) 50%, transparent); pointer-events:none; }
 .wham-corner-tl { top:6px; left:6px; border-top:2px solid; border-left:2px solid; }
 .wham-corner-tr { top:6px; right:6px; border-top:2px solid; border-right:2px solid; }
 .wham-corner-bl { bottom:6px; left:6px; border-bottom:2px solid; border-left:2px solid; }
@@ -1042,12 +1042,12 @@ body { background:#050805; }
    Acts as the bloom halo behind the 3px sharp line. The beam is
    ~40px tall, with the gradient fading top + bottom to transparent
    so it reads as a glow envelope, not a hard band. */
-.wham-scan-beam { position:absolute; left:0; right:0; top:0%; height:40px; transform:translateY(-50%); pointer-events:none; background:linear-gradient(to bottom, transparent 0%, rgba(168,240,64,0.05) 30%, rgba(168,240,64,0.22) 50%, rgba(168,240,64,0.05) 70%, transparent 100%); animation:wham-scan-beam 2.5s linear infinite alternate; }
+.wham-scan-beam { position:absolute; left:0; right:0; top:0%; height:40px; transform:translateY(-50%); pointer-events:none; background:linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--scan-cyan) 7%, transparent) 30%, color-mix(in srgb, var(--scan-cyan) 28%, transparent) 50%, color-mix(in srgb, var(--scan-cyan) 7%, transparent) 70%, transparent 100%); animation:wham-scan-beam 2.5s linear infinite alternate; }
 
 /* Sharp scan line itself. Drop-shadow gives the strong neon glow on
    the 3px bar — drop-shadow respects alpha so it lights only the
    bar, not the rectangular box. */
-.wham-scan-line { position:absolute; left:0; right:0; top:0%; height:3px; background:#a8f040; border-radius:2px; filter:drop-shadow(0 0 12px #a8f040) drop-shadow(0 0 4px #a8f040); animation:wham-scan 2.5s linear infinite alternate; pointer-events:none; }
+.wham-scan-line { position:absolute; left:0; right:0; top:0%; height:3px; background:var(--scan-cyan); border-radius:2px; filter:drop-shadow(0 0 12px var(--scan-cyan)) drop-shadow(0 0 4px var(--scan-cyan)); animation:wham-scan 2.5s linear infinite alternate; pointer-events:none; }
 
 @keyframes wham-scan { 0% { top:0%; } 100% { top:calc(100% - 3px); } }
 @keyframes wham-scan-beam { 0% { top:0%; } 100% { top:100%; } }
@@ -1073,7 +1073,7 @@ body { background:#050805; }
 .wham-club-pills { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
 .wham-club-pill { display:flex; align-items:center; gap:6px; padding:8px 14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:100px; color:#a8a89a; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s; }
 .wham-club-pill:active { transform:scale(0.96); }
-.wham-club-pill-on { background:rgba(168,240,64,0.14); border-color:rgba(168,240,64,0.55); color:#a8f040; }
+.wham-club-pill-on { background:color-mix(in srgb, var(--accent-primary) 14%, transparent); border-color:color-mix(in srgb, var(--accent-primary) 55%, transparent); color:var(--accent-primary); }
 .wham-club-icon { font-size:14px; line-height:1; }
 .wham-club-label { line-height:1; }
 .wham-club-save-err { font-size:11px; color:#d08060; text-align:center; margin:2px 0 0; }
@@ -1081,22 +1081,22 @@ body { background:#050805; }
    class kept dead-code-safe for any external reference) +
    pre-disclaimer footer. */
 .wham-stage { font-size:13px; color:#7a8a72; text-align:center; font-weight:600; letter-spacing:0.2px; margin-top:-6px; margin-bottom:-2px; }
-.wham-pre-disclaimer { font-size:11px; color:#5a6a55; text-align:center; line-height:1.5; max-width:320px; padding:14px 16px 0; margin:8px 0 0; border-top:1px solid rgba(255,255,255,0.05); }
+.wham-pre-disclaimer { font-size:11px; color:var(--text-muted); text-align:center; line-height:1.5; max-width:320px; padding:14px 16px 0; margin:8px 0 0; border-top:1px solid rgba(255,255,255,0.05); }
 /* PR-8d.2 part 2 2A — failed_preprocessing "What to try" help row. */
 .wham-help-row { width:100%; max-width:340px; padding:0 12px; }
-.wham-help-header { font-size:13px; font-weight:700; color:#a8f040; margin:0 0 8px; text-align:left; }
+.wham-help-header { font-size:13px; font-weight:700; color:var(--accent-primary); margin:0 0 8px; text-align:left; }
 .wham-help-bullets { list-style:none; padding:0; margin:0; }
 .wham-help-bullets li { font-size:13px; color:#7a8a72; line-height:1.5; padding-left:16px; position:relative; margin-bottom:6px; text-align:left; }
-.wham-help-bullets li::before { content:"•"; position:absolute; left:2px; top:0; color:#a8f040; font-weight:700; }
+.wham-help-bullets li::before { content:"•"; position:absolute; left:2px; top:0; color:var(--accent-primary); font-weight:700; }
 /* PR-8d.2 part 2 2B — legacy_absent pitch (message + upload CTA above the bare video). */
-.legacy-pitch { display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px 18px 18px; background:rgba(168,240,64,0.04); border-bottom:1px solid rgba(168,240,64,0.10); }
+.legacy-pitch { display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px 18px 18px; background:color-mix(in srgb, var(--accent-primary) 5%, transparent); border-bottom:1px solid color-mix(in srgb, var(--accent-primary) 12%, transparent); }
 .legacy-message { font-size:14px; color:#c0c0bb; text-align:center; line-height:1.55; max-width:340px; margin:0; padding:0 4px; }
-.legacy-cta { background:#a8f040; color:#080c08; font-family:inherit; font-size:14px; font-weight:800; height:44px; padding:0 22px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 16px rgba(168,240,64,0.18); white-space:nowrap; }
+.legacy-cta { background:var(--accent-primary); color:#080c08; font-family:inherit; font-size:14px; font-weight:800; height:44px; padding:0 22px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 16px color-mix(in srgb, var(--accent-primary) 22%, transparent); white-space:nowrap; }
 .legacy-cta:active { transform:scale(0.97); }
-.mono { font-family:ui-monospace, SFMono-Regular, "Menlo", monospace; color:#a8f040; }
+.mono { font-family:ui-monospace, SFMono-Regular, "Menlo", monospace; color:var(--accent-primary); }
 .wham-fail-icon { width:56px; height:56px; border-radius:50%; background:rgba(240,96,64,0.12); border:1.5px solid rgba(240,96,64,0.4); color:#f06040; font-size:30px; font-weight:800; display:flex; align-items:center; justify-content:center; }
 .wham-fail-message { font-size:14px; color:#c0c0bb; line-height:1.55; text-align:center; max-width:340px; padding:0 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:14px 16px; }
-.wham-retry-btn { margin-top:4px; background:#a8f040; color:#080c08; font-family:inherit; font-size:15px; font-weight:800; height:48px; padding:0 24px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 20px rgba(168,240,64,0.18); }
+.wham-retry-btn { margin-top:4px; background:var(--accent-primary); color:#080c08; font-family:inherit; font-size:15px; font-weight:800; height:48px; padding:0 24px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 20px color-mix(in srgb, var(--accent-primary) 22%, transparent); }
 .wham-retry-btn:active { transform:scale(0.97); }
 .wham-support-ref { font-size:11px; color:#3a4a35; margin-top:6px; }
 `;
