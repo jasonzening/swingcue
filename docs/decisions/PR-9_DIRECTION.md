@@ -55,9 +55,34 @@ computation.
 - PR adding a new coaching rule → MUST cite which raw-layer field
   it reads from in the rule docstring.
 
+## Sequence
+
+**PR-9A: Coaching Indicator Design System** — a reusable indicator
+visual language (component prop contracts + coordinate/source lock
++ animation tokens + parametric-target ideal layer + 2 mandatory
+mocks for `BoundaryLine` and `RotationDisc`) **MUST ship and be
+reviewed BEFORE PR-9.0 Head Movement implementation.** Rationale:
+PR-9 is the shift to a coaching-indicator visual language; building
+Head Movement first without the shared system guarantees every
+later module drifts and reworks. System before instance.
+
+**PR-9.0: Head Movement** — first coaching rule using the PR-9A
+system. Sources from `keypoints_2d_projected` (head_crown vertex)
++ `keypoints_3d_smpl` per R4. Renders BoundaryLine indicator
+(threshold) + verdict from PR-9A library.
+
+**PR-9.1+** — additional coaching rules, each composed from PR-9A
+primitives. Order TBD; likely shoulder-hip rotation next, then
+spine angle, arm structure, weight transfer.
+
+[expansion: order of PR-9.1+ rules pending Jason call. Each rule
+needs an R4 data-source declaration + which PR-9A indicator types
+it composes.]
+
 ## Open scope sketches
 
-[expansion: which coaching rules ship in PR-9.0 vs PR-9.1 vs later]
+[expansion: copy guidelines, verdict thresholds, fixture strategy
+for coaching ground truth]
 
 ## Cross-references
 
