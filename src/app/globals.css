@@ -1,18 +1,22 @@
 /* SwingCue global styles */
 
-/* PR-8j Color System (LOCKED 2026-05-28)
+/* PR-8j Color System (LOCKED 2026-05-28, REVISED 2026-05-28 in pr-8j-hotfix)
    ----------------------------------------
-   Single source of truth for all app-level colors. Green is reserved
-   for verdict semantics ONLY — golf videos contain large green grass
-   backgrounds, so using green as the general UI accent both (a) blends
-   the UI with the field and (b) destroys green's ability to mean
-   "correct/ideal/target" in coaching verdicts.
+   Single source of truth for all app-level colors.
 
-   - App UI accents → --accent-primary (electric blue)
-   - Processing scan visuals → --scan-cyan
-   - Verdict "✓ correct" → --verdict-correct (the ONLY allowed green)
-   - For alpha tints, prefer color-mix(in srgb, var(...) X%, transparent)
-     over hardcoded rgba(...) to keep one source of truth.
+   Revised: blue/violet accents (#4F7CFF / #7C5CFF) introduced as the
+   "main UI accent" in PR-8j v1 were rolled back. SwingCue UI chrome
+   is minimal black/gray/white. The only colors that ever appear in
+   the UI outside of neutrals are the three reserved semantics below.
+
+   - App UI text / borders / fills → --text-primary (white) or --text-muted
+   - App UI subtle tints           → rgba(255, 255, 255, X) inline
+   - Processing scan visuals       → --scan-cyan (ProcessingScreen ONLY)
+   - Verdict "✓ correct"           → --verdict-correct (post-PR-9 ONLY)
+   - Severe error keypoint         → --verdict-severe (post-PR-9 ONLY)
+
+   Hard rule: outside the three reserved semantics above, no color
+   may appear in the UI. No blue, no green, no red anywhere else.
 */
 :root {
   --bg-primary:          #05080A;
@@ -20,15 +24,13 @@
   --surface-card:        #111820;
   --surface-card-alt:    #151B22;
 
-  --accent-primary:      #4F7CFF;  /* electric blue — main UI accent */
-  --accent-secondary:    #7C5CFF;  /* blue-violet — secondary accent */
-  --scan-cyan:           #38D6FF;  /* cyan — processing scan only */
+  --scan-cyan:           #38D6FF;  /* cyan — ProcessingScreen scan only */
 
   --motion-current:      #FFFFFF;
   --motion-current-warm: #FFD86B;  /* pale yellow — current-motion alt */
 
-  --verdict-correct:     #A8F040;  /* GREEN — semantic only */
-  --verdict-severe:      #FF3B30;  /* RED — severe error only */
+  --verdict-correct:     #A8F040;  /* GREEN — reserved for post-PR-9 verdict ✓ */
+  --verdict-severe:      #FF3B30;  /* RED — reserved for post-PR-9 severe error */
 
   --text-primary:        #E6EDF3;
   --text-muted:          #8B949E;

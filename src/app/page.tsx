@@ -164,7 +164,7 @@ export default function Home() {
           ══════════════════════════════════════ */}
           <section className="cta-section" id="cta">
             <div className="cta-inner">
-              <p className="eyebrow" style={{color:'var(--accent-primary)'}}>Early access · Free to join</p>
+              <p className="eyebrow" style={{color:'var(--text-primary)'}}>Early access · Free to join</p>
               <h2 className="cta-h2">
                 Know your fix before<br />your next round.
               </h2>
@@ -224,7 +224,7 @@ export default function Home() {
           z-index: 100;
           border-bottom: 1px solid rgba(255,255,255,0.05);
         }
-        .logo { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; color: var(--accent-primary); }
+        .logo { font-size: 18px; font-weight: 800; letter-spacing: -0.4px; color: var(--text-primary); }
         .nav-right { display: flex; align-items: center; gap: 10px; }
         .signin-link {
           font-size: 13px; font-weight: 600; color: #5a6a54;
@@ -232,7 +232,7 @@ export default function Home() {
         }
         .btn-nav {
           font-size: 13px; font-weight: 700;
-          color: #080c08; background: var(--accent-primary);
+          color: #080c08; background: var(--text-primary);
           text-decoration: none;
           padding: 8px 16px; border-radius: 100px;
           white-space: nowrap; min-height: 36px;
@@ -250,7 +250,7 @@ export default function Home() {
         .hero::after {
           content: ''; position: absolute;
           top: 0; right: -20px; width: 240px; height: 240px;
-          background: radial-gradient(circle, color-mix(in srgb, var(--accent-primary) 7%, transparent) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(255, 255, 255, 0.07) 0%, transparent 70%);
           pointer-events: none; z-index: 0;
         }
         .hero > * { position: relative; z-index: 1; }
@@ -258,14 +258,14 @@ export default function Home() {
         /* Live badge */
         .badge {
           display: inline-flex; align-items: center; gap: 7px;
-          font-size: 12px; font-weight: 700; color: var(--accent-primary);
-          background: color-mix(in srgb, var(--accent-primary) 9%, transparent);
-          border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent);
+          font-size: 12px; font-weight: 700; color: var(--text-primary);
+          background: rgba(255, 255, 255, 0.09);
+          border: 1px solid rgba(255, 255, 255, 0.2);
           padding: 6px 13px 6px 10px; border-radius: 100px;
           width: fit-content;
         }
         .dot {
-          width: 7px; height: 7px; background: var(--accent-primary);
+          width: 7px; height: 7px; background: var(--text-primary);
           border-radius: 50%; flex-shrink: 0;
           animation: pulse 2s ease-in-out infinite;
         }
@@ -280,7 +280,7 @@ export default function Home() {
           line-height: 1.08; letter-spacing: -1.4px;
           color: #f0f0ee;
         }
-        .h1-green { color: var(--accent-primary); }
+        .h1-green { color: var(--text-primary); }
 
         .sub {
           font-size: 16px; line-height: 1.65; color: #6a7a64;
@@ -293,28 +293,26 @@ export default function Home() {
         }
         .out-pill {
           font-size: 12px; font-weight: 700;
-          color: var(--accent-primary);
-          background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
-          border: 1px solid color-mix(in srgb, var(--accent-primary) 18%, transparent);
+          color: var(--text-primary);
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.18);
           padding: 5px 11px; border-radius: 100px;
           white-space: nowrap;
         }
-        .out-sep { color: color-mix(in srgb, var(--accent-primary) 25%, transparent); font-size: 14px; }
+        .out-sep { color: rgba(255, 255, 255, 0.25); font-size: 14px; }
 
         /* Primary CTA */
         .btn-cta {
           display: flex; align-items: center; justify-content: center;
-          background: var(--accent-primary); color: #080c08;
+          background: var(--text-primary); color: #080c08;
           font-family: inherit; font-size: 16px; font-weight: 800;
           height: 56px; border-radius: 100px; border: none;
           cursor: pointer; text-decoration: none; width: 100%;
-          box-shadow: 0 0 32px color-mix(in srgb, var(--accent-primary) 22%, transparent);
-          transition: transform 0.12s, box-shadow 0.12s;
+          transition: transform 0.12s;
           letter-spacing: -0.2px; -webkit-appearance: none;
         }
         .btn-cta:active {
           transform: scale(0.97);
-          box-shadow: 0 0 12px color-mix(in srgb, var(--accent-primary) 15%, transparent);
         }
 
         .note {
@@ -333,18 +331,18 @@ export default function Home() {
         }
         .result-card {
           background: #0c130b;
-          border: 1px solid color-mix(in srgb, var(--accent-primary) 12%, transparent);
+          border: 1px solid rgba(255, 255, 255, 0.12);
           border-radius: 20px;
           overflow: hidden;
         }
         .result-header {
           display: flex; justify-content: space-between; align-items: center;
           padding: 14px 18px;
-          background: color-mix(in srgb, var(--accent-primary) 5%, transparent);
-          border-bottom: 1px solid color-mix(in srgb, var(--accent-primary) 8%, transparent);
+          background: rgba(255, 255, 255, 0.05);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
         .result-score {
-          font-size: 15px; font-weight: 800; color: var(--accent-primary);
+          font-size: 15px; font-weight: 800; color: var(--text-primary);
           letter-spacing: -0.3px;
         }
         .result-sev {
@@ -365,7 +363,7 @@ export default function Home() {
         }
         .block-title {
           font-size: 24px; font-weight: 800;
-          color: var(--accent-primary); letter-spacing: -0.6px;
+          color: var(--text-primary); letter-spacing: -0.6px;
           line-height: 1.1;
         }
         .block-body {
@@ -395,7 +393,7 @@ export default function Home() {
         .eyebrow {
           font-size: 11px; font-weight: 700;
           letter-spacing: 0.1em; text-transform: uppercase;
-          color: var(--accent-primary); margin-bottom: 8px;
+          color: var(--text-primary); margin-bottom: 8px;
         }
         .h2 {
           font-size: 26px; font-weight: 800; line-height: 1.15;
@@ -404,8 +402,8 @@ export default function Home() {
         .ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 24px; }
         .li { display: flex; gap: 16px; align-items: flex-start; }
         .num {
-          font-size: 11px; font-weight: 800; color: var(--accent-primary);
-          background: color-mix(in srgb, var(--accent-primary) 8%, transparent); border: 1px solid color-mix(in srgb, var(--accent-primary) 15%, transparent);
+          font-size: 11px; font-weight: 800; color: var(--text-primary);
+          background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 8px; padding: 6px 10px; flex-shrink: 0;
           letter-spacing: 0.04em; min-width: 40px; text-align: center;
         }
@@ -427,7 +425,7 @@ export default function Home() {
           font-size: 14px; color: #5a6a54; line-height: 1.5;
         }
         .for-check {
-          color: var(--accent-primary); font-size: 14px; font-weight: 800;
+          color: var(--text-primary); font-size: 14px; font-weight: 800;
           flex-shrink: 0; margin-top: 1px;
         }
 
@@ -437,7 +435,7 @@ export default function Home() {
         }
         .cta-inner {
           background: linear-gradient(155deg, #101c09 0%, #0a1207 50%, #080c08 100%);
-          border: 1px solid color-mix(in srgb, var(--accent-primary) 15%, transparent);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 22px;
           padding: 36px 22px;
           text-align: center;
@@ -448,7 +446,7 @@ export default function Home() {
           content: ''; position: absolute;
           top: -60px; left: 50%; transform: translateX(-50%);
           width: 280px; height: 200px;
-          background: radial-gradient(ellipse, color-mix(in srgb, var(--accent-primary) 8%, transparent) 0%, transparent 70%);
+          background: radial-gradient(ellipse, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
           pointer-events: none;
         }
         .cta-h2 {
@@ -469,7 +467,7 @@ export default function Home() {
           align-items: center; text-align: center;
         }
         .footer-p { font-size: 13px; color: #2a3828; margin: 0; }
-        .flink { color: var(--accent-primary); text-decoration: none; }
+        .flink { color: var(--text-primary); text-decoration: none; }
         .copy { font-size: 11px; color: #1a2818; margin: 0; }
       `}</style>
     </>

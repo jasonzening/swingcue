@@ -865,9 +865,9 @@ const kfBtnDangerStyle: CSSProperties = {
 const saveKfBtnStyle: CSSProperties = {
   width: '100%',
   padding: '6px 8px',
-  background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
-  color: 'var(--accent-primary)',
-  border: '1px solid color-mix(in srgb, var(--accent-primary) 45%, transparent)',
+  background: 'rgba(255, 255, 255, 0.12)',
+  color: 'var(--text-primary)',
+  border: '1px solid rgba(255, 255, 255, 0.45)',
   borderRadius: 4,
   fontSize: 11,
   fontWeight: 600,

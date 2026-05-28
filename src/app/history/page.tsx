@@ -197,9 +197,9 @@ const css = `
   .page { min-height: 100vh; background: #080c08; font-family: 'DM Sans', system-ui, sans-serif; max-width: 430px; margin: 0 auto; color: #f0f0ee; display: flex; flex-direction: column; }
 
   .header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); position: sticky; top: 0; background: rgba(8,12,8,0.95); backdrop-filter: blur(16px); z-index: 50; }
-  .logo { font-size: 18px; font-weight: 800; color: var(--accent-primary); letter-spacing: -0.3px; text-decoration: none; }
+  .logo { font-size: 18px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.3px; text-decoration: none; }
   .header-right { display: flex; align-items: center; gap: 14px; }
-  .upload-link { font-size: 13px; font-weight: 700; color: var(--accent-primary); text-decoration: none; background: color-mix(in srgb, var(--accent-primary) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent); padding: 6px 14px; border-radius: 100px; }
+  .upload-link { font-size: 13px; font-weight: 700; color: var(--text-primary); text-decoration: none; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); padding: 6px 14px; border-radius: 100px; }
   .signout-btn { font-size: 13px; font-weight: 600; color: #3a4a35; background: none; border: none; cursor: pointer; font-family: inherit; }
 
   .main { flex: 1; display: flex; flex-direction: column; padding-bottom: 52px; }
@@ -210,7 +210,7 @@ const css = `
   .empty-icon { font-size: 52px; }
   .empty-title { font-size: 20px; font-weight: 800; color: #f0f0ee; letter-spacing: -0.4px; }
   .empty-sub { font-size: 14px; color: #3a4a35; line-height: 1.55; }
-  .btn-cta { background: var(--accent-primary); color: #080c08; font-family: inherit; font-size: 16px; font-weight: 800; height: 52px; border-radius: 100px; border: none; cursor: pointer; padding: 0 28px; text-decoration: none; display: flex; align-items: center; }
+  .btn-cta { background: var(--text-primary); color: #080c08; font-family: inherit; font-size: 16px; font-weight: 800; height: 52px; border-radius: 100px; border: none; cursor: pointer; padding: 0 28px; text-decoration: none; display: flex; align-items: center; }
 
   .list { display: flex; flex-direction: column; gap: 0; }
   .item { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.12s; }
@@ -224,11 +224,11 @@ const css = `
   .item-meta { display: flex; gap: 6px; font-size: 11px; color: #2a3a25; }
 
   .item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
-  .item-score { font-size: 22px; font-weight: 800; color: var(--accent-primary); letter-spacing: -0.5px; line-height: 1; }
+  .item-score { font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; line-height: 1; }
   .item-sev { font-size: 10px; font-weight: 700; text-transform: capitalize; }
   .item-status { font-size: 11px; color: #3a4a35; text-transform: capitalize; }
   .chevron { font-size: 20px; color: #2a3a25; line-height: 1; margin-top: 4px; }
 
-  .spinner { width: 32px; height: 32px; border: 3px solid color-mix(in srgb, var(--accent-primary) 15%, transparent); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .spinner { width: 32px; height: 32px; border: 3px solid rgba(255, 255, 255, 0.15); border-top-color: var(--text-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 `;

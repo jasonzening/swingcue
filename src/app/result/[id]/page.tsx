@@ -165,9 +165,14 @@ export default function ResultPage() {
   >(undefined);
 
   useEffect(() => {
+    let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+
     async function load() {
+      if (cancelled) return;
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled) return;
       if (!user) { router.replace('/sign-in'); return; }
 
       const { data: vid } = await supabase
@@ -176,13 +181,28 @@ export default function ResultPage() {
         .eq('id', videoId)
         .eq('user_id', user.id)
         .single();
+      if (cancelled) return;
 
-      if (!vid || vid.status !== 'completed') { setState('error'); return; }
+      // PR-8j-hotfix Phase B: status === 'uploaded' is the transient
+      // state for fresh uploads (between INSERT in /upload and
+      // /api/analyze creating the swing_analysis row). Don't error
+      // out — let the load fall through to the swing_analysis fetch
+      // and retry-poll below until /api/analyze has created the row.
+      // Only status === 'failed' is terminal here.
+      if (!vid) { setState('error'); return; }
+      if (vid.status === 'failed') { setState('error'); return; }
 
-      const { data: signed } = await supabase.storage
-        .from('swing-videos')
-        .createSignedUrl(vid.storage_path, 3600);
-      if (signed?.signedUrl) setVideoUrl(signed.signedUrl);
+      // Storage signed URL only when the storage_path has been written.
+      // Fresh uploads have storage_path='' until backgroundUploadAndAnalyze
+      // PATCHes it post-storage-upload — skip the createSignedUrl call
+      // until the path is there so we don't hit a Supabase error for
+      // the empty key.
+      if (vid.storage_path) {
+        const { data: signed } = await supabase.storage
+          .from('swing-videos')
+          .createSignedUrl(vid.storage_path, 3600);
+        if (!cancelled && signed?.signedUrl) setVideoUrl(signed.signedUrl);
+      }
 
       // PR-4: hydrate the 17-COCO pose timeline if present on the row.
       // Inline cast pattern matches the rest of this file (no canonical
@@ -192,13 +212,27 @@ export default function ResultPage() {
         setPoseTimeline(pt);
       }
 
+      // .maybeSingle() returns { data: null, error: null } when the row
+      // doesn't exist yet (vs .single() which surfaces an error). Use
+      // it so the fresh-upload race window doesn't trip the error path.
       const { data: ana } = await supabase
         .from('swing_analysis')
         .select('*')
         .eq('video_id', videoId)
-        .single();
+        .maybeSingle();
+      if (cancelled) return;
 
-      if (!ana) { setState('error'); return; }
+      if (!ana) {
+        // PR-8j-hotfix Phase B: fresh upload window — INSERT done,
+        // but /api/analyze hasn't created swing_analysis yet (storage
+        // upload still in flight, or analyze just fired and the row
+        // hasn't propagated). Stay in 'loading' and re-poll in 2s.
+        // The window is bounded by the storage upload duration; once
+        // /api/analyze returns and the row is visible, we proceed
+        // normally and hit classifyWhamState below.
+        retryTimeout = setTimeout(() => { if (!cancelled) load(); }, 2000);
+        return;
+      }
 
       const issueType = (ana.issue_type as MainIssueType) ?? 'early_extension';
       setIssue(issueType);
@@ -297,6 +331,10 @@ export default function ResultPage() {
       setState('ready');
     }
     load();
+    return () => {
+      cancelled = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
+    };
   }, [videoId, router]);
 
   // PR-8d.1: when wham_status flips to 'ready', fetch the per-frame
@@ -969,21 +1007,21 @@ body { background:#050805; }
 .page.page-tune-wide { max-width:820px; }
 .page-center { min-height:100dvh; background:#050805; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:40px; font-family:'DM Sans',system-ui; }
 .hdr { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#050805; border-bottom:1px solid rgba(255,255,255,0.05); flex-shrink:0; }
-.hdr-logo { font-size:16px; font-weight:800; color:var(--accent-primary); letter-spacing:-0.3px; }
+.hdr-logo { font-size:16px; font-weight:800; color:var(--text-primary); letter-spacing:-0.3px; }
 .btn-hdr-back { font-size:18px; color:#4a5a44; background:none; border:none; cursor:pointer; padding:4px 8px; font-family:inherit; }
-.btn-new { font-size:12px; font-weight:700; color:var(--accent-primary); background:color-mix(in srgb, var(--accent-primary) 10%, transparent); border:1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent); padding:6px 14px; border-radius:100px; cursor:pointer; font-family:inherit; }
+.btn-new { font-size:12px; font-weight:700; color:var(--text-primary); background:rgba(255, 255, 255, 0.1); border:1px solid rgba(255, 255, 255, 0.25); padding:6px 14px; border-radius:100px; cursor:pointer; font-family:inherit; }
 .no-vid { background:#0a100a; padding:60px 24px; text-align:center; color:#3a4a35; font-size:14px; }
 .coaching-bar { padding:14px 18px 20px; display:flex; flex-direction:column; gap:8px; border-top:1px solid rgba(255,255,255,0.05); background:#050805; }
 .issue-row { display:flex; align-items:center; gap:8px; }
 .issue-dot { font-size:16px; flex-shrink:0; }
-.issue-text { font-size:17px; font-weight:800; color:var(--accent-primary); letter-spacing:-0.4px; line-height:1.1; }
+.issue-text { font-size:17px; font-weight:800; color:var(--text-primary); letter-spacing:-0.4px; line-height:1.1; }
 .cue-row { padding-left:24px; }
 .cue-quote { font-size:14px; font-style:italic; font-weight:600; color:#7a8a72; line-height:1.4; }
 .wham-disclaimer { margin:10px 18px 14px; padding:0; font-size:12px; color:var(--text-muted); text-align:center; line-height:1.4; font-weight:400; }
-.spinner { width:32px; height:32px; border:3px solid color-mix(in srgb, var(--accent-primary) 15%, transparent); border-top-color:var(--accent-primary); border-radius:50%; animation:spin 0.8s linear infinite; }
+.spinner { width:32px; height:32px; border:3px solid rgba(255, 255, 255, 0.15); border-top-color:var(--text-primary); border-radius:50%; animation:spin 0.8s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .load-txt, .err-txt { font-size:14px; color:#3a4a35; font-family:'DM Sans',system-ui; }
-.btn-back { font-size:14px; font-weight:700; color:var(--accent-primary); background:none; border:none; cursor:pointer; font-family:'DM Sans',system-ui; }
+.btn-back { font-size:14px; font-weight:700; color:var(--text-primary); background:none; border:none; cursor:pointer; font-family:'DM Sans',system-ui; }
 
 /* PR-8d.0 wham-screen states (processing + failed) */
 .wham-screen { gap:18px; padding:24px; max-width:430px; }
@@ -993,13 +1031,13 @@ body { background:#050805; }
    removed the call site from ProcessingScreen but the rules stay
    dead-code-safe for now. */
 .wham-anim { position:relative; width:96px; height:96px; display:flex; align-items:center; justify-content:center; margin-bottom:4px; }
-.wham-anim-ring { position:absolute; inset:0; border-radius:50%; background:color-mix(in srgb, var(--accent-primary) 8%, transparent); animation:wham-ring 1.8s ease-in-out infinite; }
-.wham-anim-core { width:40px; height:40px; border-radius:50%; background:var(--accent-primary); animation:wham-core 1.8s ease-in-out infinite; }
+.wham-anim-ring { position:absolute; inset:0; border-radius:50%; background:rgba(255, 255, 255, 0.08); animation:wham-ring 1.8s ease-in-out infinite; }
+.wham-anim-core { width:40px; height:40px; border-radius:50%; background:var(--text-primary); animation:wham-core 1.8s ease-in-out infinite; }
 @keyframes wham-ring { 0%,100% { transform:scale(1); opacity:0.85; } 50% { transform:scale(1.22); opacity:0.30; } }
 @keyframes wham-core { 0%,100% { transform:scale(1); } 50% { transform:scale(0.78); } }
 .wham-title { font-size:20px; font-weight:800; color:#f0f0ee; letter-spacing:-0.3px; text-align:center; padding:0 12px; }
 /* PR-8d.2 part 2 2C-1 — body-scan ProcessingScreen accent title. */
-.wham-title-accent { color:var(--accent-primary); }
+.wham-title-accent { color:var(--text-primary); }
 .wham-detail { font-size:14px; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; }
 .wham-elapsed { font-size:12px; color:#3a4a35; font-family:'DM Sans',system-ui; margin-top:4px; }
 /* PR-8d.2 part 2 2C-3 — video-frame body-scan visual.
@@ -1089,7 +1127,7 @@ body { background:#050805; }
 .wham-club-pills { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
 .wham-club-pill { display:flex; align-items:center; gap:6px; padding:8px 14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:100px; color:#a8a89a; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s; }
 .wham-club-pill:active { transform:scale(0.96); }
-.wham-club-pill-on { background:color-mix(in srgb, var(--accent-primary) 14%, transparent); border-color:color-mix(in srgb, var(--accent-primary) 55%, transparent); color:var(--accent-primary); }
+.wham-club-pill-on { background:transparent; border-color:var(--text-primary); color:var(--text-primary); }
 .wham-club-icon { font-size:14px; line-height:1; }
 .wham-club-label { line-height:1; }
 .wham-club-save-err { font-size:11px; color:#d08060; text-align:center; margin:2px 0 0; }
@@ -1100,19 +1138,19 @@ body { background:#050805; }
 .wham-pre-disclaimer { font-size:11px; color:var(--text-muted); text-align:center; line-height:1.5; max-width:320px; padding:14px 16px 0; margin:8px 0 0; border-top:1px solid rgba(255,255,255,0.05); }
 /* PR-8d.2 part 2 2A — failed_preprocessing "What to try" help row. */
 .wham-help-row { width:100%; max-width:340px; padding:0 12px; }
-.wham-help-header { font-size:13px; font-weight:700; color:var(--accent-primary); margin:0 0 8px; text-align:left; }
+.wham-help-header { font-size:13px; font-weight:700; color:var(--text-primary); margin:0 0 8px; text-align:left; }
 .wham-help-bullets { list-style:none; padding:0; margin:0; }
 .wham-help-bullets li { font-size:13px; color:#7a8a72; line-height:1.5; padding-left:16px; position:relative; margin-bottom:6px; text-align:left; }
-.wham-help-bullets li::before { content:"•"; position:absolute; left:2px; top:0; color:var(--accent-primary); font-weight:700; }
+.wham-help-bullets li::before { content:"•"; position:absolute; left:2px; top:0; color:var(--text-primary); font-weight:700; }
 /* PR-8d.2 part 2 2B — legacy_absent pitch (message + upload CTA above the bare video). */
-.legacy-pitch { display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px 18px 18px; background:color-mix(in srgb, var(--accent-primary) 5%, transparent); border-bottom:1px solid color-mix(in srgb, var(--accent-primary) 12%, transparent); }
+.legacy-pitch { display:flex; flex-direction:column; align-items:center; gap:12px; padding:20px 18px 18px; background:rgba(255, 255, 255, 0.05); border-bottom:1px solid rgba(255, 255, 255, 0.12); }
 .legacy-message { font-size:14px; color:#c0c0bb; text-align:center; line-height:1.55; max-width:340px; margin:0; padding:0 4px; }
-.legacy-cta { background:var(--accent-primary); color:#080c08; font-family:inherit; font-size:14px; font-weight:800; height:44px; padding:0 22px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 16px color-mix(in srgb, var(--accent-primary) 22%, transparent); white-space:nowrap; }
+.legacy-cta { background:var(--text-primary); color:#080c08; font-family:inherit; font-size:14px; font-weight:800; height:44px; padding:0 22px; border-radius:100px; border:none; cursor:pointer; white-space:nowrap; }
 .legacy-cta:active { transform:scale(0.97); }
-.mono { font-family:ui-monospace, SFMono-Regular, "Menlo", monospace; color:var(--accent-primary); }
+.mono { font-family:ui-monospace, SFMono-Regular, "Menlo", monospace; color:var(--text-primary); }
 .wham-fail-icon { width:56px; height:56px; border-radius:50%; background:rgba(240,96,64,0.12); border:1.5px solid rgba(240,96,64,0.4); color:#f06040; font-size:30px; font-weight:800; display:flex; align-items:center; justify-content:center; }
 .wham-fail-message { font-size:14px; color:#c0c0bb; line-height:1.55; text-align:center; max-width:340px; padding:0 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:14px 16px; }
-.wham-retry-btn { margin-top:4px; background:var(--accent-primary); color:#080c08; font-family:inherit; font-size:15px; font-weight:800; height:48px; padding:0 24px; border-radius:100px; border:none; cursor:pointer; box-shadow:0 0 20px color-mix(in srgb, var(--accent-primary) 22%, transparent); }
+.wham-retry-btn { margin-top:4px; background:var(--text-primary); color:#080c08; font-family:inherit; font-size:15px; font-weight:800; height:48px; padding:0 24px; border-radius:100px; border:none; cursor:pointer; }
 .wham-retry-btn:active { transform:scale(0.97); }
 .wham-support-ref { font-size:11px; color:#3a4a35; margin-top:6px; }
 `;
