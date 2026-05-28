@@ -3,36 +3,22 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import type { SwingViewType } from '@/lib/types/swing';
+
+// PR-8i.0 upload-flow refactor — auto-start on file select; bake
+// camera_angle='face_on' (DTL no longer supported in the WHAM
+// pipeline); defer club selection to PR-8i.1 (collected on the
+// processing-wait screen, not pre-flight). No camera-angle picker
+// + no club picker = no config screen between "file picked" and
+// "upload running". File pick is the commit point.
 
 type Stage = 'idle' | 'uploading' | 'analyzing' | 'done' | 'error';
-type ClubType = 'iron' | 'driver' | 'unknown';
 type SourceType = 'recorded' | 'uploaded';
-
-const VIEW_OPTIONS: { value: SwingViewType; label: string; hint: string }[] = [
-  { value: 'face_on', label: 'Face-On', hint: 'Camera in front' },
-  { value: 'down_the_line', label: 'Down the Line', hint: 'Camera behind' },
-];
-
-const CLUB_OPTIONS: { value: ClubType; label: string; icon: string }[] = [
-  { value: 'iron', label: 'Iron', icon: '⛳' },
-  { value: 'driver', label: 'Driver', icon: '🏌️' },
-  { value: 'unknown', label: 'Not sure', icon: '❓' },
-];
-
-const STAGE_STEPS = [
-  { key: 'uploading', label: 'Uploading video…', icon: '⬆️' },
-  { key: 'analyzing', label: 'Analyzing your swing…', icon: '🔍' },
-];
 
 export default function UploadPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [stage, setStage] = useState<Stage>('idle');
-  const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [viewType, setViewType] = useState<SwingViewType>('face_on');
-  const [clubType, setClubType] = useState<ClubType>('iron');
   const [uploadPct, setUploadPct] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [videoId, setVideoId] = useState('');
@@ -40,6 +26,10 @@ export default function UploadPage() {
   const recordRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const sourceTypeRef = useRef<SourceType>('uploaded');
+  // Hold the picked File on a ref instead of state so handleAnalyze can
+  // be invoked immediately from handleFile without waiting for a state
+  // batch + render cycle (PR-8i.0 auto-start).
+  const fileRef = useRef<File | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -64,11 +54,14 @@ export default function UploadPage() {
       return;
     }
     setErrorMsg('');
-    setFile(f);
+    fileRef.current = f;
     sourceTypeRef.current = source;
     const url = URL.createObjectURL(f);
     setPreviewUrl(url);
-    setStage('idle');
+    // PR-8i.0 auto-start: skip the config-screen review step. Upload
+    // begins immediately on file pick. handleAnalyze reads from fileRef
+    // so no state-batch race.
+    void handleAnalyze(f);
   };
 
   const handleSignOut = useCallback(async () => {
@@ -79,7 +72,7 @@ export default function UploadPage() {
 
   const reset = () => {
     setStage('idle');
-    setFile(null);
+    fileRef.current = null;
     setPreviewUrl(null);
     setUploadPct(0);
     setErrorMsg('');
@@ -89,7 +82,10 @@ export default function UploadPage() {
     if (uploadRef.current) uploadRef.current.value = '';
   };
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (fileOverride?: File) => {
+    // PR-8i.0: accept the picked file as a param so auto-start
+    // doesn't have to wait for state propagation.
+    const file = fileOverride ?? fileRef.current;
     if (!file) return;
     setErrorMsg('');
 
@@ -126,7 +122,11 @@ export default function UploadPage() {
       setStage('uploading');
       setUploadPct(10);
 
-      // Create DB record
+      // Create DB record.
+      // PR-8i.0: view_type baked to 'face_on' (DTL not supported by
+      // the WHAM pipeline). club_type baked to 'unknown'; PR-8i.1
+      // will collect the real value on the processing-wait screen
+      // and PATCH it before the user lands on /result.
       const { data: videoRow, error: insertErr } = await supabase
         .from('swing_videos')
         .insert({
@@ -134,10 +134,10 @@ export default function UploadPage() {
           storage_path: '',
           original_filename: file.name,
           file_size_bytes: file.size,
-          view_type: viewType,
+          view_type: 'face_on',
           status: 'uploaded',
           source_type: sourceTypeRef.current,
-          club_type: clubType,
+          club_type: 'unknown',
         })
         .select('id')
         .single();
@@ -263,84 +263,38 @@ export default function UploadPage() {
 
       <main className="main">
 
-        {/* ── IDLE STATE ── */}
-        {(stage === 'idle' || stage === 'error') && (
-          <>
-            {!file ? (
-              /* ── No file selected: show two entry points ── */
-              <div className="entry-screen">
-                <h1 className="h1">Upload your swing</h1>
-                <p className="sub">
-                  Film your swing. See it in red.<br />Fix it in green.
-                </p>
+        {/* ── IDLE STATE (entry screen — auto-start on file pick). ──
+            PR-8i.0: the previous "file picked → config screen with
+            camera-angle + club pickers → click Analyze" middle step
+            is removed. handleFile → handleAnalyze fires in one
+            stroke, so there's no on-screen state between "no file"
+            and "uploading". Error state has its own screen below
+            (with a Try Again CTA that calls reset()). */}
+        {stage === 'idle' && (
+          <div className="entry-screen">
+            <h1 className="h1">Upload your swing</h1>
+            <p className="sub">
+              Film your swing. See it in red.<br />Fix it in green.
+            </p>
 
-                <div className="two-buttons">
-                  <button className="entry-btn record-btn" onClick={() => recordRef.current?.click()}>
-                    <span className="entry-icon">📹</span>
-                    <span className="entry-label">Record Swing</span>
-                    <span className="entry-hint">Open camera</span>
-                  </button>
-                  <button className="entry-btn upload-btn" onClick={() => uploadRef.current?.click()}>
-                    <span className="entry-icon">📁</span>
-                    <span className="entry-label">Choose Video</span>
-                    <span className="entry-hint">From library</span>
-                  </button>
-                </div>
+            <div className="two-buttons">
+              <button className="entry-btn record-btn" onClick={() => recordRef.current?.click()}>
+                <span className="entry-icon">📹</span>
+                <span className="entry-label">Record Swing</span>
+                <span className="entry-hint">Open camera</span>
+              </button>
+              <button className="entry-btn upload-btn" onClick={() => uploadRef.current?.click()}>
+                <span className="entry-icon">📁</span>
+                <span className="entry-label">Choose Video</span>
+                <span className="entry-hint">From library</span>
+              </button>
+            </div>
 
-                <div className="tips">
-                  <p className="tip">💡 Film from the front (face-on) or from behind (down the line)</p>
-                  <p className="tip">📱 Landscape mode works best · 10–30 seconds is ideal</p>
-                </div>
-              </div>
-
-            ) : (
-              /* ── File selected: show config + preview ── */
-              <div className="config-screen">
-                {/* Video preview */}
-                <div className="preview-wrap">
-                  <video className="preview-video" src={previewUrl ?? ''} controls playsInline muted />
-                  <button className="change-btn" onClick={reset}>✕ Change</button>
-                </div>
-
-                {/* View type */}
-                <div className="section">
-                  <p className="section-label">Camera angle</p>
-                  <div className="toggle-row">
-                    {VIEW_OPTIONS.map(opt => (
-                      <button key={opt.value}
-                        className={`toggle-btn ${viewType === opt.value ? 'active' : ''}`}
-                        onClick={() => setViewType(opt.value)}>
-                        <span className="tb-label">{opt.label}</span>
-                        <span className="tb-hint">{opt.hint}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Club type */}
-                <div className="section">
-                  <p className="section-label">Club</p>
-                  <div className="club-row">
-                    {CLUB_OPTIONS.map(opt => (
-                      <button key={opt.value}
-                        className={`club-btn ${clubType === opt.value ? 'active' : ''}`}
-                        onClick={() => setClubType(opt.value)}>
-                        <span>{opt.icon}</span>
-                        <span>{opt.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {errorMsg && <p className="error-msg">{errorMsg}</p>}
-
-                <button className="btn-analyze" onClick={handleAnalyze}>
-                  Analyze My Swing →
-                </button>
-                <p className="notice">Your video is private and only visible to you</p>
-              </div>
-            )}
-          </>
+            <div className="tips">
+              <p className="tip">💡 Film face-on (camera in front of you)</p>
+              <p className="tip">📱 Landscape mode works best · 4–10 seconds is ideal</p>
+            </div>
+          </div>
         )}
 
         {/* ── UPLOADING STATE ── */}
@@ -391,8 +345,12 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* ── ERROR STATE ── */}
-        {stage === 'error' && file && (
+        {/* ── ERROR STATE ──
+            PR-8i.0: no longer guarded on `file` (state removed —
+            errors can fire after fileRef was cleared by a partial
+            reset). The errorMsg + Try Again CTA + reset() flow back
+            to the entry screen are the recovery path. */}
+        {stage === 'error' && (
           <div className="status-screen center">
             <div className="status-icon-lg">⚠️</div>
             <h2 className="status-title">Something went wrong</h2>
