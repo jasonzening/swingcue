@@ -416,6 +416,7 @@ export default function ResultPage() {
         expectedSeconds={whamUiState.expectedSeconds}
         onBack={() => router.push('/history')}
         videoUrl={videoUrl}
+        videoId={videoId}
       />
     );
   }
@@ -610,16 +611,26 @@ const WHAM_BODY_SHAPES = (
   </>
 );
 
+type ClubPick = 'iron' | 'driver' | 'unknown';
+
+const CLUB_PICKER_OPTIONS: { value: ClubPick; label: string; icon: string }[] = [
+  { value: 'iron',    label: 'Iron',     icon: '⛳' },
+  { value: 'driver',  label: 'Driver',   icon: '🏌️' },
+  { value: 'unknown', label: 'Not sure', icon: '❓' },
+];
+
 function ProcessingScreen({
   startedAt,
   expectedSeconds,
   onBack,
   videoUrl,
+  videoId,
 }: {
   startedAt: number;
   expectedSeconds: number;
   onBack: () => void;
   videoUrl: string;
+  videoId: string;
 }) {
   // R2 ETA logic — re-render every 1s to update the elapsed counter.
   // Frontend NEVER marks the row failed; we just adjust the message.
@@ -657,6 +668,44 @@ function ProcessingScreen({
     if (!videoUrl) setVideoOk(false);
     else setVideoOk(null); // reset to loading when URL changes
   }, [videoUrl]);
+
+  // PR-8i.1: club picker. Default 'unknown' matches the row state
+  // baked by PR-8i.0 at upload time — the user's pick PATCHes
+  // swing_videos.club_type while WHAM runs in the background.
+  // Fire-and-forget by design: WHAM completion + route navigation
+  // may unmount this component before the PATCH resolves, and
+  // that's acceptable — club_type is metadata, not a coaching
+  // metric source (R4 separation per PR-9_DIRECTION.md).
+  //
+  // Refresh edge: if the user picks, then reloads the page mid-
+  // wait, state restarts at 'unknown' while the DB has their pick.
+  // Re-picking idempotently PATCHes the same value. Acceptable
+  // for MVP; a future PR can hydrate from row state.
+  const [clubPick, setClubPick] = useState<ClubPick>('unknown');
+  const [clubSaveError, setClubSaveError] = useState(false);
+
+  const handleClubPick = (next: ClubPick) => {
+    setClubPick(next);
+    setClubSaveError(false);
+    // Fire-and-forget PATCH. supabase client built inline since
+    // ProcessingScreen has no parent-provided client.
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { error } = await supabase
+          .from('swing_videos')
+          .update({ club_type: next })
+          .eq('id', videoId);
+        if (error) {
+          console.error('[pr-8i.1] club_type PATCH error:', error);
+          setClubSaveError(true);
+        }
+      } catch (err) {
+        console.error('[pr-8i.1] club_type PATCH threw:', err);
+        setClubSaveError(true);
+      }
+    })();
+  };
 
   const title = 'Building your 3D swing model';
   const subtitle = 'Analyzing your body rotation, spine angle, hip movement, and head stability.';
@@ -729,6 +778,35 @@ function ProcessingScreen({
       </p>
 
       <p className="wham-eta">{eta}</p>
+
+      {/* PR-8i.1: club picker. PR-8i.0 deferred this from the
+          upload page to here (the processing-wait screen) so the
+          user has something light to do during the 60-90s WHAM
+          run rather than picking metadata before the upload
+          fires. PATCH is fire-and-forget — completion of WHAM +
+          route navigation may unmount before the network round-
+          trip resolves, and that's fine. */}
+      <div className="wham-club-row">
+        <p className="wham-club-prompt">What club did you use?</p>
+        <div className="wham-club-pills">
+          {CLUB_PICKER_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`wham-club-pill ${clubPick === opt.value ? 'wham-club-pill-on' : ''}`}
+              onClick={() => handleClubPick(opt.value)}
+            >
+              <span className="wham-club-icon" aria-hidden="true">{opt.icon}</span>
+              <span className="wham-club-label">{opt.label}</span>
+            </button>
+          ))}
+        </div>
+        {clubSaveError && (
+          <p className="wham-club-save-err">
+            Couldn&apos;t save your pick — tap again to retry.
+          </p>
+        )}
+      </div>
 
       {/* PR-8d.2 part 2 2A: pre-disclaimer footer — sets the
           "approximate" expectation BEFORE the skeleton overlay
@@ -987,6 +1065,18 @@ body { background:#050805; }
 .wham-subtitle { font-size:13px; font-weight:500; color:#c0c0bb; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; margin:0; }
 .wham-elapsed-mini { font-size:11px; font-weight:400; color:#5a6a55; text-align:center; font-family:'DM Sans',system-ui; margin:6px 0 0; }
 .wham-eta { font-size:12px; font-weight:400; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; margin:4px 0 0; }
+/* PR-8i.1 — club picker on the processing-wait screen. Compact pill
+   row centered below the ETA line. Selected state uses the accent
+   palette; unselected pills sit in muted neutrals. */
+.wham-club-row { display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:14px; padding:0 18px; }
+.wham-club-prompt { font-size:13px; font-weight:600; color:#a8a89a; text-align:center; margin:0; letter-spacing:0.1px; }
+.wham-club-pills { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+.wham-club-pill { display:flex; align-items:center; gap:6px; padding:8px 14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:100px; color:#a8a89a; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s; }
+.wham-club-pill:active { transform:scale(0.96); }
+.wham-club-pill-on { background:rgba(168,240,64,0.14); border-color:rgba(168,240,64,0.55); color:#a8f040; }
+.wham-club-icon { font-size:14px; line-height:1; }
+.wham-club-label { line-height:1; }
+.wham-club-save-err { font-size:11px; color:#d08060; text-align:center; margin:2px 0 0; }
 /* PR-8d.2 part 2 2A — processing stage hint (RETIRED in 2C-1 but
    class kept dead-code-safe for any external reference) +
    pre-disclaimer footer. */
