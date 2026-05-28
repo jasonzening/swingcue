@@ -398,17 +398,20 @@ export default function ResultPage() {
     );
   }
 
-  if (state === 'error' || !overlayTimeline) {
-    return (
-      <div className="page-center">
-        <p className="err-txt">Result not found or still processing.</p>
-        <button className="btn-back" onClick={() => router.push('/upload')}>← Back to upload</button>
-        <style>{css}</style>
-      </div>
-    );
-  }
-
   // ── PR-8d.0: wham_status branch (overrides full result UI) ────────
+  //
+  // PR-8j-hotfix: every wham_status branch MUST be checked BEFORE the
+  // legacy `state==='error' || !overlayTimeline` short-circuit below.
+  // For a fresh WHAM-only upload, PATH 0/A/B in load() all fail (no
+  // legacy MediaPipe data exists), so state lands on 'error' and
+  // overlayTimeline stays null — but the video is genuinely being
+  // processed by WHAM, not broken. Without this re-ordering, the
+  // legacy fallback ("Result not found or still processing.") fires
+  // first and swallows every WHAM branch (processing, failed_*,
+  // ready+preparing). Bug introduced when PR-8d.0 (bd2ddc5c, May 26)
+  // appended the wham_status checks after the existing error gate
+  // instead of in front of it; surfaced visibly in production once
+  // a fresh upload happened to have no legacy keypoint data at all.
   if (whamUiState.kind === 'processing') {
     return (
       <ProcessingScreen
@@ -500,7 +503,14 @@ export default function ResultPage() {
       <LegacyAbsentScreen
         videoId={videoId}
         videoUrl={videoUrl}
-        timeline={overlayTimeline}
+        // PR-8j-hotfix: completely broken legacy videos (swing_analysis
+        // row missing or all PATH 0/A/B failed) may have null
+        // overlayTimeline. LegacyAbsentScreen + its plain-playback
+        // SwingPlayer only need a valid OverlayTimeline shape, not any
+        // data — supply an empty timeline so the SwingPlayer's
+        // getOverlayAtTime call returns cleanly. The disc canvas is
+        // hidden in plain-playback mode anyway.
+        timeline={overlayTimeline ?? { frames: [] }}
         phases={phases}
         duration={meta.durationSec}
         dataSource={dataSource}
@@ -528,7 +538,13 @@ export default function ResultPage() {
         <SwingPlayer
           videoId={videoId}
           videoUrl={videoUrl}
-          timeline={overlayTimeline}
+          // PR-8j-hotfix: a fresh WHAM-only upload that reaches the
+          // ready render path won't have any legacy MediaPipe overlay
+          // (PATH 0/A/B all returned empty). overlayTimeline is null
+          // in that case. SwingPlayer's whamMode hides the MediaPipe
+          // canvas + disc anyway, so passing an empty timeline keeps
+          // getOverlayAtTime safe without rendering anything from it.
+          timeline={overlayTimeline ?? { frames: [] }}
           phases={phases}
           duration={meta.durationSec}
           dataSource={dataSource}
