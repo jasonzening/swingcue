@@ -8,7 +8,7 @@
  * 2. 如果没有 keypoint 数据，fallback 到存储的 overlay_timeline_json（5帧快照）
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { SwingPlayer } from '@/components/SwingPlayer';
@@ -415,6 +415,7 @@ export default function ResultPage() {
         startedAt={whamUiState.startedAt}
         expectedSeconds={whamUiState.expectedSeconds}
         onBack={() => router.push('/history')}
+        videoUrl={videoUrl}
       />
     );
   }
@@ -613,10 +614,12 @@ function ProcessingScreen({
   startedAt,
   expectedSeconds,
   onBack,
+  videoUrl,
 }: {
   startedAt: number;
   expectedSeconds: number;
   onBack: () => void;
+  videoUrl: string;
 }) {
   // R2 ETA logic — re-render every 1s to update the elapsed counter.
   // Frontend NEVER marks the row failed; we just adjust the message.
@@ -628,18 +631,32 @@ function ProcessingScreen({
   const elapsedSec = Math.max(0, Math.floor((now - startedAt) / 1000));
   const isVeryOver = elapsedSec > 300;
 
-  // PR-8d.2 part 2 2C-1: replaced the 5-stage bucketization label
-  // (shipped in 2A) with a body-scan visual. The 5 step labels
-  // suggested 5 backend stages that don't actually exist — only
-  // 'processing' → 'ready'|'failed' are real transitions. Body-
-  // scan makes no specific milestone claims, only "analysis in
-  // progress", which is honest. The expectedSeconds prop is still
-  // received (kept in API for upstream callers) but only used now
-  // for the 300s isVeryOver threshold escalation.
+  // PR-8d.2 Part 2 2C-3: replaced the generic SVG silhouette
+  // (2C-1/2C-2) with a paused frame of the user's actual video,
+  // blurred, with a futuristic scan + tint overlay. Scanning the
+  // user's own body matches the "AI is analyzing YOUR swing"
+  // framing. Falls back to the 2C-1/2C-2 SVG silhouette if the
+  // video can't load (missing URL, network error, format
+  // rejected). All animations remain pure CSS keyframes; the
+  // <video> element is paused throughout (currentTime nudged
+  // past 0 to dodge potential black first frames).
   //
-  // 2C-1 ships static silhouette + scanning line + text. 2C-2
-  // (body fill-up animation) is a follow-up commit, gated on
-  // 2C-1 sign-off.
+  // The scan is decorative — NOT tied to elapsed or backend
+  // progress. wham_status flips override at the polling layer.
+
+  const videoElRef = useRef<HTMLVideoElement>(null);
+  const [videoOk, setVideoOk] = useState<boolean | null>(null);
+  // null = loading, true = first frame painted, false = errored.
+  // Initial null lets the SVG fallback hold while the video loads,
+  // avoiding a flash of blank container during initial fetch.
+
+  // If the parent never provided a URL (rare race — videoUrl state
+  // hadn't populated yet when whamUiState flipped to processing),
+  // route to fallback immediately.
+  useEffect(() => {
+    if (!videoUrl) setVideoOk(false);
+    else setVideoOk(null); // reset to loading when URL changes
+  }, [videoUrl]);
 
   const title = 'Building your 3D swing model';
   const subtitle = 'Analyzing your body rotation, spine angle, hip movement, and head stability.';
@@ -653,27 +670,55 @@ function ProcessingScreen({
 
       <h2 className="wham-title wham-title-accent">{title}</h2>
 
-      {/* Body silhouette + scanning line + fill-up overlay.
-          PR-8d.2 Part 2 2C-2: rendered as two stacked SVGs (outline
-          + fill) with a CSS-animated div scan line on top.
-            - outline SVG: muted stroke + faint dark fill = the
-              static body shape
-            - fill SVG: accent-color fill, clip-path animates from
-              fully-clipped to fully-visible in sync with the scan
-              line position, so the body progressively fills from
-              top as the scan moves down, then drains as it returns
-            - scan line: 3px accent bar, top:0% → 100% over 2.5s
-              linear alternate, glow drop-shadow
-          All animations are CSS keyframes — no JS rAF, no per-frame
-          React state. Honors prefers-reduced-motion via @media gate
-          (freezes both fill + scan mid-cycle). */}
-      <div className="wham-silhouette" aria-hidden="true">
-        <svg className="wham-silhouette-outline" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
-          {WHAM_BODY_SHAPES}
-        </svg>
-        <svg className="wham-silhouette-fill" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
-          {WHAM_BODY_SHAPES}
-        </svg>
+      {/* Body scan visual. Layered structure (z-order bottom→top):
+            1. .wham-video-frame   — paused user video, blurred + dimmed
+                                     (fallback SVG stack when videoOk=false)
+            2. .wham-video-grid    — repeating-linear-gradient mesh @ 5%
+            3. .wham-scan-tint     — clip-path-animated accent wash
+            4. .wham-corner-bracket × 4 — HUD targeting frame
+            5. .wham-scan-beam     — gradient halo behind the scan line
+            6. .wham-scan-line     — 3px neon bar with drop-shadow glow
+          All scan/tint/beam animations share the same 2.5s linear
+          infinite alternate timing → phase-locked. */}
+      <div className="wham-video-scan" aria-hidden="true">
+        {videoOk === false ? (
+          /* Fallback path — original 2C-1/2C-2 SVG silhouette
+             stack. Triggered when the signed URL is missing or the
+             <video> errored. Scan line + tint still render on top
+             for visual consistency. */
+          <>
+            <svg className="wham-silhouette-outline wham-fallback-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+              {WHAM_BODY_SHAPES}
+            </svg>
+            <svg className="wham-silhouette-fill wham-fallback-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+              {WHAM_BODY_SHAPES}
+            </svg>
+          </>
+        ) : (
+          <video
+            ref={videoElRef}
+            src={videoUrl}
+            muted
+            playsInline
+            preload="metadata"
+            className={`wham-video-frame ${videoOk ? 'wham-video-frame-ready' : ''}`}
+            onLoadedMetadata={(e) => {
+              // Skip a small distance past 0 — many encoders place a
+              // black or near-black frame at exactly t=0, plus some
+              // browsers race the first-paint with the seek.
+              try { e.currentTarget.currentTime = 0.2; } catch {}
+            }}
+            onSeeked={() => setVideoOk(true)}
+            onError={() => setVideoOk(false)}
+          />
+        )}
+        <div className="wham-video-grid" />
+        <div className="wham-scan-tint" />
+        <div className="wham-corner-bracket wham-corner-tl" />
+        <div className="wham-corner-bracket wham-corner-tr" />
+        <div className="wham-corner-bracket wham-corner-bl" />
+        <div className="wham-corner-bracket wham-corner-br" />
+        <div className="wham-scan-beam" />
         <div className="wham-scan-line" />
       </div>
 
@@ -863,33 +908,81 @@ body { background:#050805; }
 .wham-title-accent { color:#a8f040; }
 .wham-detail { font-size:14px; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; }
 .wham-elapsed { font-size:12px; color:#3a4a35; font-family:'DM Sans',system-ui; margin-top:4px; }
-/* PR-8d.2 part 2 2C-1 + 2C-2 — body silhouette stack:
-   1. .wham-silhouette-outline — static body shape (muted stroke +
-      faint dark fill); in-flow, gives the container its size.
-   2. .wham-silhouette-fill    — accent-color fill overlay, clipped
-      via animated CSS clip-path. Reveals from top→bottom in sync
-      with the scan-line position, so the body progressively fills
-      with accent green and drains back as the scan reverses.
-   3. .wham-scan-line          — 3px accent bar with glow, position
-      animates top 0% → calc(100% - 3px).
-   All 3 share the same 2.5s linear alternate timing so they stay
-   visually phase-locked: scan-line is the moving "front" of the
-   accent fill rising behind it. No JS rAF, no per-frame React
-   state — pure CSS keyframes. */
-.wham-silhouette { position:relative; width:200px; height:400px; margin:24px 0 8px; }
-.wham-silhouette-outline { width:100%; height:100%; display:block; }
+/* PR-8d.2 part 2 2C-3 — video-frame body-scan visual.
+   Layered z-order (bottom→top):
+     1. .wham-video-frame   — paused user video, blur(4px) brightness(0.55)
+                              (fades in once first frame paints)
+        .wham-fallback-svg  — SVG silhouette pair if video unavailable
+     2. .wham-video-grid    — horizontal mesh (sci-fi grid feel) @ 5% opacity
+     3. .wham-scan-tint     — accent-green wash, clip-path animates in
+                              lockstep with scan line (the "already scanned"
+                              region accumulates green wash, drains on reverse)
+     4. .wham-corner-bracket × 4 — HUD targeting frame at the 4 corners
+     5. .wham-scan-beam     — soft gradient halo following the scan line
+     6. .wham-scan-line     — 3px neon bar with strong drop-shadow glow
+   All scan/tint/beam animations share the same 2.5s linear infinite
+   alternate timing → phase-locked, like the 2C-2 fill/scan pair.
+   Pure CSS keyframes; no JS rAF; <video> is paused throughout. */
+
+/* Container — portrait aspect ratio, max-height 60vh for mobile, with a
+   subtle inset border so the scan visual reads as a contained "scope". */
+.wham-video-scan { position:relative; width:min(100%, 280px); aspect-ratio:9/16; max-height:60vh; margin:18px 0 6px; background:#080c08; overflow:hidden; border-radius:10px; border:1px solid rgba(168,240,64,0.12); box-shadow:0 0 24px rgba(168,240,64,0.08), inset 0 0 0 1px rgba(255,255,255,0.04); }
+
+/* Base video frame. Paused. Opacity 0 until first frame paints (set
+   by .wham-video-frame-ready class on onSeeked) so we don't flash a
+   blank box during initial decode. */
+.wham-video-frame { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; filter:blur(4px) brightness(0.55); opacity:0; transition:opacity 0.4s ease-out; pointer-events:none; }
+.wham-video-frame-ready { opacity:1; }
+
+/* Fallback SVG silhouette stack — sized to the same container.
+   Outline + accent fill, exactly like 2C-2 but inside the new
+   bordered container. */
+.wham-fallback-svg { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); width:70%; height:90%; display:block; pointer-events:none; }
 .wham-silhouette-outline > * { fill:rgba(26,34,24,0.5); stroke:#5a6a55; stroke-width:2; }
-.wham-silhouette-fill { position:absolute; inset:0; width:100%; height:100%; display:block; pointer-events:none; clip-path:inset(0 0 100% 0); animation:wham-fill 2.5s linear infinite alternate; }
+.wham-silhouette-fill { clip-path:inset(0 0 100% 0); animation:wham-fill 2.5s linear infinite alternate; }
 .wham-silhouette-fill > * { fill:rgba(168,240,64,0.22); stroke:none; }
-.wham-scan-line { position:absolute; left:10%; right:10%; top:0%; height:3px; background:#a8f040; border-radius:2px; filter:drop-shadow(0 0 8px #a8f040); animation:wham-scan 2.5s linear infinite alternate; pointer-events:none; }
+
+/* Grid mesh — horizontal lines every 24px @ 5% opacity. Gives the
+   scope a faint coordinate readout feel without adding noise. */
+.wham-video-grid { position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg, rgba(168,240,64,0.05) 0, rgba(168,240,64,0.05) 1px, transparent 1px, transparent 24px); }
+
+/* Scanned-region tint — full rectangle of accent wash, clipped via
+   animated CSS clip-path to only show below the scan line. As the
+   scan moves down the wash extends; on reverse it retracts. Same
+   2.5s alternate timing as the line and beam. */
+.wham-scan-tint { position:absolute; inset:0; pointer-events:none; background:rgba(168,240,64,0.10); clip-path:inset(0 0 100% 0); animation:wham-fill 2.5s linear infinite alternate; }
+
+/* HUD corner brackets — sci-fi targeting frame. Two perpendicular
+   borders meeting at a right angle at each corner. */
+.wham-corner-bracket { position:absolute; width:14px; height:14px; border-color:rgba(168,240,64,0.4); pointer-events:none; }
+.wham-corner-tl { top:6px; left:6px; border-top:2px solid; border-left:2px solid; }
+.wham-corner-tr { top:6px; right:6px; border-top:2px solid; border-right:2px solid; }
+.wham-corner-bl { bottom:6px; left:6px; border-bottom:2px solid; border-left:2px solid; }
+.wham-corner-br { bottom:6px; right:6px; border-bottom:2px solid; border-right:2px solid; }
+
+/* Scan beam — soft vertical gradient band centered on the scan line.
+   Acts as the bloom halo behind the 3px sharp line. The beam is
+   ~40px tall, with the gradient fading top + bottom to transparent
+   so it reads as a glow envelope, not a hard band. */
+.wham-scan-beam { position:absolute; left:0; right:0; top:0%; height:40px; transform:translateY(-50%); pointer-events:none; background:linear-gradient(to bottom, transparent 0%, rgba(168,240,64,0.05) 30%, rgba(168,240,64,0.22) 50%, rgba(168,240,64,0.05) 70%, transparent 100%); animation:wham-scan-beam 2.5s linear infinite alternate; }
+
+/* Sharp scan line itself. Drop-shadow gives the strong neon glow on
+   the 3px bar — drop-shadow respects alpha so it lights only the
+   bar, not the rectangular box. */
+.wham-scan-line { position:absolute; left:0; right:0; top:0%; height:3px; background:#a8f040; border-radius:2px; filter:drop-shadow(0 0 12px #a8f040) drop-shadow(0 0 4px #a8f040); animation:wham-scan 2.5s linear infinite alternate; pointer-events:none; }
+
 @keyframes wham-scan { 0% { top:0%; } 100% { top:calc(100% - 3px); } }
+@keyframes wham-scan-beam { 0% { top:0%; } 100% { top:100%; } }
 @keyframes wham-fill { 0% { clip-path:inset(0 0 100% 0); } 100% { clip-path:inset(0 0 0% 0); } }
-/* Accessibility — freeze both animations at the midpoint and dim
-   the scan line slightly so the result still reads as "in
-   progress" without continuous motion. */
+
+/* Accessibility — freeze all scan animations at the midpoint and
+   dim the scan line + beam slightly so the visual still reads as
+   "in progress" without continuous motion. */
 @media (prefers-reduced-motion: reduce) {
+  .wham-scan-tint { animation:none; clip-path:inset(0 0 50% 0); }
   .wham-silhouette-fill { animation:none; clip-path:inset(0 0 50% 0); }
   .wham-scan-line { animation:none; top:calc(50% - 1.5px); opacity:0.5; }
+  .wham-scan-beam { animation:none; top:50%; opacity:0.4; }
 }
 .wham-subtitle { font-size:13px; font-weight:500; color:#c0c0bb; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; margin:0; }
 .wham-elapsed-mini { font-size:11px; font-weight:400; color:#5a6a55; text-align:center; font-family:'DM Sans',system-ui; margin:6px 0 0; }
