@@ -585,6 +585,30 @@ export default function ResultPage() {
 // PR-8d.0 screens — processing + failed (preprocessing | other).
 // ────────────────────────────────────────────────────────────────────
 
+// PR-8d.2 Part 2 2C-1/2C-2: shared body-silhouette shapes rendered
+// twice (outline + fill overlay). Defined once to keep the geometry
+// in lockstep — if the outline changes, the fill follows automatically.
+// Shapes are intentionally simple primitives (no exterior path) so
+// any future tweak is a single coordinate change.
+const WHAM_BODY_SHAPES = (
+  <>
+    {/* head */}
+    <ellipse cx="100" cy="46" rx="26" ry="32" />
+    {/* neck */}
+    <rect x="92" y="76" width="16" height="14" rx="4" />
+    {/* torso (shoulders to waist) */}
+    <path d="M 60 92 Q 60 90 70 90 L 130 90 Q 140 90 140 92 L 142 200 Q 142 208 134 208 L 66 208 Q 58 208 58 200 Z" />
+    {/* left arm */}
+    <rect x="44" y="96" width="18" height="120" rx="9" />
+    {/* right arm */}
+    <rect x="138" y="96" width="18" height="120" rx="9" />
+    {/* left leg */}
+    <rect x="74" y="208" width="22" height="170" rx="11" />
+    {/* right leg */}
+    <rect x="104" y="208" width="22" height="170" rx="11" />
+  </>
+);
+
 function ProcessingScreen({
   startedAt,
   expectedSeconds,
@@ -629,26 +653,26 @@ function ProcessingScreen({
 
       <h2 className="wham-title wham-title-accent">{title}</h2>
 
-      {/* Body silhouette + scanning line. Static SVG (head + torso +
-          arms + legs as primitive shapes). Scan line is a CSS-
-          animated absolute-positioned div above the SVG. No JS rAF,
-          no per-frame state — just a CSS keyframe. */}
+      {/* Body silhouette + scanning line + fill-up overlay.
+          PR-8d.2 Part 2 2C-2: rendered as two stacked SVGs (outline
+          + fill) with a CSS-animated div scan line on top.
+            - outline SVG: muted stroke + faint dark fill = the
+              static body shape
+            - fill SVG: accent-color fill, clip-path animates from
+              fully-clipped to fully-visible in sync with the scan
+              line position, so the body progressively fills from
+              top as the scan moves down, then drains as it returns
+            - scan line: 3px accent bar, top:0% → 100% over 2.5s
+              linear alternate, glow drop-shadow
+          All animations are CSS keyframes — no JS rAF, no per-frame
+          React state. Honors prefers-reduced-motion via @media gate
+          (freezes both fill + scan mid-cycle). */}
       <div className="wham-silhouette" aria-hidden="true">
-        <svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
-          {/* head */}
-          <ellipse cx="100" cy="46" rx="26" ry="32" />
-          {/* neck */}
-          <rect x="92" y="76" width="16" height="14" rx="4" />
-          {/* torso (shoulders to waist) */}
-          <path d="M 60 92 Q 60 90 70 90 L 130 90 Q 140 90 140 92 L 142 200 Q 142 208 134 208 L 66 208 Q 58 208 58 200 Z" />
-          {/* left arm */}
-          <rect x="44" y="96" width="18" height="120" rx="9" />
-          {/* right arm */}
-          <rect x="138" y="96" width="18" height="120" rx="9" />
-          {/* left leg */}
-          <rect x="74" y="208" width="22" height="170" rx="11" />
-          {/* right leg */}
-          <rect x="104" y="208" width="22" height="170" rx="11" />
+        <svg className="wham-silhouette-outline" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+          {WHAM_BODY_SHAPES}
+        </svg>
+        <svg className="wham-silhouette-fill" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+          {WHAM_BODY_SHAPES}
         </svg>
         <div className="wham-scan-line" />
       </div>
@@ -839,14 +863,34 @@ body { background:#050805; }
 .wham-title-accent { color:#a8f040; }
 .wham-detail { font-size:14px; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; }
 .wham-elapsed { font-size:12px; color:#3a4a35; font-family:'DM Sans',system-ui; margin-top:4px; }
-/* PR-8d.2 part 2 2C-1 — body silhouette + scanning line. SVG uses
-   currentColor for fill+stroke so the muted color flows from the
-   container. Scan line is a CSS-only absolutely-positioned bar
-   that animates top: 0% → 100% → 0% (alternate). */
-.wham-silhouette { position:relative; width:200px; height:400px; margin:24px 0 8px; color:#5a6a55; }
-.wham-silhouette svg { width:100%; height:100%; display:block; fill:rgba(26,34,24,0.5); stroke:currentColor; stroke-width:2; }
+/* PR-8d.2 part 2 2C-1 + 2C-2 — body silhouette stack:
+   1. .wham-silhouette-outline — static body shape (muted stroke +
+      faint dark fill); in-flow, gives the container its size.
+   2. .wham-silhouette-fill    — accent-color fill overlay, clipped
+      via animated CSS clip-path. Reveals from top→bottom in sync
+      with the scan-line position, so the body progressively fills
+      with accent green and drains back as the scan reverses.
+   3. .wham-scan-line          — 3px accent bar with glow, position
+      animates top 0% → calc(100% - 3px).
+   All 3 share the same 2.5s linear alternate timing so they stay
+   visually phase-locked: scan-line is the moving "front" of the
+   accent fill rising behind it. No JS rAF, no per-frame React
+   state — pure CSS keyframes. */
+.wham-silhouette { position:relative; width:200px; height:400px; margin:24px 0 8px; }
+.wham-silhouette-outline { width:100%; height:100%; display:block; }
+.wham-silhouette-outline > * { fill:rgba(26,34,24,0.5); stroke:#5a6a55; stroke-width:2; }
+.wham-silhouette-fill { position:absolute; inset:0; width:100%; height:100%; display:block; pointer-events:none; clip-path:inset(0 0 100% 0); animation:wham-fill 2.5s linear infinite alternate; }
+.wham-silhouette-fill > * { fill:rgba(168,240,64,0.22); stroke:none; }
 .wham-scan-line { position:absolute; left:10%; right:10%; top:0%; height:3px; background:#a8f040; border-radius:2px; filter:drop-shadow(0 0 8px #a8f040); animation:wham-scan 2.5s linear infinite alternate; pointer-events:none; }
 @keyframes wham-scan { 0% { top:0%; } 100% { top:calc(100% - 3px); } }
+@keyframes wham-fill { 0% { clip-path:inset(0 0 100% 0); } 100% { clip-path:inset(0 0 0% 0); } }
+/* Accessibility — freeze both animations at the midpoint and dim
+   the scan line slightly so the result still reads as "in
+   progress" without continuous motion. */
+@media (prefers-reduced-motion: reduce) {
+  .wham-silhouette-fill { animation:none; clip-path:inset(0 0 50% 0); }
+  .wham-scan-line { animation:none; top:calc(50% - 1.5px); opacity:0.5; }
+}
 .wham-subtitle { font-size:13px; font-weight:500; color:#c0c0bb; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; margin:0; }
 .wham-elapsed-mini { font-size:11px; font-weight:400; color:#5a6a55; text-align:center; font-family:'DM Sans',system-ui; margin:6px 0 0; }
 .wham-eta { font-size:12px; font-weight:400; color:#7a8a72; text-align:center; line-height:1.5; max-width:320px; padding:0 8px; margin:4px 0 0; }
