@@ -36,6 +36,16 @@
   --text-muted:          #8B949E;
 }
 
+/* === Internal Admin Tool Tokens — Annotation Workbench (PR-7A) ===
+   These are for the internal landmark annotation workbench only.
+   Workbench uses pure black/gray/white minimalism. Only red is reserved
+   for error states. Done states use opacity/weight changes, not color.
+   The PR-8j hard-rule on user-facing colors is preserved — these tokens
+   are namespaced --annot-* and must not appear in user-facing UI. */
+:root {
+  --annot-error: #FF3B30;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }

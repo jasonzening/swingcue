@@ -35,26 +35,6 @@ export async function createClient() {
   );
 }
 
-/**
- * Service-role client for write operations that must bypass RLS
- * (e.g. status transitions during analysis processing).
- *
- * IMPORTANT: Never expose this client to the browser.
- * Only import from server-only paths (API routes, Server Actions).
- */
-export function createServiceClient() {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set');
-  }
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-      cookies: {
-        getAll: () => [],
-        setAll: () => {},
-      },
-    },
-  );
-}
+// Re-export for backwards compatibility with existing call sites.
+// New code should import directly from '@/lib/supabase/admin'.
+export { createServiceClient } from './admin';
