@@ -225,6 +225,11 @@ export function AnnotateWorkbench({ videoId }: Props) {
      Frame seeking
      ────────────────────────────────────────────────────────────── */
 
+  // Pure DOM: just sets video.currentTime. The 'seeked' event handler
+  // below derives currentFrameIdx from the video's actual currentTime —
+  // making the video element the single source of truth and keeping
+  // this function side-effect-free wrt React state (so calling it from
+  // an effect doesn't trip react-hooks/set-state-in-effect).
   const seekToFrame = useCallback((frame: number) => {
     if (!videoMeta || !videoRef.current) return;
     const fc = videoMeta.frameCount > 0
@@ -237,7 +242,6 @@ export function AnnotateWorkbench({ videoId }: Props) {
     } catch {
       // Seek can throw before metadata loads — defer to onLoadedMetadata.
     }
-    setCurrentFrameIdx(f);
   }, [videoMeta]);
 
   // Whenever the active task changes, seek the video to that task's frame.
@@ -298,16 +302,21 @@ export function AnnotateWorkbench({ videoId }: Props) {
   // Redraw whenever inputs change.
   useEffect(() => { drawCanvas(); }, [drawCanvas]);
 
-  // Also redraw after the video reports a successful seek — covers
-  // cases where currentFrameIdx state changed before the video element
-  // physically reached the new frame.
+  // 'seeked' fires after the video reaches the requested frame. This is
+  // where currentFrameIdx becomes truth — derived from the video, not
+  // assumed from the request — so the React UI never drifts out of
+  // sync with the displayed frame. drawCanvas re-runs automatically
+  // via its own dep on currentFrameIdx; no need to call it here.
   useEffect(() => {
     const v = videoRef.current;
-    if (!v) return;
-    const handler = () => drawCanvas();
+    if (!v || !videoMeta) return;
+    const handler = () => {
+      const f = Math.max(0, Math.round(v.currentTime * videoMeta.fps - 0.5));
+      setCurrentFrameIdx(f);
+    };
     v.addEventListener('seeked', handler);
     return () => v.removeEventListener('seeked', handler);
-  }, [drawCanvas]);
+  }, [videoMeta]);
 
   /* ──────────────────────────────────────────────────────────────
      Click handling
