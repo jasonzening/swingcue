@@ -119,20 +119,26 @@ function derivePhaseFrames(
   meta: VideoMetaForAnnotation,
 ): PhaseFrames | null {
   const pm = meta.phaseMarkers;
+  // TEMP DEBUG (remove after pr-7a tier-2 frame-0 bug RCA)
+  console.log('[derivePhaseFrames input]', { phaseMarkers: pm, fps: meta.fps });
+
   // Hard requirement: the 4 "primary" markers must exist. Without any of
   // them we can't derive the Tier-2 phases either, so route to manual
   // calibration.
   if (
     pm.setupTime == null || pm.topTime == null ||
     pm.impactTime == null || pm.finishTime == null
-  ) return null;
+  ) {
+    console.log('[derivePhaseFrames] returning null — missing primary markers');
+    return null;
+  }
 
   // transitionTime is the only marker the auto-deriver can fall back on
   // (top + 0.4*(impact-top) is a defensible default when it's missing).
   const transitionTime = pm.transitionTime ??
     (pm.topTime + 0.4 * (pm.impactTime - pm.topTime));
 
-  return {
+  const result: PhaseFrames = {
     setup:       timeToFrame(pm.setupTime, meta.fps),
     takeaway:    timeToFrame(pm.setupTime  + 0.25 * (pm.topTime    - pm.setupTime),  meta.fps),
     top:         timeToFrame(pm.topTime,    meta.fps),
@@ -141,6 +147,8 @@ function derivePhaseFrames(
     post_impact: timeToFrame(pm.impactTime + 0.4  * (pm.finishTime - pm.impactTime), meta.fps),
     finish:      timeToFrame(pm.finishTime, meta.fps),
   };
+  console.log('[derivePhaseFrames output]', result);
+  return result;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -253,8 +261,12 @@ export function AnnotateWorkbench({ videoId }: Props) {
   }, []);
 
   const startAnnotating = useCallback((pf: PhaseFrames) => {
+    // TEMP DEBUG (remove after pr-7a tier-2 frame-0 bug RCA)
+    console.log('[startAnnotating input pf]', pf);
     const generated = generateTasks(pf);
+    console.log('[startAnnotating generated tasks]', generated);
     const firstIdx = findFirstUnannotatedIndex(generated, existingAnns);
+    console.log('[startAnnotating firstIdx]', firstIdx, 'firstTask:', generated[firstIdx]);
     setPhaseFrames(pf);
     setTasks(generated);
     if (firstIdx >= generated.length) {

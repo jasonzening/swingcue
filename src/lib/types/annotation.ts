@@ -64,3 +64,19 @@ export interface VideoListEntry {
 }
 
 export const APP_VERSION = 'swingcue-annotate-1.0';
+
+// Single source of truth for runtime phase validation. The workbench
+// generates 14 tasks from TASK_PHASES (7 × lead/trail). ANNOTATION_PHASES
+// is the full set that's legal in the `phase` column on
+// golf_landmark_annotations — it's a superset of TASK_PHASES because
+// 'intermediate' rows are valid records (future active-learning task
+// type) even though no v1 task generator emits them.
+export const TASK_PHASES = [
+  'setup', 'takeaway', 'top', 'transition',
+  'impact', 'post_impact', 'finish',
+] as const satisfies readonly AnnotationPhase[];
+
+export const ANNOTATION_PHASES = [
+  ...TASK_PHASES,
+  'intermediate',
+] as const satisfies readonly AnnotationPhase[];

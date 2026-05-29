@@ -57,7 +57,11 @@ export async function GET(
       .from('swing_analysis')
       .select('video_metadata_json, phase_markers_json')
       .eq('video_id', videoId)
-      .order('id', { ascending: false })
+      // swing_analysis.id is uuid (lexicographic, not temporal). Order
+      // by created_at so videos with multiple analyze runs return the
+      // most recent analysis row — matches the fix applied to the
+      // export route in commit a59f493.
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
     admin.storage

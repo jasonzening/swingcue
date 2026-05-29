@@ -3,16 +3,18 @@ import { requireAdmin } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/admin';
 import type {
   AnnotationArm,
-  AnnotationPhase,
   AnnotationRecord,
   AnnotationTaskType,
   AnnotationVisibility,
   Handedness,
 } from '@/lib/types/annotation';
+import { ANNOTATION_PHASES } from '@/lib/types/annotation';
 
-const PHASES: AnnotationPhase[] = [
-  'setup', 'top', 'impact', 'finish', 'transition', 'intermediate',
-];
+// Runtime phase whitelist — sourced from ANNOTATION_PHASES in
+// lib/types/annotation so it can never drift from the AnnotationPhase
+// union. The Tier-2 expansion (takeaway, post_impact) flowed through
+// here automatically once the const tuple was extended.
+const PHASES = ANNOTATION_PHASES;
 const TASK_TYPES: AnnotationTaskType[] = [
   'manual_gt', 'correction_review', 'active_learning',
 ];
