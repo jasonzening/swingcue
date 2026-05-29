@@ -366,7 +366,6 @@ export function AnnotateWorkbench({ videoId }: Props) {
       setCurrentTaskIdx(next);
       setActivePoints([null, null, null]);
       setPointStepIdx(0);
-      setVisibility('clear');
     } catch (e) {
       setSavingError(e instanceof Error ? e.message : 'unknown save error');
     }
