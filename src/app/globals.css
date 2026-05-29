@@ -38,12 +38,16 @@
 
 /* === Internal Admin Tool Tokens — Annotation Workbench (PR-7A) ===
    These are for the internal landmark annotation workbench only.
-   Workbench uses pure black/gray/white minimalism. Only red is reserved
-   for error states. Done states use opacity/weight changes, not color.
+   Workbench uses black/gray/white minimalism with two arm-side accents:
+   yellow for lead arm, blue for trail arm. Center landmarks (future:
+   head_crown, pelvis, c7) use white. Red is reserved for error.
    The PR-8j hard-rule on user-facing colors is preserved — these tokens
    are namespaced --annot-* and must not appear in user-facing UI. */
 :root {
-  --annot-error: #FF3B30;
+  --annot-lead:   #FFD86B;
+  --annot-trail:  #4FB3FF;
+  --annot-center: #FFFFFF;
+  --annot-error:  #FF3B30;
 }
 
 *, *::before, *::after {

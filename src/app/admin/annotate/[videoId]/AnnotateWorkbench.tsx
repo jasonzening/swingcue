@@ -35,13 +35,47 @@ type Stage =
   | 'annotating'
   | 'done';
 
-type PhaseKey = 'setup' | 'top' | 'impact' | 'finish';
-const PHASE_ORDER: PhaseKey[] = ['setup', 'top', 'impact', 'finish'];
+// Tier 2 phase set (PR-7A tier-2 expansion 2026-05-29).
+// PHASE_ORDER drives both task generation order (phase-major, then arm)
+// and the manual phase-calibration sequence. 7 phases × 2 arms = 14 tasks.
+type PhaseKey =
+  | 'setup' | 'takeaway' | 'top' | 'transition'
+  | 'impact' | 'post_impact' | 'finish';
+const PHASE_ORDER: PhaseKey[] = [
+  'setup', 'takeaway', 'top', 'transition',
+  'impact', 'post_impact', 'finish',
+];
 
-type PhaseFrames = { setup: number; top: number; impact: number; finish: number };
+type PhaseFrames = {
+  setup:       number;
+  takeaway:    number;
+  top:         number;
+  transition:  number;
+  impact:      number;
+  post_impact: number;
+  finish:      number;
+};
 type Point = { x: number; y: number };
 type PointStepIdx = 0 | 1 | 2 | 3;
 const POINT_LABELS = ['Shoulder', 'Elbow', 'Wrist'] as const;
+
+// Arm-side accent colors — locked-in hex to skip the CSS-var resolution
+// dance inside canvas draws (avoids initial-paint flash + getComputedStyle
+// per redraw). Single source of truth still lives in globals.css; these
+// constants mirror the --annot-* tokens. Update both together.
+const COLOR_LEAD   = '#FFD86B';
+const COLOR_TRAIL  = '#4FB3FF';
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function armColor(arm: AnnotationArm): string {
+  return arm === 'lead' ? COLOR_LEAD : COLOR_TRAIL;
+}
 
 interface Props { videoId: string; }
 
@@ -85,15 +119,27 @@ function derivePhaseFrames(
   meta: VideoMetaForAnnotation,
 ): PhaseFrames | null {
   const pm = meta.phaseMarkers;
+  // Hard requirement: the 4 "primary" markers must exist. Without any of
+  // them we can't derive the Tier-2 phases either, so route to manual
+  // calibration.
   if (
     pm.setupTime == null || pm.topTime == null ||
     pm.impactTime == null || pm.finishTime == null
   ) return null;
+
+  // transitionTime is the only marker the auto-deriver can fall back on
+  // (top + 0.4*(impact-top) is a defensible default when it's missing).
+  const transitionTime = pm.transitionTime ??
+    (pm.topTime + 0.4 * (pm.impactTime - pm.topTime));
+
   return {
-    setup:  timeToFrame(pm.setupTime,  meta.fps),
-    top:    timeToFrame(pm.topTime,    meta.fps),
-    impact: timeToFrame(pm.impactTime, meta.fps),
-    finish: timeToFrame(pm.finishTime, meta.fps),
+    setup:       timeToFrame(pm.setupTime, meta.fps),
+    takeaway:    timeToFrame(pm.setupTime  + 0.25 * (pm.topTime    - pm.setupTime),  meta.fps),
+    top:         timeToFrame(pm.topTime,    meta.fps),
+    transition:  timeToFrame(transitionTime, meta.fps),
+    impact:      timeToFrame(pm.impactTime, meta.fps),
+    post_impact: timeToFrame(pm.impactTime + 0.4  * (pm.finishTime - pm.impactTime), meta.fps),
+    finish:      timeToFrame(pm.finishTime, meta.fps),
   };
 }
 
@@ -276,7 +322,9 @@ export function AnnotateWorkbench({ videoId }: Props) {
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Saved annotations for current frame — gray faded, for context only.
+    // Saved annotations on this frame — drawn arm-coloured but faint so
+    // they read as "already done, just here for context". 3px filled
+    // dot, no outer ring, thin 1px connector.
     const savedForFrame = existingAnns.filter(a =>
       a.frame_idx === currentFrameIdx && a.task_type === 'manual_gt',
     );
@@ -285,19 +333,24 @@ export function AnnotateWorkbench({ videoId }: Props) {
       if (a.shoulder_x != null && a.shoulder_y != null) pts.push({ x: a.shoulder_x, y: a.shoulder_y });
       if (a.elbow_x    != null && a.elbow_y    != null) pts.push({ x: a.elbow_x,    y: a.elbow_y    });
       if (a.wrist_x    != null && a.wrist_y    != null) pts.push({ x: a.wrist_x,    y: a.wrist_y    });
-      drawPolyline(ctx, pts, 'rgba(255, 255, 255, 0.3)', 1.2);
-      for (const p of pts) drawDot(ctx, p, 4, 'rgba(255, 255, 255, 0.3)', 'rgba(255, 255, 255, 0.6)');
+      const base = armColor(a.arm);
+      drawPolyline(ctx, pts, hexToRgba(base, 0.25), 1);
+      for (const p of pts) drawDot(ctx, p, 3, hexToRgba(base, 0.35));
     }
 
-    // Active points — current arm being annotated, bright white.
+    // Active points — the arm currently being annotated. Full-saturation
+    // arm colour, 4px filled dot + 8px outer ring, 1.5px connector. Dot
+    // is small enough that the underlying joint stays visible through it.
+    const activeArm: AnnotationArm = currentTask?.arm ?? 'lead';
+    const activeBase = armColor(activeArm);
     const activeFiltered: Point[] = activePoints.filter((p): p is Point => p !== null);
     if (activeFiltered.length > 1) {
-      drawPolyline(ctx, activeFiltered, 'rgba(255, 255, 255, 0.6)', 1.5);
+      drawPolyline(ctx, activeFiltered, hexToRgba(activeBase, 0.6), 1.5);
     }
     for (const p of activeFiltered) {
-      drawDot(ctx, p, 6, '#ffffff', 'rgba(255, 255, 255, 0.4)');
+      drawDot(ctx, p, 4, activeBase, 8, hexToRgba(activeBase, 0.4));
     }
-  }, [videoMeta, existingAnns, currentFrameIdx, activePoints]);
+  }, [videoMeta, existingAnns, currentFrameIdx, activePoints, currentTask]);
 
   // Redraw whenever inputs change.
   useEffect(() => { drawCanvas(); }, [drawCanvas]);
@@ -726,6 +779,10 @@ function AnnotatingPanel(props: {
   } = props;
   const task = tasks[currentTaskIdx];
   const tSec = (frameIdx / Math.max(1, fps)).toFixed(2);
+  // Arm-side suffix used by both the progress-bar current cell and the
+  // active click-step row, so the workbench shows-not-tells which arm
+  // is being annotated.
+  const armSuffix = task.arm; // 'lead' | 'trail'
   return (
     <>
       <div className="wb-progress">
@@ -733,10 +790,11 @@ function AnnotatingPanel(props: {
           const isCurrent = i === currentTaskIdx;
           // Done = actually saved to DB (so skipped tasks don't lie as "done").
           const isDone = isTaskDone(t, existingAnns);
+          const currentCls = isCurrent ? `current current-${armSuffix}` : '';
           return (
             <div
               key={t.index}
-              className={`wb-progress-cell ${isDone ? 'done' : ''} ${isCurrent ? 'current' : ''}`}
+              className={`wb-progress-cell ${isDone ? 'done' : ''} ${currentCls}`}
             />
           );
         })}
@@ -753,10 +811,11 @@ function AnnotatingPanel(props: {
         {POINT_LABELS.map((label, i) => {
           const filled = activePoints[i] !== null;
           const active = pointStepIdx === i;
+          const activeCls = active ? `active active-${armSuffix}` : '';
           return (
             <div
               key={label}
-              className={`wb-step ${filled ? 'done' : ''} ${active ? 'active' : ''}`}
+              className={`wb-step ${filled ? 'done' : ''} ${activeCls}`}
             >
               <span>{i + 1}.</span>
               <span>{label}</span>
@@ -817,17 +876,20 @@ function drawDot(
   p: Point,
   r: number,
   fill: string,
-  ring: string,
+  ringR?: number,
+  ringColor?: string,
 ) {
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, r + 3, 0, Math.PI * 2);
-  ctx.strokeStyle = ring;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  if (ringR != null && ringColor) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
 }
 
 function drawPolyline(
@@ -860,21 +922,22 @@ const css = `
     grid-template-rows: auto 1fr;
   }
   .wb-header {
-    padding: 12px 20px;
+    height: 40px;
+    padding: 6px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
   }
-  .wb-title { font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
-  .wb-subtitle { color: var(--text-muted); font-size: 12px; }
+  .wb-title { font-weight: 500; font-size: 13px; letter-spacing: -0.01em; }
+  .wb-subtitle { color: var(--text-muted); font-size: 11px; }
   .wb-spacer { flex: 1; }
 
   .wb-main {
     display: grid;
-    grid-template-columns: 1fr 360px;
-    gap: 16px;
-    padding: 16px;
+    grid-template-columns: 1fr 280px;
+    gap: 12px;
+    padding: 12px;
     min-height: 0;
   }
   @media (max-width: 1024px) {
@@ -909,8 +972,8 @@ const css = `
 
   .wb-progress {
     display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: 4px;
+    grid-template-columns: repeat(14, 1fr);
+    gap: 3px;
   }
   .wb-progress-cell {
     height: 8px;
@@ -922,9 +985,11 @@ const css = `
     opacity: 0.4;
     border-color: transparent;
   }
-  .wb-progress-cell.current {
-    border-color: var(--text-primary);
-  }
+  /* .current is the base state; arm-suffixed variants below pick the
+     accent so the annotator can see at a glance which arm is active. */
+  .wb-progress-cell.current        { border-color: var(--text-primary); }
+  .wb-progress-cell.current-lead   { border-color: var(--annot-lead); }
+  .wb-progress-cell.current-trail  { border-color: var(--annot-trail); }
 
   .wb-task-title {
     font-size: 11px;
@@ -954,6 +1019,8 @@ const css = `
     border-color: var(--text-primary);
     color: var(--text-primary);
   }
+  .wb-step.active-lead  { border-color: var(--annot-lead);  color: var(--annot-lead);  }
+  .wb-step.active-trail { border-color: var(--annot-trail); color: var(--annot-trail); }
   .wb-step.done {
     opacity: 0.4;
   }

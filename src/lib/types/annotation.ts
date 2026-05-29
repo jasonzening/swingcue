@@ -1,7 +1,7 @@
 export type AnnotationArm = 'lead' | 'trail';
 export type AnnotationPhase =
-  | 'setup' | 'top' | 'impact' | 'finish'
-  | 'transition' | 'intermediate';
+  | 'setup' | 'takeaway' | 'top' | 'transition'
+  | 'impact' | 'post_impact' | 'finish' | 'intermediate';
 export type AnnotationTaskType = 'manual_gt' | 'correction_review' | 'active_learning';
 export type AnnotationVisibility = 'clear' | 'occluded' | 'uncertain';
 export type Handedness = 'right' | 'left';
@@ -27,8 +27,9 @@ export interface AnnotationRecord {
 }
 
 export interface AnnotationTask {
-  index: number;            // 0..7
-  phase: 'setup' | 'top' | 'impact' | 'finish';
+  index: number;            // 0..13
+  phase: 'setup' | 'takeaway' | 'top' | 'transition'
+       | 'impact' | 'post_impact' | 'finish';
   arm: AnnotationArm;
   frameIdx: number;
 }
