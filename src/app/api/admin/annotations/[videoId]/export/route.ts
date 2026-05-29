@@ -44,7 +44,10 @@ export async function GET(
       .from('swing_analysis')
       .select('video_metadata_json')
       .eq('video_id', videoId)
-      .order('id', { ascending: false })
+      // swing_analysis.id is uuid (lexicographic, not temporal). Use
+      // created_at so videos with multiple analyze runs return the
+      // most recent analysis row for fps / dimensions.
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
     admin

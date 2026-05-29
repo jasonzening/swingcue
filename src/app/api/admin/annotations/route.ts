@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
 
   let body: Partial<AnnotationRecord>;
   try {
-    body = await req.json();
+    body = (await req.json()) as Partial<AnnotationRecord>;
   } catch {
     return NextResponse.json(
       { error: 'invalid_json', detail: 'body could not be parsed as JSON' },
