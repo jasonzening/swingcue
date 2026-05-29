@@ -111,6 +111,25 @@ function findFirstUnannotatedIndex(
   return tasks.length;
 }
 
+/**
+ * Linear scan from `fromIdx` forward, returning the first task that isn't
+ * yet in `existing`. Used by save / skip advance so the workbench jumps
+ * over previously-completed tasks instead of forcing a manual Skip click
+ * on each one (matters when re-entering a partially-annotated video).
+ * Returns `tasks.length` when every remaining task is done — caller treats
+ * that as "all done, show completion screen".
+ */
+function findNextUnannotatedIndex(
+  tasks: AnnotationTask[],
+  existing: AnnotationRecord[],
+  fromIdx: number,
+): number {
+  for (let i = fromIdx; i < tasks.length; i++) {
+    if (!isTaskDone(tasks[i], existing)) return i;
+  }
+  return tasks.length;
+}
+
 function timeToFrame(timeSec: number, fps: number): number {
   return Math.max(0, Math.round(timeSec * fps));
 }
@@ -119,26 +138,20 @@ function derivePhaseFrames(
   meta: VideoMetaForAnnotation,
 ): PhaseFrames | null {
   const pm = meta.phaseMarkers;
-  // TEMP DEBUG (remove after pr-7a tier-2 frame-0 bug RCA)
-  console.log('[derivePhaseFrames input]', { phaseMarkers: pm, fps: meta.fps });
-
   // Hard requirement: the 4 "primary" markers must exist. Without any of
   // them we can't derive the Tier-2 phases either, so route to manual
   // calibration.
   if (
     pm.setupTime == null || pm.topTime == null ||
     pm.impactTime == null || pm.finishTime == null
-  ) {
-    console.log('[derivePhaseFrames] returning null — missing primary markers');
-    return null;
-  }
+  ) return null;
 
   // transitionTime is the only marker the auto-deriver can fall back on
   // (top + 0.4*(impact-top) is a defensible default when it's missing).
   const transitionTime = pm.transitionTime ??
     (pm.topTime + 0.4 * (pm.impactTime - pm.topTime));
 
-  const result: PhaseFrames = {
+  return {
     setup:       timeToFrame(pm.setupTime, meta.fps),
     takeaway:    timeToFrame(pm.setupTime  + 0.25 * (pm.topTime    - pm.setupTime),  meta.fps),
     top:         timeToFrame(pm.topTime,    meta.fps),
@@ -147,8 +160,6 @@ function derivePhaseFrames(
     post_impact: timeToFrame(pm.impactTime + 0.4  * (pm.finishTime - pm.impactTime), meta.fps),
     finish:      timeToFrame(pm.finishTime, meta.fps),
   };
-  console.log('[derivePhaseFrames output]', result);
-  return result;
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -261,12 +272,8 @@ export function AnnotateWorkbench({ videoId }: Props) {
   }, []);
 
   const startAnnotating = useCallback((pf: PhaseFrames) => {
-    // TEMP DEBUG (remove after pr-7a tier-2 frame-0 bug RCA)
-    console.log('[startAnnotating input pf]', pf);
     const generated = generateTasks(pf);
-    console.log('[startAnnotating generated tasks]', generated);
     const firstIdx = findFirstUnannotatedIndex(generated, existingAnns);
-    console.log('[startAnnotating firstIdx]', firstIdx, 'firstTask:', generated[firstIdx]);
     setPhaseFrames(pf);
     setTasks(generated);
     if (firstIdx >= generated.length) {
@@ -422,17 +429,21 @@ export function AnnotateWorkbench({ videoId }: Props) {
       }
       // Replace any prior record for this (frame, arm, task_type) tuple
       // in local state so the canvas reflects the just-saved keypoints
-      // when the next task lands on the same frame.
-      setExistingAnns(prev => [
-        ...prev.filter(a => !(
+      // when the next task lands on the same frame. We also need the
+      // post-save annotation list locally for findNextUnannotatedIndex
+      // below — React state update is async, so the closure's
+      // existingAnns is still pre-save.
+      const updatedAnns = [
+        ...existingAnns.filter(a => !(
           a.frame_idx === body.frame_idx &&
           a.arm === body.arm &&
           a.task_type === body.task_type
         )),
         body,
-      ]);
+      ];
+      setExistingAnns(updatedAnns);
 
-      const next = currentTaskIdx + 1;
+      const next = findNextUnannotatedIndex(tasks, updatedAnns, currentTaskIdx + 1);
       if (next >= tasks.length) {
         setStage('done');
         return;
@@ -443,10 +454,10 @@ export function AnnotateWorkbench({ videoId }: Props) {
     } catch (e) {
       setSavingError(e instanceof Error ? e.message : 'unknown save error');
     }
-  }, [videoMeta, currentTask, currentTaskIdx, tasks.length, handedness]);
+  }, [videoMeta, currentTask, currentTaskIdx, tasks, existingAnns, handedness]);
 
   const advanceWithoutSaving = useCallback(() => {
-    const next = currentTaskIdx + 1;
+    const next = findNextUnannotatedIndex(tasks, existingAnns, currentTaskIdx + 1);
     if (next >= tasks.length) {
       setStage('done');
       return;
@@ -454,7 +465,7 @@ export function AnnotateWorkbench({ videoId }: Props) {
     setCurrentTaskIdx(next);
     setActivePoints([null, null, null]);
     setPointStepIdx(0);
-  }, [currentTaskIdx, tasks.length]);
+  }, [currentTaskIdx, tasks, existingAnns]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (stage !== 'annotating' || !videoMeta) return;
