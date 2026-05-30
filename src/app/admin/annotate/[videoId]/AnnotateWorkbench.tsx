@@ -348,6 +348,12 @@ export function AnnotateWorkbench({ videoId }: Props) {
       a.frame_idx === currentFrameIdx && a.task_type === 'manual_gt',
     );
     for (const a of savedForFrame) {
+      // PR-7A.1: arm is now nullable on AnnotationRecord (hip rows
+      // carry arm=NULL). The arm-coord branch only handles rows whose
+      // arm is set; hip rows are filtered above by task_type, but
+      // narrow defensively here so future task types can't trip the
+      // armColor() call.
+      if (a.arm == null) continue;
       const pts: Point[] = [];
       if (a.shoulder_x != null && a.shoulder_y != null) pts.push({ x: a.shoulder_x, y: a.shoulder_y });
       if (a.elbow_x    != null && a.elbow_y    != null) pts.push({ x: a.elbow_x,    y: a.elbow_y    });
