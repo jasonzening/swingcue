@@ -3,29 +3,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  APP_VERSION,
+  SOURCE_APP_VERSION,
+  TASK_PHASES,
   type AnnotationArm,
   type AnnotationRecord,
-  type AnnotationTask,
   type AnnotationVisibility,
+  type ArmTask,
   type Handedness,
+  type HipPairAnnotation,
+  type HipPairTask,
+  type TaskPhase,
   type VideoMetaForAnnotation,
+  type WorkbenchTask,
 } from '@/lib/types/annotation';
+import {
+  ANNOTATION_GUIDE_CSS,
+  ANNOTATION_GUIDE_STORAGE_KEY,
+  AnnotationGuideBody,
+  HipDiagram,
+} from '@/app/admin/annotation-guide/page';
 
 /* ════════════════════════════════════════════════════════════════════
-   Internal landmark annotation workbench (PR-7A).
+   PR-7A.1 Annotation workbench v2 — bone-top-centerline.
 
-   Guided, one-click-at-a-time capture of golf-specific keypoints
-   (shoulder, elbow, wrist) for 4 phases × 2 arms = 8 tasks per video.
+   15 tasks per video: 10 arm (5 phases × lead/trail, interleaved
+   per phase) + 5 hip-pair (one per phase, after the arm batch).
 
    Stages:
      loading        → fetch meta + existing annotations
      error          → terminal display
      handedness     → ask right / left (defaults right)
-     phase_confirm  → derived phase frames look right? confirm / recalibrate
-     phase_calibrate → manual scrub-and-mark for 4 phases in turn
-     annotating     → 8-task linear flow with click → save → advance
-     done           → all tasks complete, offer export + back link
+     phase_confirm  → auto-derived 5 phase frames look right?
+     phase_calibrate → manual scrub-and-mark for 5 phases in turn
+     annotating     → 15-task linear flow with auto-skip of done tasks
+     done           → all tasks complete / declined
    ════════════════════════════════════════════════════════════════════ */
 
 type Stage =
@@ -35,34 +46,30 @@ type Stage =
   | 'annotating'
   | 'done';
 
-// Tier 2 phase set (PR-7A tier-2 expansion 2026-05-29).
-// PHASE_ORDER drives both task generation order (phase-major, then arm)
-// and the manual phase-calibration sequence. 7 phases × 2 arms = 14 tasks.
-type PhaseKey =
-  | 'setup' | 'takeaway' | 'top' | 'transition'
-  | 'impact' | 'post_impact' | 'finish';
-const PHASE_ORDER: PhaseKey[] = [
-  'setup', 'takeaway', 'top', 'transition',
-  'impact', 'post_impact', 'finish',
-];
+const PHASE_ORDER: readonly TaskPhase[] = TASK_PHASES;
 
 type PhaseFrames = {
-  setup:       number;
-  takeaway:    number;
-  top:         number;
-  transition:  number;
-  impact:      number;
-  post_impact: number;
-  finish:      number;
+  setup:      number;
+  takeaway:   number;
+  top:        number;
+  transition: number;
+  impact:     number;
 };
 type Point = { x: number; y: number };
-type PointStepIdx = 0 | 1 | 2 | 3;
-const POINT_LABELS = ['Shoulder', 'Elbow', 'Wrist'] as const;
 
-// Arm-side accent colors — locked-in hex to skip the CSS-var resolution
-// dance inside canvas draws (avoids initial-paint flash + getComputedStyle
-// per redraw). Single source of truth still lives in globals.css; these
-// constants mirror the --annot-* tokens. Update both together.
+// Arm tasks: 0|1|2|3 (steps 0–2 are shoulder/elbow/wrist; 3 = "all done").
+// Hip tasks: 0|1|2 (steps 0–1 are lead/trail hip; 2 = "all done").
+// Single state variable across both kinds — the per-task render code
+// only reads up to its valid range.
+type PointStepIdx = 0 | 1 | 2 | 3;
+
+const POINT_LABELS_ARM = ['Shoulder', 'Elbow', 'Wrist'] as const;
+const POINT_LABELS_HIP = ['Lead hip', 'Trail hip'] as const;
+
+// Arm-side accent colors — locked-in hex (mirrors --annot-* tokens in
+// globals.css). For hip tasks, step 0 (lead hip) uses LEAD; step 1
+// (trail hip) uses TRAIL — same yellow/blue language, so annotator
+// recognizes the side they're clicking without reading the label.
 const COLOR_LEAD   = '#FFD86B';
 const COLOR_TRAIL  = '#4FB3FF';
 
@@ -83,28 +90,44 @@ interface Props { videoId: string; }
    Task generation + completion checks
    ════════════════════════════════════════════════════════════════════ */
 
-function generateTasks(pf: PhaseFrames): AnnotationTask[] {
-  const arms: AnnotationArm[] = ['lead', 'trail'];
-  const out: AnnotationTask[] = [];
+const ARM_TASK_COUNT = TASK_PHASES.length * 2;   // 5 phases × 2 arms = 10
+const HIP_TASK_COUNT = TASK_PHASES.length;       // 5 phases × 1 hip   = 5
+
+function generateTasks(pf: PhaseFrames): WorkbenchTask[] {
+  const out: WorkbenchTask[] = [];
   let idx = 0;
+  // 10 arm tasks first — phase-major, lead-before-trail within each phase.
   for (const phase of PHASE_ORDER) {
-    for (const arm of arms) {
-      out.push({ index: idx++, phase, arm, frameIdx: pf[phase] });
+    for (const arm of ['lead', 'trail'] as const) {
+      out.push({ kind: 'arm', index: idx++, phase, arm, frameIdx: pf[phase] });
     }
+  }
+  // 5 hip-pair tasks — one per phase, in PHASE_ORDER. Same frame_idx as
+  // the arm tasks for that phase (annotator stays on a familiar frame).
+  for (const phase of PHASE_ORDER) {
+    out.push({ kind: 'hip_pair', index: idx++, phase, frameIdx: pf[phase] });
   }
   return out;
 }
 
-function isTaskDone(t: AnnotationTask, existing: AnnotationRecord[]): boolean {
+function isArmTaskDone(t: ArmTask, existing: AnnotationRecord[]): boolean {
   return existing.some(a =>
-    a.frame_idx === t.frameIdx &&
-    a.arm === t.arm &&
-    a.task_type === 'manual_gt',
+    a.frame_idx === t.frameIdx && a.arm === t.arm && a.task_type === 'manual_gt',
   );
 }
 
+function isHipTaskDone(t: HipPairTask, existing: AnnotationRecord[]): boolean {
+  return existing.some(a =>
+    a.frame_idx === t.frameIdx && a.task_type === 'manual_gt_hip_pair',
+  );
+}
+
+function isTaskDone(t: WorkbenchTask, existing: AnnotationRecord[]): boolean {
+  return t.kind === 'arm' ? isArmTaskDone(t, existing) : isHipTaskDone(t, existing);
+}
+
 function findFirstUnannotatedIndex(
-  tasks: AnnotationTask[],
+  tasks: WorkbenchTask[],
   existing: AnnotationRecord[],
 ): number {
   for (const t of tasks) if (!isTaskDone(t, existing)) return t.index;
@@ -116,11 +139,9 @@ function findFirstUnannotatedIndex(
  * yet in `existing`. Used by save / skip advance so the workbench jumps
  * over previously-completed tasks instead of forcing a manual Skip click
  * on each one (matters when re-entering a partially-annotated video).
- * Returns `tasks.length` when every remaining task is done — caller treats
- * that as "all done, show completion screen".
  */
 function findNextUnannotatedIndex(
-  tasks: AnnotationTask[],
+  tasks: WorkbenchTask[],
   existing: AnnotationRecord[],
   fromIdx: number,
 ): number {
@@ -138,27 +159,26 @@ function derivePhaseFrames(
   meta: VideoMetaForAnnotation,
 ): PhaseFrames | null {
   const pm = meta.phaseMarkers;
-  // Hard requirement: the 4 "primary" markers must exist. Without any of
-  // them we can't derive the Tier-2 phases either, so route to manual
-  // calibration.
+  // Hard requirement: the 4 "primary" markers must exist (transition is
+  // derivable from top+impact). Without any of the four primaries, route
+  // to manual calibration.
   if (
     pm.setupTime == null || pm.topTime == null ||
     pm.impactTime == null || pm.finishTime == null
   ) return null;
 
-  // transitionTime is the only marker the auto-deriver can fall back on
-  // (top + 0.4*(impact-top) is a defensible default when it's missing).
   const transitionTime = pm.transitionTime ??
     (pm.topTime + 0.4 * (pm.impactTime - pm.topTime));
 
+  // PR-7A.1: post_impact + finish dropped from the task set; we keep
+  // pm.finishTime only because it's part of the auto-derive guard
+  // (its absence still signals "phase markers incomplete").
   return {
-    setup:       timeToFrame(pm.setupTime, meta.fps),
-    takeaway:    timeToFrame(pm.setupTime  + 0.25 * (pm.topTime    - pm.setupTime),  meta.fps),
-    top:         timeToFrame(pm.topTime,    meta.fps),
-    transition:  timeToFrame(transitionTime, meta.fps),
-    impact:      timeToFrame(pm.impactTime, meta.fps),
-    post_impact: timeToFrame(pm.impactTime + 0.4  * (pm.finishTime - pm.impactTime), meta.fps),
-    finish:      timeToFrame(pm.finishTime, meta.fps),
+    setup:      timeToFrame(pm.setupTime, meta.fps),
+    takeaway:   timeToFrame(pm.setupTime + 0.25 * (pm.topTime - pm.setupTime), meta.fps),
+    top:        timeToFrame(pm.topTime, meta.fps),
+    transition: timeToFrame(transitionTime, meta.fps),
+    impact:     timeToFrame(pm.impactTime, meta.fps),
   };
 }
 
@@ -178,26 +198,38 @@ export function AnnotateWorkbench({ videoId }: Props) {
   const [handedness, setHandedness] = useState<Handedness>('right');
 
   const [phaseFrames, setPhaseFrames] = useState<PhaseFrames | null>(null);
-  const [calibPhaseTarget, setCalibPhaseTarget] = useState<PhaseKey | null>(null);
+  const [calibPhaseTarget, setCalibPhaseTarget] = useState<TaskPhase | null>(null);
   const [calibCaptured, setCalibCaptured] = useState<Partial<PhaseFrames>>({});
 
-  const [tasks, setTasks] = useState<AnnotationTask[]>([]);
+  const [tasks, setTasks] = useState<WorkbenchTask[]>([]);
   const [currentTaskIdx, setCurrentTaskIdx] = useState(0);
 
-  // Per-task interaction state. Visibility is determined at save-time
-  // (clear = auto-saved when the third point lands; occluded/uncertain
-  // = explicit button or keyboard), so it doesn't need its own state.
+  // Per-task interaction state.
   const [activePoints, setActivePoints] = useState<(Point | null)[]>([null, null, null]);
   const [pointStepIdx, setPointStepIdx] = useState<PointStepIdx>(0);
 
   const [currentFrameIdx, setCurrentFrameIdx] = useState(0);
   const [savingError, setSavingError] = useState<string | null>(null);
 
+  // PR-7A.1: annotation-guide modal. First-visit shows automatically
+  // (when localStorage key is absent); the sidebar "View guide" link
+  // re-opens it with the close button always working (no re-ack).
+  // Lazy initializer reads localStorage on the first render — avoids
+  // calling setState from a useEffect body (React 19 set-state-in-effect
+  // rule). SSR-safe via the typeof window guard.
+  const [guideOpen, setGuideOpen] = useState<'first' | 'reopen' | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(ANNOTATION_GUIDE_STORAGE_KEY) ? null : 'first';
+  });
+
   const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const currentTask: AnnotationTask | null =
+  const currentTask: WorkbenchTask | null =
     stage === 'annotating' && tasks[currentTaskIdx] ? tasks[currentTaskIdx] : null;
+
+  // Required points for the current task: 3 for arm, 2 for hip.
+  const requiredPointCount = currentTask?.kind === 'hip_pair' ? 2 : 3;
 
   /* ──────────────────────────────────────────────────────────────
      LOAD: video meta + existing annotations
@@ -291,10 +323,7 @@ export function AnnotateWorkbench({ videoId }: Props) {
      ────────────────────────────────────────────────────────────── */
 
   // Pure DOM: just sets video.currentTime. The 'seeked' event handler
-  // below derives currentFrameIdx from the video's actual currentTime —
-  // making the video element the single source of truth and keeping
-  // this function side-effect-free wrt React state (so calling it from
-  // an effect doesn't trip react-hooks/set-state-in-effect).
+  // below derives currentFrameIdx from the video's actual currentTime.
   const seekToFrame = useCallback((frame: number) => {
     if (!videoMeta || !videoRef.current) return;
     const fc = videoMeta.frameCount > 0
@@ -318,8 +347,6 @@ export function AnnotateWorkbench({ videoId }: Props) {
     }
   }, [stage, currentTask, seekToFrame]);
 
-  // When the video element first mounts and meta loads, seek to whatever
-  // frame the current stage expects.
   const onVideoLoadedMetadata = useCallback(() => {
     if (stage === 'annotating' && currentTask) {
       seekToFrame(currentTask.frameIdx);
@@ -341,39 +368,51 @@ export function AnnotateWorkbench({ videoId }: Props) {
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Saved annotations on this frame — drawn arm-coloured but faint so
-    // they read as "already done, just here for context". 3px filled
-    // dot, no outer ring, thin 1px connector.
-    const savedForFrame = existingAnns.filter(a =>
-      a.frame_idx === currentFrameIdx && a.task_type === 'manual_gt',
-    );
+    // Saved annotations on this frame — drawn faint for context.
+    const savedForFrame = existingAnns.filter(a => a.frame_idx === currentFrameIdx);
     for (const a of savedForFrame) {
-      // PR-7A.1: arm is now nullable on AnnotationRecord (hip rows
-      // carry arm=NULL). The arm-coord branch only handles rows whose
-      // arm is set; hip rows are filtered above by task_type, but
-      // narrow defensively here so future task types can't trip the
-      // armColor() call.
-      if (a.arm == null) continue;
-      const pts: Point[] = [];
-      if (a.shoulder_x != null && a.shoulder_y != null) pts.push({ x: a.shoulder_x, y: a.shoulder_y });
-      if (a.elbow_x    != null && a.elbow_y    != null) pts.push({ x: a.elbow_x,    y: a.elbow_y    });
-      if (a.wrist_x    != null && a.wrist_y    != null) pts.push({ x: a.wrist_x,    y: a.wrist_y    });
-      const base = armColor(a.arm);
-      drawPolyline(ctx, pts, hexToRgba(base, 0.25), 1);
-      for (const p of pts) drawDot(ctx, p, 3, hexToRgba(base, 0.35));
+      if (a.task_type === 'manual_gt' && a.arm != null) {
+        // Arm record: lead/trail color, shoulder→elbow→wrist polyline.
+        const pts: Point[] = [];
+        if (a.shoulder_x != null && a.shoulder_y != null) pts.push({ x: a.shoulder_x, y: a.shoulder_y });
+        if (a.elbow_x    != null && a.elbow_y    != null) pts.push({ x: a.elbow_x,    y: a.elbow_y    });
+        if (a.wrist_x    != null && a.wrist_y    != null) pts.push({ x: a.wrist_x,    y: a.wrist_y    });
+        const base = armColor(a.arm);
+        drawPolyline(ctx, pts, hexToRgba(base, 0.25), 1);
+        for (const p of pts) drawDot(ctx, p, 3, hexToRgba(base, 0.35));
+      } else if (a.task_type === 'manual_gt_hip_pair') {
+        // Hip-pair record: lead hip yellow, trail hip blue. No polyline
+        // — the two hips don't form an anatomical chain.
+        if (a.lead_hip_x != null && a.lead_hip_y != null) {
+          drawDot(ctx, { x: a.lead_hip_x, y: a.lead_hip_y }, 3, hexToRgba(COLOR_LEAD, 0.35));
+        }
+        if (a.trail_hip_x != null && a.trail_hip_y != null) {
+          drawDot(ctx, { x: a.trail_hip_x, y: a.trail_hip_y }, 3, hexToRgba(COLOR_TRAIL, 0.35));
+        }
+      }
     }
 
-    // Active points — the arm currently being annotated. Full-saturation
-    // arm colour, 4px filled dot + 8px outer ring, 1.5px connector. Dot
-    // is small enough that the underlying joint stays visible through it.
-    const activeArm: AnnotationArm = currentTask?.arm ?? 'lead';
-    const activeBase = armColor(activeArm);
-    const activeFiltered: Point[] = activePoints.filter((p): p is Point => p !== null);
-    if (activeFiltered.length > 1) {
-      drawPolyline(ctx, activeFiltered, hexToRgba(activeBase, 0.6), 1.5);
-    }
-    for (const p of activeFiltered) {
-      drawDot(ctx, p, 4, activeBase, 8, hexToRgba(activeBase, 0.4));
+    // Active points — the task currently being annotated.
+    if (currentTask?.kind === 'arm') {
+      const base = armColor(currentTask.arm);
+      const activeFiltered: Point[] = activePoints.filter((p): p is Point => p !== null);
+      if (activeFiltered.length > 1) {
+        drawPolyline(ctx, activeFiltered, hexToRgba(base, 0.6), 1.5);
+      }
+      for (const p of activeFiltered) {
+        drawDot(ctx, p, 4, base, 8, hexToRgba(base, 0.4));
+      }
+    } else if (currentTask?.kind === 'hip_pair') {
+      // Hip: step 0 = lead (yellow), step 1 = trail (blue). Render each
+      // active point in its side's color.
+      const leadPt  = activePoints[0];
+      const trailPt = activePoints[1];
+      if (leadPt) {
+        drawDot(ctx, leadPt, 4, COLOR_LEAD, 8, hexToRgba(COLOR_LEAD, 0.4));
+      }
+      if (trailPt) {
+        drawDot(ctx, trailPt, 4, COLOR_TRAIL, 8, hexToRgba(COLOR_TRAIL, 0.4));
+      }
     }
   }, [videoMeta, existingAnns, currentFrameIdx, activePoints, currentTask]);
 
@@ -383,8 +422,7 @@ export function AnnotateWorkbench({ videoId }: Props) {
   // 'seeked' fires after the video reaches the requested frame. This is
   // where currentFrameIdx becomes truth — derived from the video, not
   // assumed from the request — so the React UI never drifts out of
-  // sync with the displayed frame. drawCanvas re-runs automatically
-  // via its own dep on currentFrameIdx; no need to call it here.
+  // sync with the displayed frame.
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !videoMeta) return;
@@ -397,21 +435,33 @@ export function AnnotateWorkbench({ videoId }: Props) {
   }, [videoMeta]);
 
   /* ──────────────────────────────────────────────────────────────
-     Click handling
+     Save flows — arm + hip-pair are distinct shapes
      ────────────────────────────────────────────────────────────── */
 
-  const saveAndAdvance = useCallback(async (
+  const advanceToNext = useCallback((updatedAnns: AnnotationRecord[]) => {
+    const next = findNextUnannotatedIndex(tasks, updatedAnns, currentTaskIdx + 1);
+    if (next >= tasks.length) {
+      setStage('done');
+      return;
+    }
+    setCurrentTaskIdx(next);
+    setActivePoints([null, null, null]);
+    setPointStepIdx(0);
+  }, [tasks, currentTaskIdx]);
+
+  const saveArmAndAdvance = useCallback(async (
+    task: ArmTask,
     points: (Point | null)[],
     vis: AnnotationVisibility,
   ) => {
-    if (!videoMeta || !currentTask) return;
+    if (!videoMeta) return;
     setSavingError(null);
     const body: AnnotationRecord = {
       video_id: videoMeta.videoId,
-      frame_idx: currentTask.frameIdx,
-      phase: currentTask.phase,
+      frame_idx: task.frameIdx,
+      phase: task.phase,
       task_type: 'manual_gt',
-      arm: currentTask.arm,
+      arm: task.arm,
       visibility: vis,
       shoulder_x: points[0]?.x ?? null,
       shoulder_y: points[0]?.y ?? null,
@@ -419,8 +469,10 @@ export function AnnotateWorkbench({ videoId }: Props) {
       elbow_y:    points[1]?.y ?? null,
       wrist_x:    points[2]?.x ?? null,
       wrist_y:    points[2]?.y ?? null,
+      lead_hip_x: null, lead_hip_y: null,
+      trail_hip_x: null, trail_hip_y: null,
       handedness,
-      source_app_version: APP_VERSION,
+      source_app_version: SOURCE_APP_VERSION,
     };
     try {
       const res = await fetch('/api/admin/annotations', {
@@ -433,12 +485,6 @@ export function AnnotateWorkbench({ videoId }: Props) {
         setSavingError(`save failed: HTTP ${res.status} ${detail.slice(0, 200)}`);
         return;
       }
-      // Replace any prior record for this (frame, arm, task_type) tuple
-      // in local state so the canvas reflects the just-saved keypoints
-      // when the next task lands on the same frame. We also need the
-      // post-save annotation list locally for findNextUnannotatedIndex
-      // below — React state update is async, so the closure's
-      // existingAnns is still pre-save.
       const updatedAnns = [
         ...existingAnns.filter(a => !(
           a.frame_idx === body.frame_idx &&
@@ -448,34 +494,81 @@ export function AnnotateWorkbench({ videoId }: Props) {
         body,
       ];
       setExistingAnns(updatedAnns);
-
-      const next = findNextUnannotatedIndex(tasks, updatedAnns, currentTaskIdx + 1);
-      if (next >= tasks.length) {
-        setStage('done');
-        return;
-      }
-      setCurrentTaskIdx(next);
-      setActivePoints([null, null, null]);
-      setPointStepIdx(0);
+      advanceToNext(updatedAnns);
     } catch (e) {
       setSavingError(e instanceof Error ? e.message : 'unknown save error');
     }
-  }, [videoMeta, currentTask, currentTaskIdx, tasks, existingAnns, handedness]);
+  }, [videoMeta, existingAnns, handedness, advanceToNext]);
+
+  const saveHipPairAndAdvance = useCallback(async (
+    task: HipPairTask,
+    leadHip: Point,
+    trailHip: Point,
+  ) => {
+    if (!videoMeta) return;
+    setSavingError(null);
+    // Strict HipPairAnnotation shape; the API discriminates on task_type.
+    const body: HipPairAnnotation = {
+      video_id: videoMeta.videoId,
+      frame_idx: task.frameIdx,
+      phase: task.phase,
+      task_type: 'manual_gt_hip_pair',
+      lead_hip_x: leadHip.x,  lead_hip_y: leadHip.y,
+      trail_hip_x: trailHip.x, trail_hip_y: trailHip.y,
+      arm: null,
+      handedness,
+      visibility: 'clear',
+      source_app_version: SOURCE_APP_VERSION,
+    };
+    try {
+      const res = await fetch('/api/admin/annotations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        setSavingError(`save failed: HTTP ${res.status} ${detail.slice(0, 200)}`);
+        return;
+      }
+      // Store the just-saved row locally as an AnnotationRecord so the
+      // canvas + done-checks reflect it. Mirror the umbrella shape.
+      const updatedRecord: AnnotationRecord = {
+        video_id: body.video_id,
+        frame_idx: body.frame_idx,
+        phase: body.phase,
+        task_type: body.task_type,
+        arm: null,
+        visibility: body.visibility,
+        shoulder_x: null, shoulder_y: null,
+        elbow_x: null,    elbow_y: null,
+        wrist_x: null,    wrist_y: null,
+        lead_hip_x: body.lead_hip_x,   lead_hip_y: body.lead_hip_y,
+        trail_hip_x: body.trail_hip_x, trail_hip_y: body.trail_hip_y,
+        handedness: body.handedness,
+        source_app_version: body.source_app_version,
+      };
+      const updatedAnns = [
+        ...existingAnns.filter(a => !(
+          a.frame_idx === body.frame_idx &&
+          a.task_type === body.task_type
+        )),
+        updatedRecord,
+      ];
+      setExistingAnns(updatedAnns);
+      advanceToNext(updatedAnns);
+    } catch (e) {
+      setSavingError(e instanceof Error ? e.message : 'unknown save error');
+    }
+  }, [videoMeta, existingAnns, handedness, advanceToNext]);
 
   const advanceWithoutSaving = useCallback(() => {
-    const next = findNextUnannotatedIndex(tasks, existingAnns, currentTaskIdx + 1);
-    if (next >= tasks.length) {
-      setStage('done');
-      return;
-    }
-    setCurrentTaskIdx(next);
-    setActivePoints([null, null, null]);
-    setPointStepIdx(0);
-  }, [currentTaskIdx, tasks, existingAnns]);
+    advanceToNext(existingAnns);
+  }, [existingAnns, advanceToNext]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (stage !== 'annotating' || !videoMeta) return;
-    if (pointStepIdx >= 3) return;
+    if (stage !== 'annotating' || !videoMeta || !currentTask) return;
+    if (pointStepIdx >= requiredPointCount) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -491,10 +584,19 @@ export function AnnotateWorkbench({ videoId }: Props) {
     const newStep = (pointStepIdx + 1) as PointStepIdx;
     setPointStepIdx(newStep);
 
-    if (newStep === 3) {
-      void saveAndAdvance(next, 'clear');
+    // Auto-save when all required points are clicked.
+    if (currentTask.kind === 'arm' && newStep === 3) {
+      void saveArmAndAdvance(currentTask, next, 'clear');
+    } else if (currentTask.kind === 'hip_pair' && newStep === 2) {
+      const leadHip  = next[0];
+      const trailHip = next[1];
+      // Both should be non-null by construction (newStep===2 means we
+      // just clicked the second point), but narrow defensively.
+      if (leadHip && trailHip) {
+        void saveHipPairAndAdvance(currentTask, leadHip, trailHip);
+      }
     }
-  }, [stage, videoMeta, pointStepIdx, activePoints, saveAndAdvance]);
+  }, [stage, videoMeta, currentTask, pointStepIdx, requiredPointCount, activePoints, saveArmAndAdvance, saveHipPairAndAdvance]);
 
   /* ──────────────────────────────────────────────────────────────
      Action buttons (also wired to keyboard)
@@ -510,14 +612,17 @@ export function AnnotateWorkbench({ videoId }: Props) {
   }, [stage, pointStepIdx, activePoints]);
 
   const saveAsOccluded = useCallback(() => {
-    if (stage !== 'annotating') return;
-    void saveAndAdvance(activePoints, 'occluded');
-  }, [stage, activePoints, saveAndAdvance]);
+    // Only valid for arm tasks (hip visibility is always 'clear' since
+    // it's an estimated internal joint center, not directly visible).
+    if (stage !== 'annotating' || !currentTask || currentTask.kind !== 'arm') return;
+    void saveArmAndAdvance(currentTask, activePoints, 'occluded');
+  }, [stage, currentTask, activePoints, saveArmAndAdvance]);
 
   const saveAsUncertain = useCallback(() => {
-    if (stage !== 'annotating' || pointStepIdx !== 3) return;
-    void saveAndAdvance(activePoints, 'uncertain');
-  }, [stage, pointStepIdx, activePoints, saveAndAdvance]);
+    if (stage !== 'annotating' || !currentTask || currentTask.kind !== 'arm') return;
+    if (pointStepIdx !== 3) return;
+    void saveArmAndAdvance(currentTask, activePoints, 'uncertain');
+  }, [stage, currentTask, pointStepIdx, activePoints, saveArmAndAdvance]);
 
   /* ──────────────────────────────────────────────────────────────
      Keyboard
@@ -526,6 +631,8 @@ export function AnnotateWorkbench({ videoId }: Props) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // Modal swallows shortcuts (guide handles its own ESC internally).
+      if (guideOpen) return;
       if (stage === 'annotating') {
         switch (e.key.toLowerCase()) {
           case 'z': e.preventDefault(); undoLastPoint(); break;
@@ -547,7 +654,7 @@ export function AnnotateWorkbench({ videoId }: Props) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [
-    stage,
+    stage, guideOpen,
     undoLastPoint, saveAsOccluded, saveAsUncertain, advanceWithoutSaving,
     currentFrameIdx, seekToFrame,
   ]);
@@ -556,7 +663,7 @@ export function AnnotateWorkbench({ videoId }: Props) {
      Phase calibrate: "this is X" capture
      ────────────────────────────────────────────────────────────── */
 
-  const captureCurrentAsPhase = useCallback((phase: PhaseKey) => {
+  const captureCurrentAsPhase = useCallback((phase: TaskPhase) => {
     const next: Partial<PhaseFrames> = {
       ...calibCaptured,
       [phase]: currentFrameIdx,
@@ -566,7 +673,6 @@ export function AnnotateWorkbench({ videoId }: Props) {
     if (remaining) {
       setCalibPhaseTarget(remaining);
     } else {
-      // All 4 captured.
       startAnnotating(next as PhaseFrames);
     }
   }, [calibCaptured, currentFrameIdx, startAnnotating]);
@@ -575,10 +681,17 @@ export function AnnotateWorkbench({ videoId }: Props) {
      Render helpers
      ────────────────────────────────────────────────────────────── */
 
-  const completedCount = useMemo(() => {
-    if (tasks.length === 0) return 0;
-    return tasks.filter(t => isTaskDone(t, existingAnns)).length;
+  const { armDone, hipDone } = useMemo(() => {
+    let a = 0, h = 0;
+    for (const t of tasks) {
+      if (!isTaskDone(t, existingAnns)) continue;
+      if (t.kind === 'arm') a++; else h++;
+    }
+    return { armDone: a, hipDone: h };
   }, [tasks, existingAnns]);
+
+  const closeGuide = useCallback(() => setGuideOpen(null), []);
+  const reopenGuide = useCallback(() => setGuideOpen('reopen'), []);
 
   if (stage === 'loading') {
     return <FullScreen><div className="wb-muted">Loading…</div><style>{css}</style></FullScreen>;
@@ -614,6 +727,7 @@ export function AnnotateWorkbench({ videoId }: Props) {
             Continue →
           </button>
         </div>
+        {renderGuideModal()}
         <style>{css}</style>
       </FullScreen>
     );
@@ -642,8 +756,33 @@ export function AnnotateWorkbench({ videoId }: Props) {
             </button>
           </div>
         </div>
+        {renderGuideModal()}
         <style>{css}</style>
       </FullScreen>
+    );
+  }
+
+  function renderGuideModal() {
+    if (!guideOpen) return null;
+    return (
+      <div
+        className="wb-modal-scrim"
+        onClick={guideOpen === 'reopen' ? closeGuide : undefined}
+      >
+        <div className="wb-modal-card" onClick={e => e.stopPropagation()}>
+          {guideOpen === 'reopen' && (
+            <button
+              className="wb-modal-close"
+              onClick={closeGuide}
+              aria-label="Close annotation guide"
+            >×</button>
+          )}
+          <AnnotationGuideBody
+            mode={guideOpen === 'first' ? 'modal' : 'standalone'}
+            onAcknowledge={closeGuide}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -657,6 +796,9 @@ export function AnnotateWorkbench({ videoId }: Props) {
           {videoMeta?.filename ?? videoId.slice(0, 8)} · {handedness}-handed
         </div>
         <div className="wb-spacer" />
+        <button className="wb-btn wb-btn-ghost wb-btn-link" onClick={reopenGuide}>
+          View annotation guide
+        </button>
         <button
           className="wb-btn wb-btn-ghost"
           onClick={() => router.push('/admin/annotate')}
@@ -700,14 +842,16 @@ export function AnnotateWorkbench({ videoId }: Props) {
           )}
           {stage === 'annotating' && currentTask && (
             <AnnotatingPanel
+              currentTask={currentTask}
               tasks={tasks}
               existingAnns={existingAnns}
-              completedCount={completedCount}
               currentTaskIdx={currentTaskIdx}
               activePoints={activePoints}
               pointStepIdx={pointStepIdx}
               frameIdx={currentFrameIdx}
               fps={videoMeta?.fps ?? 30}
+              armDone={armDone}
+              hipDone={hipDone}
               savingError={savingError}
               onUndo={undoLastPoint}
               onOccluded={saveAsOccluded}
@@ -718,13 +862,15 @@ export function AnnotateWorkbench({ videoId }: Props) {
           {stage === 'done' && (
             <DonePanel
               videoId={videoId}
-              total={tasks.length}
+              armDone={armDone}
+              hipDone={hipDone}
               onBack={() => router.push('/admin/annotate')}
             />
           )}
         </aside>
       </main>
-      <style>{css}</style>
+      {renderGuideModal()}
+      <style>{css + ANNOTATION_GUIDE_CSS + MODAL_CSS}</style>
     </div>
   );
 }
@@ -738,12 +884,12 @@ function FullScreen({ children }: { children: React.ReactNode }) {
 }
 
 function PhaseCalibratePanel(props: {
-  target: PhaseKey | null;
+  target: TaskPhase | null;
   captured: Partial<PhaseFrames>;
   frameIdx: number;
   fps: number;
   seekToFrame: (f: number) => void;
-  captureCurrent: (phase: PhaseKey) => void;
+  captureCurrent: (phase: TaskPhase) => void;
 }) {
   const { target, captured, frameIdx, fps, seekToFrame, captureCurrent } = props;
   if (!target) return <div className="wb-muted">All phases captured…</div>;
@@ -786,58 +932,84 @@ function PhaseCalibratePanel(props: {
 }
 
 function AnnotatingPanel(props: {
-  tasks: AnnotationTask[];
+  currentTask: WorkbenchTask;
+  tasks: WorkbenchTask[];
   existingAnns: AnnotationRecord[];
-  completedCount: number;
   currentTaskIdx: number;
   activePoints: (Point | null)[];
   pointStepIdx: number;
   frameIdx: number;
   fps: number;
+  armDone: number;
+  hipDone: number;
   savingError: string | null;
   onUndo: () => void;
   onOccluded: () => void;
   onUncertain: () => void;
   onSkip: () => void;
 }) {
-  const {
-    tasks, existingAnns, completedCount, currentTaskIdx,
-    activePoints, pointStepIdx,
-    frameIdx, fps, savingError,
-    onUndo, onOccluded, onUncertain, onSkip,
-  } = props;
-  const task = tasks[currentTaskIdx];
+  const { currentTask, tasks, existingAnns, currentTaskIdx,
+          frameIdx, fps, armDone, hipDone, savingError } = props;
+
   const tSec = (frameIdx / Math.max(1, fps)).toFixed(2);
-  // Arm-side suffix used by both the progress-bar current cell and the
-  // active click-step row, so the workbench shows-not-tells which arm
-  // is being annotated.
-  const armSuffix = task.arm; // 'lead' | 'trail'
   return (
     <>
       <div className="wb-progress">
         {tasks.map((t, i) => {
           const isCurrent = i === currentTaskIdx;
-          // Done = actually saved to DB (so skipped tasks don't lie as "done").
           const isDone = isTaskDone(t, existingAnns);
-          const currentCls = isCurrent ? `current current-${armSuffix}` : '';
+          const sideClass = t.kind === 'arm'
+            ? `current-${t.arm}`
+            : isCurrent && props.pointStepIdx === 0 ? 'current-lead'
+            : isCurrent && props.pointStepIdx >= 1 ? 'current-trail'
+            : 'current-lead';
+          const currentCls = isCurrent ? `current ${sideClass}` : '';
+          // Hip cells get a subtle separator dot above to visually break
+          // the bar into "10 arm | 5 hip" segments without adding chrome.
+          const kindCls = t.kind === 'hip_pair' ? 'wb-progress-cell-hip' : '';
           return (
             <div
               key={t.index}
-              className={`wb-progress-cell ${isDone ? 'done' : ''} ${currentCls}`}
+              className={`wb-progress-cell ${isDone ? 'done' : ''} ${currentCls} ${kindCls}`}
             />
           );
         })}
       </div>
 
       <div className="wb-task-title">
-        Task {currentTaskIdx + 1} of {tasks.length} · {completedCount} done
+        {armDone} / {ARM_TASK_COUNT} arm · {hipDone} / {HIP_TASK_COUNT} hip (optional)
       </div>
+
+      {currentTask.kind === 'arm'
+        ? <ArmTaskBody {...props} task={currentTask} />
+        : <HipTaskBody {...props} task={currentTask} />}
+
+      <div className="wb-muted">frame {frameIdx} · {tSec}s</div>
+
+      {savingError && <div className="wb-error">{savingError}</div>}
+    </>
+  );
+}
+
+function ArmTaskBody(props: {
+  task: ArmTask;
+  activePoints: (Point | null)[];
+  pointStepIdx: number;
+  onUndo: () => void;
+  onOccluded: () => void;
+  onUncertain: () => void;
+  onSkip: () => void;
+}) {
+  const { task, activePoints, pointStepIdx, onUndo, onOccluded, onUncertain, onSkip } = props;
+  const armSuffix = task.arm;
+  return (
+    <>
       <div className="wb-task-name">
         {task.phase.toUpperCase()} · {task.arm.toUpperCase()} arm
       </div>
 
       <div className="wb-steps">
-        {POINT_LABELS.map((label, i) => {
+        {POINT_LABELS_ARM.map((label, i) => {
           const filled = activePoints[i] !== null;
           const active = pointStepIdx === i;
           const activeCls = active ? `active active-${armSuffix}` : '';
@@ -855,10 +1027,6 @@ function AnnotatingPanel(props: {
         })}
       </div>
 
-      <div className="wb-muted">frame {frameIdx} · {tSec}s</div>
-
-      {savingError && <div className="wb-error">{savingError}</div>}
-
       <div className="wb-btn-row">
         <button className="wb-btn" onClick={onUndo}>Undo (z)</button>
         <button className="wb-btn" onClick={onOccluded}>Occluded (o)</button>
@@ -869,16 +1037,76 @@ function AnnotatingPanel(props: {
   );
 }
 
+function HipTaskBody(props: {
+  task: HipPairTask;
+  activePoints: (Point | null)[];
+  pointStepIdx: number;
+  onUndo: () => void;
+  onSkip: () => void;
+}) {
+  const { task, activePoints, pointStepIdx, onUndo, onSkip } = props;
+  // Step 0 highlights lead-yellow, step 1 highlights trail-blue.
+  return (
+    <>
+      <div className="wb-task-name">
+        {task.phase.toUpperCase()} · HIP (pair)
+      </div>
+
+      <div className="wb-hip-badge">
+        5 hip tasks · optional · 估计内部旋转中心
+      </div>
+
+      <div className="wb-steps">
+        {POINT_LABELS_HIP.map((label, i) => {
+          const filled = activePoints[i] !== null;
+          const active = pointStepIdx === i;
+          const sideSuffix = i === 0 ? 'lead' : 'trail';
+          const activeCls = active ? `active active-${sideSuffix}` : '';
+          return (
+            <div
+              key={label}
+              className={`wb-step ${filled ? 'done' : ''} ${activeCls}`}
+            >
+              <span>{i + 1}.</span>
+              <span>{label}</span>
+              <span className="wb-spacer" />
+              <span>{filled ? '●' : '○'}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Inline HipDiagram reminder so the annotator can see "click the
+          internal joint center, NOT the trochanter bump" without
+          leaving the workbench. */}
+      <div className="wb-hip-diagram">
+        <HipDiagram />
+      </div>
+      <p className="wb-hip-warning">
+        Estimated internal joint center. NEVER click the visible trochanter bump.
+      </p>
+
+      <div className="wb-btn-row">
+        <button className="wb-btn" onClick={onUndo}>Undo (z)</button>
+        <button className="wb-btn" onClick={onSkip}>Skip (s)</button>
+      </div>
+    </>
+  );
+}
+
 function DonePanel(props: {
   videoId: string;
-  total: number;
+  armDone: number;
+  hipDone: number;
   onBack: () => void;
 }) {
-  const { videoId, total, onBack } = props;
+  const { videoId, armDone, hipDone, onBack } = props;
   return (
     <>
       <div className="wb-task-title">Complete</div>
-      <div className="wb-task-name">All {total} tasks done</div>
+      <div className="wb-task-name">
+        {armDone} / {ARM_TASK_COUNT} arm · {hipDone} / {HIP_TASK_COUNT} hip
+      </div>
       <div className="wb-muted">
         Annotations are saved server-side. Export as JSON for fixture parity
         with the standalone HTML tool.
@@ -941,6 +1169,44 @@ function drawPolyline(
    Pure black/gray/white. --annot-error reserved for the error line only.
    ════════════════════════════════════════════════════════════════════ */
 
+const MODAL_CSS = `
+  .wb-modal-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    overflow-y: auto;
+    z-index: 100;
+    padding: 24px;
+  }
+  .wb-modal-card {
+    position: relative;
+    background: #ffffff;
+    border-radius: 0.75rem;
+    max-width: 56rem;
+    width: 100%;
+    padding: 1.5rem;
+    margin: auto;
+    color: #111827;
+  }
+  .wb-modal-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: #6b7280;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .wb-modal-close:hover { background: #f3f4f6; color: #111827; }
+`;
+
 const css = `
   .wb-root {
     min-height: 100vh;
@@ -1001,7 +1267,7 @@ const css = `
 
   .wb-progress {
     display: grid;
-    grid-template-columns: repeat(14, 1fr);
+    grid-template-columns: repeat(15, 1fr);
     gap: 3px;
   }
   .wb-progress-cell {
@@ -1014,11 +1280,14 @@ const css = `
     opacity: 0.4;
     border-color: transparent;
   }
-  /* .current is the base state; arm-suffixed variants below pick the
-     accent so the annotator can see at a glance which arm is active. */
   .wb-progress-cell.current        { border-color: var(--text-primary); }
   .wb-progress-cell.current-lead   { border-color: var(--annot-lead); }
   .wb-progress-cell.current-trail  { border-color: var(--annot-trail); }
+  /* Hip cells get a subtle inner stripe so the "10 arm | 5 hip" split
+     is visible at a glance even when most are pending. */
+  .wb-progress-cell-hip {
+    background: rgba(255, 255, 255, 0.04);
+  }
 
   .wb-task-title {
     font-size: 11px;
@@ -1029,6 +1298,32 @@ const css = `
   .wb-task-name {
     font-size: 20px;
     font-weight: 700;
+  }
+
+  .wb-hip-badge {
+    font-size: 11px;
+    color: var(--text-muted);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 6px 8px;
+    letter-spacing: 0.04em;
+  }
+  .wb-hip-diagram {
+    background: #f9fafb;
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .wb-hip-warning {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+    border-left: 2px solid rgba(255, 255, 255, 0.18);
+    padding-left: 8px;
+    font-style: italic;
   }
 
   .wb-steps {
@@ -1094,6 +1389,10 @@ const css = `
   .wb-btn-ghost {
     border-color: rgba(255, 255, 255, 0.12);
     color: var(--text-muted);
+  }
+  .wb-btn-link {
+    border-color: transparent;
+    text-decoration: underline;
   }
 
   .wb-error {
