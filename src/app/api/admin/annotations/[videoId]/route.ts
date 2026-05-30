@@ -26,28 +26,49 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ videoId: string }> },
 ) {
-  const auth = await requireAdmin();
-  if ('response' in auth) return auth.response;
+  try {
+    const auth = await requireAdmin();
+    if ('response' in auth) return auth.response;
 
-  const { videoId } = await params;
-  const taskType = parseTaskType(req.nextUrl.searchParams.get('taskType'));
+    const { videoId } = await params;
+    const taskType = parseTaskType(req.nextUrl.searchParams.get('taskType'));
 
-  const admin = createServiceClient();
-  const { data, error } = await admin
-    .from('golf_landmark_annotations')
-    .select('*')
-    .eq('video_id', videoId)
-    .eq('annotator_id', auth.user.id)
-    .eq('task_type', taskType)
-    .order('frame_idx', { ascending: true })
-    .order('arm', { ascending: true });
+    const admin = createServiceClient();
+    const { data, error } = await admin
+      .from('golf_landmark_annotations')
+      .select('*')
+      .eq('video_id', videoId)
+      .eq('annotator_id', auth.user.id)
+      .eq('task_type', taskType)
+      .order('frame_idx', { ascending: true })
+      .order('arm', { ascending: true });
 
-  if (error) {
+    if (error) {
+      return NextResponse.json(
+        { error: 'query_failed', detail: error.message },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({ annotations: data ?? [] });
+  } catch (err) {
+    // Currently the route can blow up before reaching the supabase
+    // error-handling block (auth helper throw, env var missing,
+    // service-role client construction failure, etc.) and the runtime
+    // serializes the resulting 500 as Vercel's default opaque error
+    // page — no body, no stack, nothing the workbench can show the
+    // user. Wrap and surface enough to RCA from a single fetch.
+    console.error('[admin/annotations GET] uncaught:', err);
     return NextResponse.json(
-      { error: 'query_failed', detail: error.message },
+      {
+        error: 'uncaught_exception',
+        message: err instanceof Error ? err.message : String(err),
+        name: err instanceof Error ? err.name : undefined,
+        stack: err instanceof Error
+          ? err.stack?.split('\n').slice(0, 5).join(' | ')
+          : undefined,
+      },
       { status: 500 },
     );
   }
-
-  return NextResponse.json({ annotations: data ?? [] });
 }
