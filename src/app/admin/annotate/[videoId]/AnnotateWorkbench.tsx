@@ -156,6 +156,63 @@ function findNextUnannotatedIndex(
 
 // timeToFrame + derivePhaseFrames extracted (see import above).
 
+/**
+ * PR-7A.1 Phase 3 — letterbox-aware CSS-px → native-px conversion.
+ *
+ * The .wb-stage container is forced 16:9 (landscape) via aspect-ratio
+ * CSS, but the typical swing video is 720×1280 portrait. With
+ * object-fit:contain on .wb-video the visible video is letterboxed
+ * (black bars left + right). The canvas covers the FULL container
+ * (incl. the black bars), so a click's CSS coordinates can't be
+ * mapped to native pixels by simple proportional scaling — we have
+ * to subtract the letterbox offset and rescale by the displayed
+ * region only.
+ *
+ * Pre-fix horizontal coords stored at roughly mirror-and-compress
+ * around the centerline, which is why the GT on 998e1930 looks
+ * off-bone in the Phase 2 review page.
+ */
+function clientToNative(
+  e: React.MouseEvent<HTMLCanvasElement> | React.PointerEvent<HTMLCanvasElement>,
+  canvas: HTMLCanvasElement,
+  nativeW: number,
+  nativeH: number,
+): { x: number; y: number } | null {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const videoAspect = nativeW / nativeH;
+  const containerAspect = rect.width / rect.height;
+
+  let displayedW: number, displayedH: number, offsetX: number, offsetY: number;
+  if (videoAspect < containerAspect) {
+    // Letterboxed horizontally (portrait video in 16:9 container).
+    displayedH = rect.height;
+    displayedW = displayedH * videoAspect;
+    offsetX = (rect.width - displayedW) / 2;
+    offsetY = 0;
+  } else {
+    // Letterboxed vertically (landscape video in narrow container).
+    displayedW = rect.width;
+    displayedH = displayedW / videoAspect;
+    offsetX = 0;
+    offsetY = (rect.height - displayedH) / 2;
+  }
+
+  const cx = e.clientX - rect.left - offsetX;
+  const cy = e.clientY - rect.top  - offsetY;
+
+  // Clamp to displayed area so clicks in the letterbox bars don't
+  // extrapolate to negative or out-of-range native pixels.
+  const clampedX = Math.max(0, Math.min(displayedW, cx));
+  const clampedY = Math.max(0, Math.min(displayedH, cy));
+
+  return {
+    x: Math.round(clampedX / displayedW * nativeW),
+    y: Math.round(clampedY / displayedH * nativeH),
+  };
+}
+
 /* ════════════════════════════════════════════════════════════════════
    Component
    ════════════════════════════════════════════════════════════════════ */
@@ -545,12 +602,12 @@ export function AnnotateWorkbench({ videoId }: Props) {
     if (pointStepIdx >= requiredPointCount) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const sx = videoMeta.width  / rect.width;
-    const sy = videoMeta.height / rect.height;
-    const x = Math.round((e.clientX - rect.left) * sx);
-    const y = Math.round((e.clientY - rect.top)  * sy);
+    // PR-7A.1 Phase 3: letterbox-aware conversion. Old math was a
+    // simple proportional scale that ignored object-fit:contain
+    // letterboxing → portrait clicks compressed toward centerline.
+    const pos = clientToNative(e, canvas, videoMeta.width, videoMeta.height);
+    if (!pos) return;
+    const { x, y } = pos;
 
     const next = [...activePoints];
     next[pointStepIdx] = { x, y };
@@ -1242,7 +1299,13 @@ const css = `
     width: 100%; height: 100%;
   }
   .wb-video { object-fit: contain; background: #000; }
-  .wb-canvas { cursor: crosshair; }
+  /* PR-7A.1 Phase 3: canvas needs object-fit: contain too. Without
+     it, the canvas stretches edge-to-edge inside the 16:9 container,
+     so drawn dots at native (x, y) render at wrong CSS positions
+     relative to the letterboxed video. With object-fit:contain on
+     both, the canvas + video share the SAME scale + offset → drawn
+     dots land on top of the body pixel they describe. */
+  .wb-canvas { cursor: crosshair; object-fit: contain; }
 
   .wb-panel {
     background: var(--surface-card);
