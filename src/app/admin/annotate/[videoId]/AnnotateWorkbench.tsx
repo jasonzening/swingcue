@@ -816,6 +816,7 @@ export function AnnotateWorkbench({ videoId }: Props) {
           )}
           {stage === 'annotating' && currentTask && (
             <AnnotatingPanel
+              videoId={videoId}
               currentTask={currentTask}
               tasks={tasks}
               existingAnns={existingAnns}
@@ -906,6 +907,7 @@ function PhaseCalibratePanel(props: {
 }
 
 function AnnotatingPanel(props: {
+  videoId: string;
   currentTask: WorkbenchTask;
   tasks: WorkbenchTask[];
   existingAnns: AnnotationRecord[];
@@ -922,10 +924,14 @@ function AnnotatingPanel(props: {
   onUncertain: () => void;
   onSkip: () => void;
 }) {
-  const { currentTask, tasks, existingAnns, currentTaskIdx,
+  const { videoId, currentTask, tasks, existingAnns, currentTaskIdx,
           frameIdx, fps, armDone, hipDone, savingError } = props;
 
   const tSec = (frameIdx / Math.max(1, fps)).toFixed(2);
+  // PR-7A.1 Phase 2: CTA to validation review surfaces once all 10
+  // arm tasks are done. Hip is optional per spec — don't gate on it.
+  // CTA stays visible if the annotator continues editing.
+  const showReviewCta = armDone >= ARM_TASK_COUNT;
   return (
     <>
       <div className="wb-progress">
@@ -961,6 +967,12 @@ function AnnotatingPanel(props: {
       <div className="wb-muted">frame {frameIdx} · {tSec}s</div>
 
       {savingError && <div className="wb-error">{savingError}</div>}
+
+      {showReviewCta && (
+        <a className="wb-review-cta" href={`/admin/review/${videoId}`}>
+          🎯 Validate your annotations →
+        </a>
+      )}
     </>
   );
 }
@@ -1082,9 +1094,12 @@ function DonePanel(props: {
         {armDone} / {ARM_TASK_COUNT} arm · {hipDone} / {HIP_TASK_COUNT} hip
       </div>
       <div className="wb-muted">
-        Annotations are saved server-side. Export as JSON for fixture parity
-        with the standalone HTML tool.
+        Annotations are saved server-side. Validate them against WHAM and
+        MediaPipe to confirm coord alignment.
       </div>
+      <a className="wb-review-cta" href={`/admin/review/${videoId}`}>
+        🎯 Validate your annotations →
+      </a>
       <div className="wb-btn-row">
         <a
           className="wb-btn wb-btn-primary"
@@ -1379,6 +1394,29 @@ const css = `
   .wb-muted {
     color: var(--text-muted);
     font-size: 12px;
+  }
+
+  /* PR-7A.1 Phase 2: validation review CTA. Neutral admin palette —
+     subtle gray surface, white text, no brand color. Appears in the
+     annotating panel once arm tasks complete + in the done panel. */
+  .wb-review-cta {
+    display: block;
+    padding: 10px 12px;
+    background: var(--surface-card-alt);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .wb-review-cta:hover {
+    border-color: var(--text-primary);
+    background: var(--surface-card);
   }
 
   .wb-fullscreen {
