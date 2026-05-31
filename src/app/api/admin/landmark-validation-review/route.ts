@@ -34,8 +34,52 @@ type ReviewPhase = typeof PHASES[number];
 const VERDICTS = ['correct', 'incorrect', 'unsure'] as const;
 type Verdict = typeof VERDICTS[number];
 
+const JOINT_KEYS = [
+  'lead_shoulder', 'lead_elbow', 'lead_wrist',
+  'trail_shoulder', 'trail_elbow', 'trail_wrist',
+  'lead_hip', 'trail_hip',
+] as const;
+type JointKey = typeof JOINT_KEYS[number];
+
+type CalibratedKeypoints = Partial<Record<JointKey, { x: number; y: number }>>;
+
 function isOneOf<T extends string>(v: unknown, allowed: readonly T[]): v is T {
   return typeof v === 'string' && (allowed as readonly string[]).includes(v);
+}
+
+/**
+ * Validate the optional calibrated_keypoints body field.
+ * Returns:
+ *   { ok: true, value: CalibratedKeypoints | null }
+ *     - null means client explicitly sent null / omitted ("no calibration")
+ *     - object means a (possibly partial) per-joint calibration map
+ *   { ok: false, error: string }
+ *     - shape mismatch — caller returns 400
+ */
+function parseCalibratedKeypoints(
+  raw: unknown,
+): { ok: true; value: CalibratedKeypoints | null } | { ok: false; error: string } {
+  if (raw === null || raw === undefined) return { ok: true, value: null };
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: 'calibrated_keypoints must be an object or null' };
+  }
+  const out: CalibratedKeypoints = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isOneOf<JointKey>(k, JOINT_KEYS)) {
+      return { ok: false, error: `unknown joint key '${k}' in calibrated_keypoints` };
+    }
+    if (v === null || v === undefined) continue;
+    if (typeof v !== 'object' || Array.isArray(v)) {
+      return { ok: false, error: `calibrated_keypoints.${k} must be { x, y }` };
+    }
+    const obj = v as Record<string, unknown>;
+    if (typeof obj.x !== 'number' || !Number.isFinite(obj.x) ||
+        typeof obj.y !== 'number' || !Number.isFinite(obj.y)) {
+      return { ok: false, error: `calibrated_keypoints.${k} must have numeric x and y` };
+    }
+    out[k] = { x: obj.x, y: obj.y };
+  }
+  return { ok: true, value: out };
 }
 
 interface ReviewBody {
@@ -44,6 +88,7 @@ interface ReviewBody {
   verdict?: unknown;
   notes?: unknown;
   compared_sources?: unknown;
+  calibrated_keypoints?: unknown;
 }
 
 export async function POST(req: NextRequest) {
@@ -80,6 +125,17 @@ export async function POST(req: NextRequest) {
       if (cs.length > 0) comparedSources = cs;
     }
 
+    // PR-7A.1 Phase 3: drag-to-correct per-joint pixel positions.
+    // null means GT was untouched (verdict='correct' inferred client-side).
+    // object means at least one joint dragged; client sends the full
+    // 8-joint set so downstream tooling can compute deltas without
+    // having to look up the original GT.
+    const calibParsed = parseCalibratedKeypoints(body.calibrated_keypoints);
+    if (!calibParsed.ok) {
+      return NextResponse.json({ error: 'invalid_calibrated_keypoints', detail: calibParsed.error }, { status: 400 });
+    }
+    const calibrated_keypoints = calibParsed.value;
+
     const admin = createServiceClient();
     const { data, error } = await admin
       .from('landmark_validation_review')
@@ -91,6 +147,7 @@ export async function POST(req: NextRequest) {
           verdict: body.verdict,
           notes,
           compared_sources: comparedSources,
+          calibrated_keypoints,
           source_app_version: 'swingcue-review-1.0',
           reviewed_at: new Date().toISOString(),
         },
