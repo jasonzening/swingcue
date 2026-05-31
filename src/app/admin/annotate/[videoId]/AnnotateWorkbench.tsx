@@ -17,6 +17,10 @@ import {
   type WorkbenchTask,
 } from '@/lib/types/annotation';
 import {
+  derivePhaseFrames,
+  type PhaseFrames,
+} from '@/lib/admin/phaseFrames';
+import {
   ANNOTATION_GUIDE_CSS,
   ANNOTATION_GUIDE_STORAGE_KEY,
   AnnotationGuideBody,
@@ -48,13 +52,12 @@ type Stage =
 
 const PHASE_ORDER: readonly TaskPhase[] = TASK_PHASES;
 
-type PhaseFrames = {
-  setup:      number;
-  takeaway:   number;
-  top:        number;
-  transition: number;
-  impact:     number;
-};
+// PhaseFrames type + derivation helpers extracted to
+// src/lib/admin/phaseFrames.ts so the review page (Phase 2) imports
+// the exact same function. Single source of truth — the workbench and
+// the validation overlay MUST agree on which frame_idx each phase maps
+// to, or arm-dot coords land on the wrong frame.
+
 type Point = { x: number; y: number };
 
 // Arm tasks: 0|1|2|3 (steps 0–2 are shoulder/elbow/wrist; 3 = "all done").
@@ -151,36 +154,7 @@ function findNextUnannotatedIndex(
   return tasks.length;
 }
 
-function timeToFrame(timeSec: number, fps: number): number {
-  return Math.max(0, Math.round(timeSec * fps));
-}
-
-function derivePhaseFrames(
-  meta: VideoMetaForAnnotation,
-): PhaseFrames | null {
-  const pm = meta.phaseMarkers;
-  // Hard requirement: the 4 "primary" markers must exist (transition is
-  // derivable from top+impact). Without any of the four primaries, route
-  // to manual calibration.
-  if (
-    pm.setupTime == null || pm.topTime == null ||
-    pm.impactTime == null || pm.finishTime == null
-  ) return null;
-
-  const transitionTime = pm.transitionTime ??
-    (pm.topTime + 0.4 * (pm.impactTime - pm.topTime));
-
-  // PR-7A.1: post_impact + finish dropped from the task set; we keep
-  // pm.finishTime only because it's part of the auto-derive guard
-  // (its absence still signals "phase markers incomplete").
-  return {
-    setup:      timeToFrame(pm.setupTime, meta.fps),
-    takeaway:   timeToFrame(pm.setupTime + 0.25 * (pm.topTime - pm.setupTime), meta.fps),
-    top:        timeToFrame(pm.topTime, meta.fps),
-    transition: timeToFrame(transitionTime, meta.fps),
-    impact:     timeToFrame(pm.impactTime, meta.fps),
-  };
-}
+// timeToFrame + derivePhaseFrames extracted (see import above).
 
 /* ════════════════════════════════════════════════════════════════════
    Component
