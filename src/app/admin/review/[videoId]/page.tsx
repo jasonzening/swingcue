@@ -92,7 +92,7 @@ function findPoseFrameByFrameIdx(
 export default async function Page({
   params,
 }: { params: Promise<{ videoId: string }> }) {
-  await requireAdminPage();
+  const reviewer = await requireAdminPage();
   const { videoId } = await params;
   const admin = createServiceClient();
 
@@ -250,16 +250,13 @@ export default async function Page({
     }
   }
 
-  // 8. Existing reviews for this admin
+  // 8. Existing reviews for this admin (use the requireAdminPage user
+  //    — the service-role client has no session of its own).
   const { data: reviewsData } = await admin
     .from('landmark_validation_review')
-    .select('phase, verdict, notes')
+    .select('phase, verdict, notes, calibrated_keypoints')
     .eq('video_id', videoId)
-    .eq('reviewer_id', (await admin.auth.getUser()).data.user?.id ?? '');
-  // Note: service-role doesn't have an auth.getUser session; reviews
-  // are filtered client-side by `reviewer_id` already set in the API
-  // route. We just fetch the visible set here; client will call GET
-  // /api/admin/landmark-validation-review/[videoId] anyway to refresh.
+    .eq('reviewer_id', reviewer.id);
   const reviews = (reviewsData ?? []) as ReviewRow[];
   const reviewByPhase = new Map<string, ReviewRow>(reviews.map(r => [r.phase, r]));
 
