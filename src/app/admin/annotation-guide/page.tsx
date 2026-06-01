@@ -122,6 +122,162 @@ export function WristDiagram() {
   );
 }
 
+// PR-7A.2: head_crown — top of skull at cranial midline. Solid skull
+// outline (bone). Dashed hair contour for context. Correct = apex of
+// cranial midline; wrong = hairline / forehead bulge (skin-only).
+export function HeadCrownDiagram() {
+  return (
+    <svg viewBox="0 0 200 160" width="190" height="152" role="img" aria-label="Head crown click target">
+      {/* hair / scalp outline (dashed) */}
+      <path d="M 50 35 Q 60 12, 100 8 Q 140 12, 152 38 Q 155 55, 150 70"
+            stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3" fill="none"/>
+      {/* skull bone — rounded calvarium */}
+      <path d="M 55 45 Q 65 22, 100 18 Q 135 22, 148 48 Q 152 70, 148 90 L 138 110 L 65 110 L 55 90 Q 51 70, 55 45 Z"
+            fill="none" stroke="#5F5E5A" strokeWidth="2"/>
+      {/* ear hint (right side) */}
+      <path d="M 148 78 Q 155 82, 154 92 Q 152 100, 145 100"
+            fill="none" stroke="#5F5E5A" strokeWidth="1.5"/>
+      {/* spinal/neck axis dashed reference */}
+      <line x1="100" y1="110" x2="100" y2="155" stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3"/>
+      <text x="22" y="155" fontSize="9" fill="#888780">calvarium (skull)</text>
+      {/* correct click — cranial midline apex */}
+      <circle cx="100" cy="18" r="5" fill="#1D9E75"/>
+      <circle cx="100" cy="18" r="9" fill="none" stroke="#1D9E75" strokeOpacity="0.5"/>
+      <text x="108" y="14" fontSize="10" fill="#0F6E56" fontWeight="500">cranial apex</text>
+      {/* wrong — hairline */}
+      <g transform="translate(90,38)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="20" y="38" fontSize="9" fill="#A32D2D">hairline</text>
+      {/* wrong — forehead bulge */}
+      <g transform="translate(110,62)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="118" y="62" fontSize="9" fill="#A32D2D">forehead</text>
+    </svg>
+  );
+}
+
+// PR-7A.2: chin — midpoint of mandibular symphysis (bottom-center of
+// jaw BONE, not soft tissue below it). Solid jaw line + correct apex;
+// red X for "soft chin tissue" and "lower lip".
+export function ChinDiagram() {
+  return (
+    <svg viewBox="0 0 200 160" width="190" height="152" role="img" aria-label="Chin click target">
+      {/* face outline (skin) dashed */}
+      <path d="M 60 18 Q 50 60, 60 100 Q 70 140, 100 148 Q 130 140, 140 100 Q 150 60, 140 18"
+            stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3" fill="none"/>
+      {/* mandibular arch (jaw bone) */}
+      <path d="M 65 65 Q 70 100, 100 122 Q 130 100, 135 65"
+            fill="none" stroke="#5F5E5A" strokeWidth="2.2"/>
+      {/* upper mouth line (lips dashed) */}
+      <path d="M 78 96 Q 100 102, 122 96"
+            stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3" fill="none"/>
+      <text x="22" y="155" fontSize="9" fill="#888780">mandibular bone</text>
+      {/* correct click — bone-bottom midline (symphysis) */}
+      <circle cx="100" cy="122" r="5" fill="#1D9E75"/>
+      <circle cx="100" cy="122" r="9" fill="none" stroke="#1D9E75" strokeOpacity="0.5"/>
+      <text x="108" y="118" fontSize="10" fill="#0F6E56" fontWeight="500">symphysis</text>
+      {/* wrong — soft chin tissue below bone */}
+      <g transform="translate(100,140)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="108" y="144" fontSize="9" fill="#A32D2D">soft tissue</text>
+      {/* wrong — lower lip */}
+      <g transform="translate(100,102)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="40" y="98" fontSize="9" fill="#A32D2D">lower lip</text>
+    </svg>
+  );
+}
+
+// PR-7A.2: knee — lateral femoral epicondyle apex (the visible bony
+// bump on the OUTSIDE of the knee at the joint line). NOT the patella
+// (kneecap) center, NOT the inner side.
+export function KneeDiagram() {
+  return (
+    <svg viewBox="0 0 200 160" width="190" height="152" role="img" aria-label="Knee click target">
+      {/* skin / pant leg silhouette */}
+      <path d="M 75 8 Q 70 50, 78 75 Q 88 100, 80 130 L 78 155"
+            stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3" fill="none"/>
+      <path d="M 130 8 Q 145 50, 142 75 Q 148 100, 150 130 L 152 155"
+            stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3" fill="none"/>
+      {/* femur (upper) */}
+      <line x1="98" y1="15" x2="110" y2="78" stroke="#5F5E5A" strokeWidth="2.5" strokeLinecap="round"/>
+      {/* tibia (lower) */}
+      <line x1="112" y1="92" x2="120" y2="155" stroke="#5F5E5A" strokeWidth="2.5" strokeLinecap="round"/>
+      {/* knee joint capsule */}
+      <ellipse cx="111" cy="85" rx="20" ry="12" fill="none" stroke="#5F5E5A" strokeWidth="2"/>
+      {/* patella (kneecap) — inside the capsule */}
+      <circle cx="108" cy="84" r="6" fill="none" stroke="#5F5E5A" strokeWidth="1.5"/>
+      <text x="22" y="155" fontSize="9" fill="#888780">femur + tibia (right leg, lateral view)</text>
+      {/* correct click — lateral epicondyle apex (outside) */}
+      <circle cx="131" cy="85" r="5" fill="#1D9E75"/>
+      <circle cx="131" cy="85" r="9" fill="none" stroke="#1D9E75" strokeOpacity="0.5"/>
+      <text x="140" y="82" fontSize="10" fill="#0F6E56" fontWeight="500">lat. epicondyle</text>
+      {/* wrong — patella center */}
+      <g transform="translate(108,84)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="60" y="80" fontSize="9" fill="#A32D2D">patella ctr</text>
+      {/* wrong — inner knee */}
+      <g transform="translate(91,85)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="50" y="100" fontSize="9" fill="#A32D2D">inner knee</text>
+    </svg>
+  );
+}
+
+// PR-7A.2: ankle — lateral malleolus apex (visible bony bump on the
+// OUTSIDE of the ankle, distal fibula tip). Bone-surface landmark, NOT
+// an internal joint center (unlike hip).
+export function AnkleDiagram() {
+  return (
+    <svg viewBox="0 0 200 160" width="190" height="152" role="img" aria-label="Ankle click target">
+      {/* pant leg / sock dashed */}
+      <path d="M 65 5 Q 60 50, 72 90 L 72 110 L 60 145"
+            stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3" fill="none"/>
+      <path d="M 135 5 Q 140 50, 130 90 L 130 110 L 145 145"
+            stroke="#B4B2A9" strokeWidth="1" strokeDasharray="3,3" fill="none"/>
+      {/* tibia + fibula */}
+      <line x1="90" y1="10" x2="95" y2="110" stroke="#5F5E5A" strokeWidth="2.5" strokeLinecap="round"/>
+      <line x1="115" y1="10" x2="118" y2="105" stroke="#5F5E5A" strokeWidth="2" strokeLinecap="round"/>
+      {/* foot outline */}
+      <path d="M 70 122 Q 90 118, 130 120 L 175 130 Q 178 142, 165 148 L 70 148 Q 60 140, 70 122 Z"
+            fill="none" stroke="#5F5E5A" strokeWidth="2"/>
+      {/* lateral malleolus — visible bone bump on fibula end */}
+      <circle cx="118" cy="115" r="6" fill="none" stroke="#5F5E5A" strokeWidth="1.5"/>
+      {/* medial malleolus hint (tibia, smaller, inner) */}
+      <circle cx="95" cy="115" r="4" fill="none" stroke="#5F5E5A" strokeWidth="1"/>
+      <text x="22" y="158" fontSize="9" fill="#888780">tibia + fibula + foot (lateral view)</text>
+      {/* correct click — lateral malleolus apex */}
+      <circle cx="123" cy="120" r="5" fill="#1D9E75"/>
+      <circle cx="123" cy="120" r="9" fill="none" stroke="#1D9E75" strokeOpacity="0.5"/>
+      <text x="132" y="117" fontSize="10" fill="#0F6E56" fontWeight="500">lat. malleolus</text>
+      {/* wrong — shoe edge */}
+      <g transform="translate(160,138)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="138" y="146" fontSize="9" fill="#A32D2D">shoe edge</text>
+      {/* wrong — inner ankle */}
+      <g transform="translate(90,116)">
+        <line x1="-4" y1="-4" x2="4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+        <line x1="4" y1="-4" x2="-4" y2="4" stroke="#A32D2D" strokeWidth="1.8"/>
+      </g>
+      <text x="30" y="116" fontSize="9" fill="#A32D2D">inner ankle</text>
+    </svg>
+  );
+}
+
 export function HipDiagram() {
   return (
     <svg viewBox="0 0 200 160" width="190" height="152" role="img" aria-label="Hip click target">
@@ -227,6 +383,73 @@ const CARDS: CardSpec[] = [
     optional: true,
     warning:
       'Hip is an estimated internal joint center — you cannot see this point directly, you must estimate it. NEVER click the visible outer trochanter bump (the lateral hip bone bulge). 髋点是内部旋转中心的估计点,绝不是外侧看得见的髋骨凸起。',
+  },
+  // PR-7A.2: head + leg clusters. Both are bone-surface landmarks
+  // (unlike hip's internal-center estimation): the annotator clicks
+  // visible bone, not an inferred internal point.
+  {
+    key: 'head_crown',
+    title: 'Head crown · 颅顶',
+    requirement: '1 per phase · required',
+    definitionZh: '颅顶正中点',
+    definitionEn: 'top of skull at cranial midline',
+    blurb: 'the apex of the calvarium, on the body’s vertical axis through the neck',
+    views: {
+      face_on: 'Highest center of the skull — extend the body axis up through the neck to the apex',
+      dtl: 'Topmost point of the skull silhouette, on the cranial midline (above the ear)',
+    },
+    diagram: HeadCrownDiagram,
+    optional: false,
+    warning:
+      'NOT the hairline, NOT the forehead. The point of the skull bone at the top of the head — imagine the body’s vertical axis extending up through the neck and skull to its apex. 不是发际线,不是额头,是颅骨最高点。',
+  },
+  {
+    key: 'chin',
+    title: 'Chin · 下颌',
+    requirement: '1 per phase · required',
+    definitionZh: '下颌正中点',
+    definitionEn: 'midpoint of mandibular symphysis',
+    blurb: 'the lowest center of the jaw BONE (not the soft tissue below it)',
+    views: {
+      face_on: 'Lowest center point of the jaw bone (mandibular symphysis), on the facial midline',
+      dtl: 'Bottom of the jaw bone on the facial midline (where bone ends, before soft chin tissue)',
+    },
+    diagram: ChinDiagram,
+    optional: false,
+    warning:
+      'Click where the BONE is, NOT where the soft chin tissue ends. The jaw bone often sits a few mm above the apparent skin edge. 点骨头位置,不要点下面的软组织。',
+  },
+  {
+    key: 'knee',
+    title: 'Knee · 膝',
+    requirement: '2 per phase (lead + trail) · required',
+    definitionZh: '外侧股骨上髁顶',
+    definitionEn: 'lateral femoral epicondyle apex',
+    blurb: 'the visible bony bump on the OUTSIDE of the knee at the joint line',
+    views: {
+      face_on: 'Outer side of the knee joint at the joint line, on the bone axis between thigh and shin',
+      dtl: 'Camera-facing knee: the visible bony bump on the outside; for the far-side knee, estimate the symmetric point',
+    },
+    diagram: KneeDiagram,
+    optional: false,
+    warning:
+      'NOT the patella (kneecap) center, NOT the inner side. The lateral epicondyle is the visible bony bump on the OUTSIDE of the knee. 是外侧骨突,不是膝盖骨中心,不是内侧。',
+  },
+  {
+    key: 'ankle',
+    title: 'Ankle · 踝',
+    requirement: '2 per phase (lead + trail) · required',
+    definitionZh: '外踝顶',
+    definitionEn: 'lateral malleolus apex',
+    blurb: 'the visible bony bump on the OUTSIDE of the ankle (distal fibula tip)',
+    views: {
+      face_on: 'Outer ankle bone bump on each side, on the leg bone axis',
+      dtl: 'Camera-facing ankle: the bony bump on the outside; for the far-side ankle, estimate the symmetric point',
+    },
+    diagram: AnkleDiagram,
+    optional: false,
+    warning:
+      'Bone-surface landmark (visible), NOT an internal joint center estimate (unlike hip). Click the bony bump, NOT the shoe edge, NOT the inner ankle. 是看得见的骨突,不像髋点是内部估计点。',
   },
 ];
 
@@ -370,7 +593,7 @@ export function AnnotationGuideBody({
               />
               <span>
                 I have read and understand these definitions.
-                <span className="ag-ack-hint">15 tasks per video (10 required + 5 hip)</span>
+                <span className="ag-ack-hint">30 tasks per video (10 arm + 5 hip + 5 head + 10 leg)</span>
               </span>
             </label>
             <button
