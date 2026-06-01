@@ -71,6 +71,24 @@ type GtHipRow = {
   handedness: 'right' | 'left';
 };
 
+// PR-7A.2 — new GT row shapes for head + leg clusters.
+type GtHeadSetRow = {
+  frame_idx: number;
+  phase: string;
+  head_crown_x: number; head_crown_y: number;
+  chin_x: number;        chin_y: number;
+  handedness: 'right' | 'left';
+};
+
+type GtLegRow = {
+  frame_idx: number;
+  phase: string;
+  arm: 'lead' | 'trail';
+  knee_x: number;  knee_y: number;
+  ankle_x: number; ankle_y: number;
+  handedness: 'right' | 'left';
+};
+
 function findPoseFrameByFrameIdx(
   timeline: PoseTimeline | null,
   frameIdx: number,
@@ -205,7 +223,10 @@ export default async function Page({
     .select('*')
     .eq('video_id', videoId)
     .like('source_app_version', 'swingcue-annotate-2.0-anatomical-spec%');
-  const gtRows = (gtData ?? []) as Array<GtArmRow | GtHipRow & { task_type: string; arm: 'lead' | 'trail' | null }>;
+  const gtRows = (gtData ?? []) as Array<
+    (GtArmRow | GtHipRow | GtHeadSetRow | GtLegRow)
+    & { task_type: string; arm: 'lead' | 'trail' | null }
+  >;
 
   // Detect handedness from any GT row (all 15 share the same value).
   let handedness: Handedness = 'right';
@@ -225,8 +246,18 @@ export default async function Page({
     leadHip:  { x: number; y: number };
     trailHip: { x: number; y: number };
   };
+  type HeadSetGt = {
+    headCrown: { x: number; y: number };
+    chin:      { x: number; y: number };
+  };
+  type LegGt = {
+    knee:  { x: number; y: number };
+    ankle: { x: number; y: number };
+  };
   const gtArmByPhaseAndArm = new Map<string, ArmGt>();
-  const gtHipByPhase = new Map<string, HipGt>();
+  const gtHipByPhase       = new Map<string, HipGt>();
+  const gtHeadSetByPhase   = new Map<string, HeadSetGt>();
+  const gtLegByPhaseAndArm = new Map<string, LegGt>();
   for (const r of gtRows) {
     const rec = r as Record<string, unknown>;
     const task_type = rec['task_type'] as string;
@@ -246,6 +277,17 @@ export default async function Page({
       gtHipByPhase.set(phase, {
         leadHip:  { x: rec['lead_hip_x']  as number, y: rec['lead_hip_y']  as number },
         trailHip: { x: rec['trail_hip_x'] as number, y: rec['trail_hip_y'] as number },
+      });
+    } else if (task_type === 'manual_gt_head_set') {
+      gtHeadSetByPhase.set(phase, {
+        headCrown: { x: rec['head_crown_x'] as number, y: rec['head_crown_y'] as number },
+        chin:      { x: rec['chin_x']       as number, y: rec['chin_y']       as number },
+      });
+    } else if (task_type === 'manual_gt_leg') {
+      const arm = rec['arm'] as 'lead' | 'trail';
+      gtLegByPhaseAndArm.set(`${phase}::${arm}`, {
+        knee:  { x: rec['knee_x']  as number, y: rec['knee_y']  as number },
+        ankle: { x: rec['ankle_x'] as number, y: rec['ankle_y'] as number },
       });
     }
   }
@@ -270,6 +312,9 @@ export default async function Page({
     const armLead  = gtArmByPhaseAndArm.get(`${phase}::lead`)  ?? null;
     const armTrail = gtArmByPhaseAndArm.get(`${phase}::trail`) ?? null;
     const hipPair  = gtHipByPhase.get(phase) ?? null;
+    const headSet  = gtHeadSetByPhase.get(phase) ?? null;
+    const legLead  = gtLegByPhaseAndArm.get(`${phase}::lead`)  ?? null;
+    const legTrail = gtLegByPhaseAndArm.get(`${phase}::trail`) ?? null;
     const whamRow  = whamByFrame.get(frameIdx);
     const whamKpts = whamRow && whamRow.fit_ok
       ? whamRow.keypoints_2d_projected
@@ -287,6 +332,7 @@ export default async function Page({
     return {
       phase, frameIdx, timeSec,
       armLead, armTrail, hipPair,
+      headSet, legLead, legTrail,
       wham: whamKpts,
       mediaPipe,
       existingReview: review,

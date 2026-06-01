@@ -32,10 +32,17 @@ import { TASK_PHASES, type TaskPhase, type Handedness } from '@/lib/types/annota
    Types — shared with the server page via direct import
    ════════════════════════════════════════════════════════════════════ */
 
+// PR-7A.2: extended from 8 to 14 joints. The new entries (head_crown,
+// chin, lead/trail_knee, lead/trail_ankle) all live as nullable values
+// in the same calibrated_keypoints JSONB column — additive. Existing
+// 8-joint reviews load fine because absent keys simply aren't dragged.
 const JOINT_KEYS = [
   'lead_shoulder', 'lead_elbow', 'lead_wrist',
   'trail_shoulder', 'trail_elbow', 'trail_wrist',
   'lead_hip', 'trail_hip',
+  'head_crown', 'chin',
+  'lead_knee', 'trail_knee',
+  'lead_ankle', 'trail_ankle',
 ] as const;
 export type JointKey = typeof JOINT_KEYS[number];
 
@@ -68,6 +75,21 @@ export type PerPhaseData = {
     leadHip:  { x: number; y: number };
     trailHip: { x: number; y: number };
   } | null;
+  // PR-7A.2 — head + leg GT clusters. Null when the annotator skipped
+  // that task for this phase; the review page renders gracefully (no
+  // dot, no connection line, no crash).
+  headSet: {
+    headCrown: { x: number; y: number };
+    chin:      { x: number; y: number };
+  } | null;
+  legLead: {
+    knee:  { x: number; y: number };
+    ankle: { x: number; y: number };
+  } | null;
+  legTrail: {
+    knee:  { x: number; y: number };
+    ankle: { x: number; y: number };
+  } | null;
   wham: Record<string, { x: number; y: number } | null> | null;
   mediaPipe: Record<string, [number | null, number | null, number]> | null;
   existingReview: ReviewRow | null;
@@ -91,7 +113,16 @@ export interface ReviewViewProps {
 
 const COLOR_GT_LEAD   = '#FFD86B';
 const COLOR_GT_TRAIL  = '#4FB3FF';
-const COLOR_GT_HIP    = '#FFFFFF';
+// PR-7A.2 color protocol: lead/trail HIP follow the same yellow/blue
+// convention as the arm + leg clusters (was white in PR-7A.1 — that
+// made hip side-confusion easy and didn't compose visually with the
+// new leg dots). Head joints stay white (no lead/trail meaning on a
+// single-skull-per-frame cluster). Pelvis_center is also white but
+// smaller + semi-transparent so it reads as "derived" not "annotated".
+const COLOR_GT_HIP_LEAD  = COLOR_GT_LEAD;
+const COLOR_GT_HIP_TRAIL = COLOR_GT_TRAIL;
+const COLOR_GT_HEAD      = '#FFFFFF';
+const COLOR_GT_PELVIS    = '#FFFFFF';
 const COLOR_WHAM      = '#9C9C9C';
 const COLOR_MP        = '#E0E0E0';
 const COLOR_REVIEWED  = '#1D9E75';
@@ -125,15 +156,34 @@ function whamSideFor(
   return arm === 'lead' ? 'left' : 'right';
 }
 
-/** WHAM joint name for a given GT joint key, e.g. 'lead_elbow' → 'right_elbow'. */
+/**
+ * WHAM joint name for a given GT joint key. Returns null if WHAM has
+ * no equivalent landmark (currently only `chin` — WHAM exposes head
+ * and head_crown but no jaw/chin point). PR-7A.2 maps knee + ankle to
+ * WHAM's anatomical bone-surface landmarks (`lateral_epicondyle_*`
+ * and `lateral_malleolus_*`) rather than the SMPL joint centers
+ * (`left_knee`, `left_ankle` etc.) — they're the same WHAM column-set
+ * the annotation guide describes as the correct click target.
+ */
 function whamJointName(
   joint: JointKey,
   viewType: 'face_on' | 'down_the_line',
   handedness: Handedness,
-): string {
+): string | null {
+  if (joint === 'head_crown') return 'head_crown';
+  if (joint === 'chin')        return null;
+
   const isLead = joint.startsWith('lead_');
-  const body = joint.slice(isLead ? 5 : 6); // 'shoulder'|'elbow'|'wrist'|'hip'
+  const body = joint.slice(isLead ? 5 : 6);
   const side = whamSideFor(isLead ? 'lead' : 'trail', viewType, handedness);
+
+  // Knee + ankle: prefer WHAM's anatomical bone-landmark columns over
+  // the SMPL joint centers — that's what the annotation guide trained
+  // the annotator to click against.
+  if (body === 'knee')  return `lateral_epicondyle_${side}`;
+  if (body === 'ankle') return `lateral_malleolus_${side}`;
+  // shoulder / elbow / wrist / hip — WHAM uses the simple `side_body`
+  // naming for these (image-orientation, post-PR-7a.2 arm-chain swap).
   return `${side}_${body}`;
 }
 
@@ -148,6 +198,12 @@ function originalPos(p: PerPhaseData, joint: JointKey): { x: number; y: number }
     case 'trail_wrist':    return p.armTrail?.wrist    ?? null;
     case 'lead_hip':       return p.hipPair?.leadHip   ?? null;
     case 'trail_hip':      return p.hipPair?.trailHip  ?? null;
+    case 'head_crown':     return p.headSet?.headCrown ?? null;
+    case 'chin':           return p.headSet?.chin      ?? null;
+    case 'lead_knee':      return p.legLead?.knee      ?? null;
+    case 'trail_knee':     return p.legTrail?.knee     ?? null;
+    case 'lead_ankle':     return p.legLead?.ankle     ?? null;
+    case 'trail_ankle':    return p.legTrail?.ankle    ?? null;
   }
 }
 
@@ -175,10 +231,13 @@ export function ReviewView(props: ReviewViewProps) {
   const [activeIdx, setActiveIdx] = useState(0);
   const active = perPhase[activeIdx];
 
-  const [showGtArm, setShowGtArm] = useState(true);
-  const [showGtHip, setShowGtHip] = useState(true);
-  const [showWham,  setShowWham]  = useState(true);
-  const [showMp,    setShowMp]    = useState(false);
+  // PR-7A.2: 2 GT toggles — "arms + hips" (the existing 8-joint set)
+  // and "head + legs" (the new 6-joint set). Lets the reviewer focus
+  // on one cluster while hiding the other if both at once is busy.
+  const [showGtArmHip,  setShowGtArmHip]  = useState(true);
+  const [showGtHeadLeg, setShowGtHeadLeg] = useState(true);
+  const [showWham,      setShowWham]      = useState(true);
+  const [showMp,        setShowMp]        = useState(false);
 
   const [notes, setNotes] = useState<string>(active?.existingReview?.notes ?? '');
   const [saving, setSaving] = useState(false);
@@ -444,8 +503,9 @@ export function ReviewView(props: ReviewViewProps) {
       {active && (
         <div className="rv-main">
           <p className="rv-hint">
-            Drag yellow / blue / white dots to where the bone-top truly is.
-            Gray lines show offsets from WHAM (dashed) and MediaPipe (lighter).
+            Drag dots to where bone-top truly is. Lead = yellow, trail = blue,
+            head = white. Pelvis center is derived from hips. Gray lines show
+            offsets from WHAM (dashed) and MediaPipe (lighter).
           </p>
 
           <div className="rv-frame-info">
@@ -483,8 +543,8 @@ export function ReviewView(props: ReviewViewProps) {
                 handedness={handedness}
                 showWham={showWham}
                 showMp={showMp}
-                showGtArm={showGtArm}
-                showGtHip={showGtHip}
+                showGtArmHip={showGtArmHip}
+                showGtHeadLeg={showGtHeadLeg}
               />
 
               {/* WHAM mesh markers (non-interactive) */}
@@ -497,8 +557,20 @@ export function ReviewView(props: ReviewViewProps) {
                 <MediaPipeDots kpts={active.mediaPipe} />
               )}
 
+              {/* DERIVED pelvis_center — small white circle, NOT
+                  draggable. Mid-point of (lead_hip, trail_hip) using
+                  whichever positions are current (staged-drag or
+                  original GT). Rendered AFTER WHAM/MP so it sits on
+                  top but BEFORE GT dots so the draggable dots win. */}
+              {showGtArmHip && (
+                <PelvisCenter
+                  active={active}
+                  staged={stagedCurrent}
+                />
+              )}
+
               {/* GT DOTS — draggable, top z-order */}
-              {showGtArm && (
+              {showGtArmHip && (
                 <>
                   <ArmLayer
                     arm="lead" color={COLOR_GT_LEAD}
@@ -512,31 +584,57 @@ export function ReviewView(props: ReviewViewProps) {
                     draggingJoint={draggingJoint}
                     onDotPointerDown={onDotPointerDown}
                   />
+                  <HipDots
+                    leadColor={COLOR_GT_HIP_LEAD}
+                    trailColor={COLOR_GT_HIP_TRAIL}
+                    active={active} staged={stagedCurrent}
+                    draggingJoint={draggingJoint}
+                    onDotPointerDown={onDotPointerDown}
+                  />
                 </>
               )}
-              {showGtHip && (
-                <HipDots
-                  color={COLOR_GT_HIP}
-                  active={active} staged={stagedCurrent}
-                  draggingJoint={draggingJoint}
-                  onDotPointerDown={onDotPointerDown}
-                />
+
+              {showGtHeadLeg && (
+                <>
+                  <HeadDots
+                    color={COLOR_GT_HEAD}
+                    active={active} staged={stagedCurrent}
+                    draggingJoint={draggingJoint}
+                    onDotPointerDown={onDotPointerDown}
+                  />
+                  <LegLayer
+                    arm="lead" color={COLOR_GT_LEAD}
+                    active={active} staged={stagedCurrent}
+                    draggingJoint={draggingJoint}
+                    onDotPointerDown={onDotPointerDown}
+                  />
+                  <LegLayer
+                    arm="trail" color={COLOR_GT_TRAIL}
+                    active={active} staged={stagedCurrent}
+                    draggingJoint={draggingJoint}
+                    onDotPointerDown={onDotPointerDown}
+                  />
+                </>
               )}
             </svg>
           </div>
 
-          {/* Source toggles */}
+          {/* Source toggles — PR-7A.2: GT split into two cluster
+              groups so the reviewer can focus on one without the
+              other crowding the frame. */}
           <div className="rv-toggles">
             <label className="rv-toggle">
-              <input type="checkbox" checked={showGtArm} onChange={e => setShowGtArm(e.target.checked)} />
+              <input type="checkbox" checked={showGtArmHip} onChange={e => setShowGtArmHip(e.target.checked)} />
               <span className="rv-swatch" style={{ background: COLOR_GT_LEAD }} />
               <span className="rv-swatch" style={{ background: COLOR_GT_TRAIL }} />
-              <span>Jason GT (arm)</span>
+              <span>Jason GT (arms + hips)</span>
             </label>
             <label className="rv-toggle">
-              <input type="checkbox" checked={showGtHip} onChange={e => setShowGtHip(e.target.checked)} />
-              <span className="rv-swatch" style={{ background: COLOR_GT_HIP }} />
-              <span>Jason GT (hip)</span>
+              <input type="checkbox" checked={showGtHeadLeg} onChange={e => setShowGtHeadLeg(e.target.checked)} />
+              <span className="rv-swatch" style={{ background: COLOR_GT_HEAD }} />
+              <span className="rv-swatch" style={{ background: COLOR_GT_LEAD }} />
+              <span className="rv-swatch" style={{ background: COLOR_GT_TRAIL }} />
+              <span>Jason GT (head + legs)</span>
             </label>
             <label className="rv-toggle">
               <input type="checkbox" checked={showWham} onChange={e => setShowWham(e.target.checked)} />
@@ -590,6 +688,39 @@ export function ReviewView(props: ReviewViewProps) {
    Connection lines (GT ↔ WHAM, GT ↔ MediaPipe)
    ════════════════════════════════════════════════════════════════════ */
 
+// Cluster lookups for the connection-line filter — must match the two
+// GT toggles so the lines hide together with their endpoints.
+const ARM_HIP_JOINTS: readonly JointKey[] = [
+  'lead_shoulder', 'lead_elbow', 'lead_wrist',
+  'trail_shoulder', 'trail_elbow', 'trail_wrist',
+  'lead_hip', 'trail_hip',
+];
+const HEAD_LEG_JOINTS: readonly JointKey[] = [
+  'head_crown', 'chin',
+  'lead_knee', 'trail_knee',
+  'lead_ankle', 'trail_ankle',
+];
+
+/**
+ * MediaPipe COCO landmark name for a given GT joint. Returns null
+ * when there's no useful equivalent (chin, head_crown — COCO has only
+ * `nose`, no jaw or skull landmark). Knee + ankle COCO names match
+ * the WHAM image-side convention via whamSideFor.
+ */
+function mpJointName(
+  joint: JointKey,
+  viewType: 'face_on' | 'down_the_line',
+  handedness: Handedness,
+): string | null {
+  if (joint === 'head_crown' || joint === 'chin') return null;
+  const isLead = joint.startsWith('lead_');
+  const body = joint.slice(isLead ? 5 : 6);
+  const side = whamSideFor(isLead ? 'lead' : 'trail', viewType, handedness);
+  // shoulder/elbow/wrist/hip/knee/ankle all use the COCO `side_body`
+  // naming; nothing special for the PR-7A.2 additions.
+  return `${side}_${body}`;
+}
+
 function ConnectionLines(props: {
   active: PerPhaseData;
   staged: CalibratedKpts | undefined;
@@ -597,30 +728,25 @@ function ConnectionLines(props: {
   handedness: Handedness;
   showWham: boolean;
   showMp: boolean;
-  showGtArm: boolean;
-  showGtHip: boolean;
+  showGtArmHip: boolean;
+  showGtHeadLeg: boolean;
 }) {
-  const { active, staged, viewType, handedness, showWham, showMp, showGtArm, showGtHip } = props;
-
-  const armJoints: JointKey[] = [
-    'lead_shoulder', 'lead_elbow', 'lead_wrist',
-    'trail_shoulder', 'trail_elbow', 'trail_wrist',
-  ];
-  const hipJoints: JointKey[] = ['lead_hip', 'trail_hip'];
+  const { active, staged, viewType, handedness, showWham, showMp,
+          showGtArmHip, showGtHeadLeg } = props;
 
   const lines: React.ReactElement[] = [];
 
-  for (const joint of [...armJoints, ...hipJoints]) {
-    const isArm = armJoints.includes(joint);
-    if (isArm && !showGtArm) continue;
-    if (!isArm && !showGtHip) continue;
+  for (const joint of JOINT_KEYS) {
+    const inArmHip  = (ARM_HIP_JOINTS  as readonly string[]).includes(joint);
+    const inHeadLeg = (HEAD_LEG_JOINTS as readonly string[]).includes(joint);
+    if (inArmHip  && !showGtArmHip)  continue;
+    if (inHeadLeg && !showGtHeadLeg) continue;
 
     const gtPos = displayPos(active, joint, staged);
     if (!gtPos) continue;
 
     const whamName = whamJointName(joint, viewType, handedness);
-
-    if (showWham && active.wham) {
+    if (showWham && active.wham && whamName) {
       const w = active.wham[whamName];
       if (w) {
         lines.push(
@@ -633,8 +759,9 @@ function ConnectionLines(props: {
         );
       }
     }
-    if (showMp && active.mediaPipe) {
-      const mp = active.mediaPipe[whamName];
+    const mpName = mpJointName(joint, viewType, handedness);
+    if (showMp && active.mediaPipe && mpName) {
+      const mp = active.mediaPipe[mpName];
       if (mp) {
         const [mx, my] = mp;
         if (mx != null && my != null) {
@@ -705,6 +832,68 @@ function ArmLayer(props: {
 }
 
 function HipDots(props: {
+  // PR-7A.2: per-side colors (yellow lead / blue trail) so the hip
+  // dots share the visual language of the arm + leg clusters.
+  leadColor: string;
+  trailColor: string;
+  active: PerPhaseData;
+  staged: CalibratedKpts | undefined;
+  draggingJoint: JointKey | null;
+  onDotPointerDown: (e: ReactPointerEvent<SVGCircleElement>, j: JointKey) => void;
+}) {
+  const { leadColor, trailColor, active, staged, draggingJoint, onDotPointerDown } = props;
+  const lead  = displayPos(active, 'lead_hip',  staged);
+  const trail = displayPos(active, 'trail_hip', staged);
+  return (
+    <g>
+      {lead && (
+        <DraggableDot
+          joint="lead_hip" x={lead.x} y={lead.y} color={leadColor}
+          isDragging={draggingJoint === 'lead_hip'}
+          onPointerDown={onDotPointerDown}
+        />
+      )}
+      {trail && (
+        <DraggableDot
+          joint="trail_hip" x={trail.x} y={trail.y} color={trailColor}
+          isDragging={draggingJoint === 'trail_hip'}
+          onPointerDown={onDotPointerDown}
+        />
+      )}
+    </g>
+  );
+}
+
+/**
+ * PR-7A.2: derived pelvis-center (white, NOT draggable, smaller radius
+ * + lower opacity than annotated joints). Mid-point of (lead_hip,
+ * trail_hip). Re-computes on every render so it tracks the staged
+ * drag positions in real time.
+ */
+function PelvisCenter(props: {
+  active: PerPhaseData;
+  staged: CalibratedKpts | undefined;
+}) {
+  const { active, staged } = props;
+  const lead  = displayPos(active, 'lead_hip',  staged);
+  const trail = displayPos(active, 'trail_hip', staged);
+  if (!lead || !trail) return null;
+  const cx = (lead.x + trail.x) / 2;
+  const cy = (lead.y + trail.y) / 2;
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      <circle
+        cx={cx} cy={cy} r={5}
+        fill={COLOR_GT_PELVIS}
+        stroke="#000"
+        strokeWidth={1}
+        opacity={0.7}
+      />
+    </g>
+  );
+}
+
+function HeadDots(props: {
   color: string;
   active: PerPhaseData;
   staged: CalibratedKpts | undefined;
@@ -712,21 +901,65 @@ function HipDots(props: {
   onDotPointerDown: (e: ReactPointerEvent<SVGCircleElement>, j: JointKey) => void;
 }) {
   const { color, active, staged, draggingJoint, onDotPointerDown } = props;
-  const lead  = displayPos(active, 'lead_hip',  staged);
-  const trail = displayPos(active, 'trail_hip', staged);
+  const crown = displayPos(active, 'head_crown', staged);
+  const chin  = displayPos(active, 'chin',       staged);
   return (
     <g>
-      {lead && (
+      {crown && (
         <DraggableDot
-          joint="lead_hip" x={lead.x} y={lead.y} color={color}
-          isDragging={draggingJoint === 'lead_hip'}
+          joint="head_crown" x={crown.x} y={crown.y} color={color}
+          isDragging={draggingJoint === 'head_crown'}
           onPointerDown={onDotPointerDown}
         />
       )}
-      {trail && (
+      {chin && (
         <DraggableDot
-          joint="trail_hip" x={trail.x} y={trail.y} color={color}
-          isDragging={draggingJoint === 'trail_hip'}
+          joint="chin" x={chin.x} y={chin.y} color={color}
+          isDragging={draggingJoint === 'chin'}
+          onPointerDown={onDotPointerDown}
+        />
+      )}
+    </g>
+  );
+}
+
+function LegLayer(props: {
+  arm: 'lead' | 'trail';
+  color: string;
+  active: PerPhaseData;
+  staged: CalibratedKpts | undefined;
+  draggingJoint: JointKey | null;
+  onDotPointerDown: (e: ReactPointerEvent<SVGCircleElement>, j: JointKey) => void;
+}) {
+  const { arm, color, active, staged, draggingJoint, onDotPointerDown } = props;
+  const kneeKey:  JointKey = arm === 'lead' ? 'lead_knee'  : 'trail_knee';
+  const ankleKey: JointKey = arm === 'lead' ? 'lead_ankle' : 'trail_ankle';
+  const knee  = displayPos(active, kneeKey,  staged);
+  const ankle = displayPos(active, ankleKey, staged);
+  return (
+    <g>
+      {knee && ankle && (
+        <polyline
+          points={`${knee.x},${knee.y} ${ankle.x},${ankle.y}`}
+          fill="none"
+          stroke={color}
+          strokeWidth={3}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
+      {knee && (
+        <DraggableDot
+          joint={kneeKey} x={knee.x} y={knee.y} color={color}
+          isDragging={draggingJoint === kneeKey}
+          onPointerDown={onDotPointerDown}
+        />
+      )}
+      {ankle && (
+        <DraggableDot
+          joint={ankleKey} x={ankle.x} y={ankle.y} color={color}
+          isDragging={draggingJoint === ankleKey}
           onPointerDown={onDotPointerDown}
         />
       )}
@@ -782,20 +1015,26 @@ function WhamSkeleton(props: {
 }) {
   const { kpts, viewType, handedness } = props;
 
-  function chain(side: 'left' | 'right') {
-    const sh = kpts[`${side}_shoulder`];
-    const el = kpts[`${side}_elbow`];
-    const wr = kpts[`${side}_wrist`];
-    return [sh, el, wr].filter((p): p is { x: number; y: number } => p != null);
+  function chain(...names: string[]) {
+    return names
+      .map(n => kpts[n])
+      .filter((p): p is { x: number; y: number } => p != null);
   }
 
   const leadSide  = whamSideFor('lead',  viewType, handedness);
   const trailSide = whamSideFor('trail', viewType, handedness);
-  const leadChain  = chain(leadSide);
-  const trailChain = chain(trailSide);
+  const leadArm   = chain(`${leadSide}_shoulder`,  `${leadSide}_elbow`,  `${leadSide}_wrist`);
+  const trailArm  = chain(`${trailSide}_shoulder`, `${trailSide}_elbow`, `${trailSide}_wrist`);
+  // PR-7A.2: WHAM exposes anatomical bone-surface landmarks
+  // (lateral_epicondyle / lateral_malleolus) — prefer those over the
+  // SMPL joint centers so the WHAM marker lands where the annotation
+  // guide instructed the annotator to click.
+  const leadLeg   = chain(`lateral_epicondyle_${leadSide}`,  `lateral_malleolus_${leadSide}`);
+  const trailLeg  = chain(`lateral_epicondyle_${trailSide}`, `lateral_malleolus_${trailSide}`);
 
   const lh = kpts['left_hip'];
   const rh = kpts['right_hip'];
+  const headCrown = kpts['head_crown'];
 
   function drawChain(pts: Array<{ x: number; y: number }>, key: string) {
     if (pts.length === 0) return null;
@@ -826,14 +1065,20 @@ function WhamSkeleton(props: {
 
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {drawChain(leadChain,  'wham-lead')}
-      {drawChain(trailChain, 'wham-trail')}
+      {drawChain(leadArm,   'wham-lead-arm')}
+      {drawChain(trailArm,  'wham-trail-arm')}
+      {drawChain(leadLeg,   'wham-lead-leg')}
+      {drawChain(trailLeg,  'wham-trail-leg')}
       {lh && (
         <rect x={lh.x - 6} y={lh.y - 6} width={12} height={12}
               fill={COLOR_WHAM} stroke="#000" strokeWidth={0.6} />
       )}
       {rh && (
         <rect x={rh.x - 6} y={rh.y - 6} width={12} height={12}
+              fill={COLOR_WHAM} stroke="#000" strokeWidth={0.6} />
+      )}
+      {headCrown && (
+        <rect x={headCrown.x - 6} y={headCrown.y - 6} width={12} height={12}
               fill={COLOR_WHAM} stroke="#000" strokeWidth={0.6} />
       )}
     </g>
@@ -844,10 +1089,15 @@ function MediaPipeDots(props: {
   kpts: Record<string, [number | null, number | null, number]>;
 }) {
   const { kpts } = props;
+  // PR-7A.2: include knee + ankle so the new leg cluster has MP
+  // markers to compare against. MP COCO has no head_crown or chin so
+  // the head cluster only compares against WHAM.
   const NAMES = [
     'left_shoulder', 'left_elbow', 'left_wrist',
     'right_shoulder', 'right_elbow', 'right_wrist',
     'left_hip', 'right_hip',
+    'left_knee', 'right_knee',
+    'left_ankle', 'right_ankle',
   ];
   const pts: Array<{ x: number; y: number; name: string }> = [];
   for (const n of NAMES) {
