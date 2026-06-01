@@ -9,9 +9,14 @@ export type AnnotationPhase =
 
 // PR-7A.1: hip_pair joins the 3 v1 task types. arm-coord tasks remain
 // 'manual_gt'; the new 2-click hip flow uses 'manual_gt_hip_pair'.
+// PR-7A.2: head_set (head_crown + chin) and leg (knee + ankle, per side)
+// added — DB CHECK + partial unique indexes added in
+// supabase/migrations/20260531000001_pr7a2_full_body_calibration.sql.
 export type AnnotationTaskType =
   | 'manual_gt'
   | 'manual_gt_hip_pair'
+  | 'manual_gt_head_set'
+  | 'manual_gt_leg'
   | 'correction_review'
   | 'active_learning';
 
@@ -52,6 +57,17 @@ export interface AnnotationRecord {
   lead_hip_y?: number | null;
   trail_hip_x?: number | null;
   trail_hip_y?: number | null;
+  // PR-7A.2: head + leg cluster columns. Optional on the interface so
+  // existing arm + hip body construction stays valid without per-call-
+  // site changes; the DB CHECK enforces cross-cluster nullity.
+  head_crown_x?: number | null;
+  head_crown_y?: number | null;
+  chin_x?: number | null;
+  chin_y?: number | null;
+  knee_x?: number | null;
+  knee_y?: number | null;
+  ankle_x?: number | null;
+  ankle_y?: number | null;
   handedness: Handedness;
   source_app_version: string;
   annotated_at?: string;
@@ -73,6 +89,47 @@ export interface HipPairAnnotation {
   trail_hip_x: number;
   trail_hip_y: number;
   arm: null;
+  handedness: Handedness;
+  visibility: AnnotationVisibility;
+  source_app_version: 'swingcue-annotate-2.0-anatomical-spec';
+}
+
+/**
+ * PR-7A.2 strict shape for head-set writes. head_crown + chin both
+ * required, arm explicitly null, visibility pinned to 'clear' (these
+ * are bone-surface landmarks always visible at full body camera
+ * coverage; if either is off-frame the workbench skips entirely).
+ */
+export interface HeadSetAnnotation {
+  video_id: string;
+  frame_idx: number;
+  phase: AnnotationPhase;
+  task_type: 'manual_gt_head_set';
+  head_crown_x: number;
+  head_crown_y: number;
+  chin_x: number;
+  chin_y: number;
+  arm: null;
+  handedness: Handedness;
+  visibility: AnnotationVisibility;
+  source_app_version: 'swingcue-annotate-2.0-anatomical-spec';
+}
+
+/**
+ * PR-7A.2 strict shape for leg writes. One row per (phase × arm); arm
+ * carries the lead/trail discriminator just like the legacy arm task.
+ * knee + ankle both required.
+ */
+export interface LegAnnotation {
+  video_id: string;
+  frame_idx: number;
+  phase: AnnotationPhase;
+  task_type: 'manual_gt_leg';
+  arm: AnnotationArm;
+  knee_x: number;
+  knee_y: number;
+  ankle_x: number;
+  ankle_y: number;
   handedness: Handedness;
   visibility: AnnotationVisibility;
   source_app_version: 'swingcue-annotate-2.0-anatomical-spec';
@@ -108,7 +165,53 @@ export interface HipPairTask {
   frameIdx: number;
 }
 
-export type WorkbenchTask = ArmTask | HipPairTask;
+// PR-7A.2 — Two new workbench task kinds. HeadSetTask is a single 2-click
+// task per phase (head_crown then chin). LegTask is per-side (5 phases ×
+// 2 arms = 10), each 2 clicks (knee then ankle).
+export interface HeadSetTask {
+  kind: 'head_set';
+  index: number;
+  phase: TaskPhase;
+  frameIdx: number;
+}
+
+export interface LegTask {
+  kind: 'leg';
+  index: number;
+  phase: TaskPhase;
+  arm: AnnotationArm;
+  frameIdx: number;
+}
+
+export type WorkbenchTask = ArmTask | HipPairTask | HeadSetTask | LegTask;
+
+/**
+ * PR-7A.2: stable client-side joint identifiers used as keys in the
+ * landmark_validation_review.calibrated_keypoints JSONB column and in
+ * the review page's per-joint drag state.
+ *
+ * Lead/trail prefixes follow the GOLFER's anatomy (lead = down-target
+ * side, trail = away-from-target side), NOT WHAM's image-orientation
+ * convention. The whamSideFor() helper in ReviewView maps these to
+ * WHAM's image-left/image-right keypoint keys given (arm, viewType,
+ * handedness).
+ */
+export type JointKey =
+  | 'lead_shoulder' | 'lead_elbow' | 'lead_wrist'
+  | 'trail_shoulder' | 'trail_elbow' | 'trail_wrist'
+  | 'lead_hip' | 'trail_hip'
+  | 'head_crown' | 'chin'
+  | 'lead_knee' | 'trail_knee'
+  | 'lead_ankle' | 'trail_ankle';
+
+export const ALL_JOINT_KEYS: readonly JointKey[] = [
+  'lead_shoulder', 'lead_elbow', 'lead_wrist',
+  'trail_shoulder', 'trail_elbow', 'trail_wrist',
+  'lead_hip', 'trail_hip',
+  'head_crown', 'chin',
+  'lead_knee', 'trail_knee',
+  'lead_ankle', 'trail_ankle',
+] as const;
 
 export interface VideoMetaForAnnotation {
   videoId: string;

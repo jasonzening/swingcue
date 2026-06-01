@@ -126,7 +126,13 @@ function isHipTaskDone(t: HipPairTask, existing: AnnotationRecord[]): boolean {
 }
 
 function isTaskDone(t: WorkbenchTask, existing: AnnotationRecord[]): boolean {
-  return t.kind === 'arm' ? isArmTaskDone(t, existing) : isHipTaskDone(t, existing);
+  if (t.kind === 'arm') return isArmTaskDone(t, existing);
+  if (t.kind === 'hip_pair') return isHipTaskDone(t, existing);
+  // PR-7A.2 C2: head_set + leg union members exist on the type but the
+  // workbench task generator does not yet emit them (lands in C4) — so
+  // this branch is unreachable today. Returns false to keep the linear
+  // scan moving once C4 adds the generation + done-check helpers.
+  return false;
 }
 
 function findFirstUnannotatedIndex(
@@ -1017,9 +1023,16 @@ function AnnotatingPanel(props: {
         {armDone} / {ARM_TASK_COUNT} arm · {hipDone} / {HIP_TASK_COUNT} hip (optional)
       </div>
 
-      {currentTask.kind === 'arm'
-        ? <ArmTaskBody {...props} task={currentTask} />
-        : <HipTaskBody {...props} task={currentTask} />}
+      {currentTask.kind === 'arm' ? (
+        <ArmTaskBody {...props} task={currentTask} />
+      ) : currentTask.kind === 'hip_pair' ? (
+        <HipTaskBody {...props} task={currentTask} />
+      ) : (
+        /* PR-7A.2 C2: HeadSetTaskBody + LegTaskBody land in C4 — until
+           then the generator (also extended in C4) does not emit these
+           kinds, so this branch is unreachable. */
+        null
+      )}
 
       <div className="wb-muted">frame {frameIdx} · {tSec}s</div>
 
