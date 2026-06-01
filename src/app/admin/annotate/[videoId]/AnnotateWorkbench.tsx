@@ -10,8 +10,12 @@ import {
   type AnnotationVisibility,
   type ArmTask,
   type Handedness,
+  type HeadSetAnnotation,
+  type HeadSetTask,
   type HipPairAnnotation,
   type HipPairTask,
+  type LegAnnotation,
+  type LegTask,
   type TaskPhase,
   type VideoMetaForAnnotation,
   type WorkbenchTask,
@@ -24,7 +28,11 @@ import {
   ANNOTATION_GUIDE_CSS,
   ANNOTATION_GUIDE_STORAGE_KEY,
   AnnotationGuideBody,
+  AnkleDiagram,
+  ChinDiagram,
+  HeadCrownDiagram,
   HipDiagram,
+  KneeDiagram,
 } from '@/app/admin/annotation-guide/page';
 
 /* ════════════════════════════════════════════════════════════════════
@@ -66,15 +74,19 @@ type Point = { x: number; y: number };
 // only reads up to its valid range.
 type PointStepIdx = 0 | 1 | 2 | 3;
 
-const POINT_LABELS_ARM = ['Shoulder', 'Elbow', 'Wrist'] as const;
-const POINT_LABELS_HIP = ['Lead hip', 'Trail hip'] as const;
+const POINT_LABELS_ARM      = ['Shoulder', 'Elbow', 'Wrist'] as const;
+const POINT_LABELS_HIP      = ['Lead hip', 'Trail hip'] as const;
+const POINT_LABELS_HEAD_SET = ['Head crown', 'Chin'] as const;
+const POINT_LABELS_LEG      = ['Knee', 'Ankle'] as const;
 
-// Arm-side accent colors — locked-in hex (mirrors --annot-* tokens in
+// Side accent colors — locked-in hex (mirrors --annot-* tokens in
 // globals.css). For hip tasks, step 0 (lead hip) uses LEAD; step 1
-// (trail hip) uses TRAIL — same yellow/blue language, so annotator
-// recognizes the side they're clicking without reading the label.
+// (trail hip) uses TRAIL. For leg tasks, both points (knee + ankle)
+// inherit the task's arm color. Head joints use COLOR_HEAD (white)
+// per PR-7A.2 color protocol.
 const COLOR_LEAD   = '#FFD86B';
 const COLOR_TRAIL  = '#4FB3FF';
+const COLOR_HEAD   = '#FFFFFF';
 
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -93,22 +105,34 @@ interface Props { videoId: string; }
    Task generation + completion checks
    ════════════════════════════════════════════════════════════════════ */
 
-const ARM_TASK_COUNT = TASK_PHASES.length * 2;   // 5 phases × 2 arms = 10
-const HIP_TASK_COUNT = TASK_PHASES.length;       // 5 phases × 1 hip   = 5
+const ARM_TASK_COUNT  = TASK_PHASES.length * 2;   // 5 phases × 2 arms = 10
+const HIP_TASK_COUNT  = TASK_PHASES.length;       // 5 phases × 1 hip  = 5
+const HEAD_TASK_COUNT = TASK_PHASES.length;       // 5 phases × 1 head = 5
+const LEG_TASK_COUNT  = TASK_PHASES.length * 2;   // 5 phases × 2 legs = 10
+// Total 30. Kept implicit via the per-cluster counts above.
 
+/**
+ * PR-7A.2: per-phase interleaving — 6 tasks per phase × 5 phases = 30
+ * total. Order within phase: arm_lead, arm_trail, hip_pair, head_set,
+ * leg_lead, leg_trail. Previously v1 batched arms (10) then hips (5);
+ * the new flow keeps the annotator on a single phase's frame_idx
+ * across all six clusters, then advances to the next phase.
+ *
+ * Existing 998e1930 + 51ca9428 v2 rows continue to register as done
+ * — `findFirstUnannotatedIndex` is order-agnostic, it just scans for
+ * the first task whose existence isn't in the DB.
+ */
 function generateTasks(pf: PhaseFrames): WorkbenchTask[] {
   const out: WorkbenchTask[] = [];
   let idx = 0;
-  // 10 arm tasks first — phase-major, lead-before-trail within each phase.
   for (const phase of PHASE_ORDER) {
-    for (const arm of ['lead', 'trail'] as const) {
-      out.push({ kind: 'arm', index: idx++, phase, arm, frameIdx: pf[phase] });
-    }
-  }
-  // 5 hip-pair tasks — one per phase, in PHASE_ORDER. Same frame_idx as
-  // the arm tasks for that phase (annotator stays on a familiar frame).
-  for (const phase of PHASE_ORDER) {
-    out.push({ kind: 'hip_pair', index: idx++, phase, frameIdx: pf[phase] });
+    const f = pf[phase];
+    out.push({ kind: 'arm',      index: idx++, phase, arm: 'lead',  frameIdx: f });
+    out.push({ kind: 'arm',      index: idx++, phase, arm: 'trail', frameIdx: f });
+    out.push({ kind: 'hip_pair', index: idx++, phase,                frameIdx: f });
+    out.push({ kind: 'head_set', index: idx++, phase,                frameIdx: f });
+    out.push({ kind: 'leg',      index: idx++, phase, arm: 'lead',  frameIdx: f });
+    out.push({ kind: 'leg',      index: idx++, phase, arm: 'trail', frameIdx: f });
   }
   return out;
 }
@@ -125,14 +149,25 @@ function isHipTaskDone(t: HipPairTask, existing: AnnotationRecord[]): boolean {
   );
 }
 
+function isHeadSetTaskDone(t: HeadSetTask, existing: AnnotationRecord[]): boolean {
+  return existing.some(a =>
+    a.frame_idx === t.frameIdx && a.task_type === 'manual_gt_head_set',
+  );
+}
+
+function isLegTaskDone(t: LegTask, existing: AnnotationRecord[]): boolean {
+  return existing.some(a =>
+    a.frame_idx === t.frameIdx && a.arm === t.arm && a.task_type === 'manual_gt_leg',
+  );
+}
+
 function isTaskDone(t: WorkbenchTask, existing: AnnotationRecord[]): boolean {
-  if (t.kind === 'arm') return isArmTaskDone(t, existing);
-  if (t.kind === 'hip_pair') return isHipTaskDone(t, existing);
-  // PR-7A.2 C2: head_set + leg union members exist on the type but the
-  // workbench task generator does not yet emit them (lands in C4) — so
-  // this branch is unreachable today. Returns false to keep the linear
-  // scan moving once C4 adds the generation + done-check helpers.
-  return false;
+  switch (t.kind) {
+    case 'arm':      return isArmTaskDone(t, existing);
+    case 'hip_pair': return isHipTaskDone(t, existing);
+    case 'head_set': return isHeadSetTaskDone(t, existing);
+    case 'leg':      return isLegTaskDone(t, existing);
+  }
 }
 
 function findFirstUnannotatedIndex(
@@ -265,8 +300,11 @@ export function AnnotateWorkbench({ videoId }: Props) {
   const currentTask: WorkbenchTask | null =
     stage === 'annotating' && tasks[currentTaskIdx] ? tasks[currentTaskIdx] : null;
 
-  // Required points for the current task: 3 for arm, 2 for hip.
-  const requiredPointCount = currentTask?.kind === 'hip_pair' ? 2 : 3;
+  // Required points for the current task: 3 for arm, 2 for hip / head /
+  // leg. The PointStepIdx union (0|1|2|3) covers the arm worst-case.
+  const requiredPointCount =
+    currentTask?.kind === 'arm' ? 3 :
+    currentTask ? 2 : 3;
 
   /* ──────────────────────────────────────────────────────────────
      LOAD: video meta + existing annotations
@@ -278,8 +316,12 @@ export function AnnotateWorkbench({ videoId }: Props) {
       try {
         const [metaRes, annRes] = await Promise.all([
           fetch(`/api/admin/videos/${videoId}`, { cache: 'no-store' }),
+          // PR-7A.2: fetch all v2 task types (?taskType=all) so the
+          // completion checks see arm + hip + head + leg rows in one
+          // request — fixes the hip-resume gap from PR-7A.1 where only
+          // arm rows were fetched and hip tasks always re-prompted.
           fetch(
-            `/api/admin/annotations/${videoId}?taskType=manual_gt`,
+            `/api/admin/annotations/${videoId}?taskType=all`,
             { cache: 'no-store' },
           ),
         ]);
@@ -426,6 +468,26 @@ export function AnnotateWorkbench({ videoId }: Props) {
         if (a.trail_hip_x != null && a.trail_hip_y != null) {
           drawDot(ctx, { x: a.trail_hip_x, y: a.trail_hip_y }, 3, hexToRgba(COLOR_TRAIL, 0.35));
         }
+      } else if (a.task_type === 'manual_gt_head_set') {
+        // Head-set record: head_crown + chin both white per PR-7A.2
+        // color protocol. No polyline — the skull and jaw don't form
+        // a meaningful drawn chain at workbench scale.
+        if (a.head_crown_x != null && a.head_crown_y != null) {
+          drawDot(ctx, { x: a.head_crown_x, y: a.head_crown_y }, 3, hexToRgba(COLOR_HEAD, 0.35));
+        }
+        if (a.chin_x != null && a.chin_y != null) {
+          drawDot(ctx, { x: a.chin_x, y: a.chin_y }, 3, hexToRgba(COLOR_HEAD, 0.35));
+        }
+      } else if (a.task_type === 'manual_gt_leg' && a.arm != null) {
+        // Leg record: knee + ankle in the row's arm color (lead = yellow,
+        // trail = blue). Polyline knee → ankle since they form a
+        // straight bone segment (tibia).
+        const base = armColor(a.arm);
+        const pts: Point[] = [];
+        if (a.knee_x  != null && a.knee_y  != null) pts.push({ x: a.knee_x,  y: a.knee_y  });
+        if (a.ankle_x != null && a.ankle_y != null) pts.push({ x: a.ankle_x, y: a.ankle_y });
+        drawPolyline(ctx, pts, hexToRgba(base, 0.25), 1);
+        for (const p of pts) drawDot(ctx, p, 3, hexToRgba(base, 0.35));
       }
     }
 
@@ -449,6 +511,27 @@ export function AnnotateWorkbench({ videoId }: Props) {
       }
       if (trailPt) {
         drawDot(ctx, trailPt, 4, COLOR_TRAIL, 8, hexToRgba(COLOR_TRAIL, 0.4));
+      }
+    } else if (currentTask?.kind === 'head_set') {
+      // Head: step 0 = head_crown, step 1 = chin. Both white per
+      // PR-7A.2 color protocol.
+      const crownPt = activePoints[0];
+      const chinPt  = activePoints[1];
+      if (crownPt) drawDot(ctx, crownPt, 4, COLOR_HEAD, 8, hexToRgba(COLOR_HEAD, 0.4));
+      if (chinPt)  drawDot(ctx, chinPt,  4, COLOR_HEAD, 8, hexToRgba(COLOR_HEAD, 0.4));
+    } else if (currentTask?.kind === 'leg') {
+      // Leg: step 0 = knee, step 1 = ankle. Both inherit the task's
+      // arm color (lead = yellow, trail = blue). Connected with a
+      // tibia polyline once both are placed.
+      const base = armColor(currentTask.arm);
+      const filtered: Point[] = activePoints
+        .slice(0, 2)
+        .filter((p): p is Point => p !== null);
+      if (filtered.length > 1) {
+        drawPolyline(ctx, filtered, hexToRgba(base, 0.6), 1.5);
+      }
+      for (const p of filtered) {
+        drawDot(ctx, p, 4, base, 8, hexToRgba(base, 0.4));
       }
     }
   }, [videoMeta, existingAnns, currentFrameIdx, activePoints, currentTask]);
@@ -599,6 +682,133 @@ export function AnnotateWorkbench({ videoId }: Props) {
     }
   }, [videoMeta, existingAnns, handedness, advanceToNext]);
 
+  const saveHeadSetAndAdvance = useCallback(async (
+    task: HeadSetTask,
+    headCrown: Point,
+    chin: Point,
+  ) => {
+    if (!videoMeta) return;
+    setSavingError(null);
+    const body: HeadSetAnnotation = {
+      video_id: videoMeta.videoId,
+      frame_idx: task.frameIdx,
+      phase: task.phase,
+      task_type: 'manual_gt_head_set',
+      head_crown_x: headCrown.x, head_crown_y: headCrown.y,
+      chin_x: chin.x,            chin_y: chin.y,
+      arm: null,
+      handedness,
+      visibility: 'clear',
+      source_app_version: SOURCE_APP_VERSION,
+    };
+    try {
+      const res = await fetch('/api/admin/annotations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        setSavingError(`save failed: HTTP ${res.status} ${detail.slice(0, 200)}`);
+        return;
+      }
+      const updatedRecord: AnnotationRecord = {
+        video_id: body.video_id,
+        frame_idx: body.frame_idx,
+        phase: body.phase,
+        task_type: body.task_type,
+        arm: null,
+        visibility: body.visibility,
+        shoulder_x: null, shoulder_y: null,
+        elbow_x: null,    elbow_y: null,
+        wrist_x: null,    wrist_y: null,
+        lead_hip_x: null,   lead_hip_y: null,
+        trail_hip_x: null,  trail_hip_y: null,
+        head_crown_x: body.head_crown_x, head_crown_y: body.head_crown_y,
+        chin_x: body.chin_x,             chin_y: body.chin_y,
+        knee_x: null,  knee_y: null,
+        ankle_x: null, ankle_y: null,
+        handedness: body.handedness,
+        source_app_version: body.source_app_version,
+      };
+      const updatedAnns = [
+        ...existingAnns.filter(a => !(
+          a.frame_idx === body.frame_idx &&
+          a.task_type === body.task_type
+        )),
+        updatedRecord,
+      ];
+      setExistingAnns(updatedAnns);
+      advanceToNext(updatedAnns);
+    } catch (e) {
+      setSavingError(e instanceof Error ? e.message : 'unknown save error');
+    }
+  }, [videoMeta, existingAnns, handedness, advanceToNext]);
+
+  const saveLegAndAdvance = useCallback(async (
+    task: LegTask,
+    knee: Point,
+    ankle: Point,
+  ) => {
+    if (!videoMeta) return;
+    setSavingError(null);
+    const body: LegAnnotation = {
+      video_id: videoMeta.videoId,
+      frame_idx: task.frameIdx,
+      phase: task.phase,
+      task_type: 'manual_gt_leg',
+      arm: task.arm,
+      knee_x:  knee.x,  knee_y:  knee.y,
+      ankle_x: ankle.x, ankle_y: ankle.y,
+      handedness,
+      visibility: 'clear',
+      source_app_version: SOURCE_APP_VERSION,
+    };
+    try {
+      const res = await fetch('/api/admin/annotations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        setSavingError(`save failed: HTTP ${res.status} ${detail.slice(0, 200)}`);
+        return;
+      }
+      const updatedRecord: AnnotationRecord = {
+        video_id: body.video_id,
+        frame_idx: body.frame_idx,
+        phase: body.phase,
+        task_type: body.task_type,
+        arm: body.arm,
+        visibility: body.visibility,
+        shoulder_x: null, shoulder_y: null,
+        elbow_x: null,    elbow_y: null,
+        wrist_x: null,    wrist_y: null,
+        lead_hip_x: null,  lead_hip_y: null,
+        trail_hip_x: null, trail_hip_y: null,
+        head_crown_x: null, head_crown_y: null,
+        chin_x: null,       chin_y: null,
+        knee_x:  body.knee_x,  knee_y:  body.knee_y,
+        ankle_x: body.ankle_x, ankle_y: body.ankle_y,
+        handedness: body.handedness,
+        source_app_version: body.source_app_version,
+      };
+      const updatedAnns = [
+        ...existingAnns.filter(a => !(
+          a.frame_idx === body.frame_idx &&
+          a.arm === body.arm &&
+          a.task_type === body.task_type
+        )),
+        updatedRecord,
+      ];
+      setExistingAnns(updatedAnns);
+      advanceToNext(updatedAnns);
+    } catch (e) {
+      setSavingError(e instanceof Error ? e.message : 'unknown save error');
+    }
+  }, [videoMeta, existingAnns, handedness, advanceToNext]);
+
   const advanceWithoutSaving = useCallback(() => {
     advanceToNext(existingAnns);
   }, [existingAnns, advanceToNext]);
@@ -632,8 +842,21 @@ export function AnnotateWorkbench({ videoId }: Props) {
       if (leadHip && trailHip) {
         void saveHipPairAndAdvance(currentTask, leadHip, trailHip);
       }
+    } else if (currentTask.kind === 'head_set' && newStep === 2) {
+      const headCrown = next[0];
+      const chin      = next[1];
+      if (headCrown && chin) {
+        void saveHeadSetAndAdvance(currentTask, headCrown, chin);
+      }
+    } else if (currentTask.kind === 'leg' && newStep === 2) {
+      const knee  = next[0];
+      const ankle = next[1];
+      if (knee && ankle) {
+        void saveLegAndAdvance(currentTask, knee, ankle);
+      }
     }
-  }, [stage, videoMeta, currentTask, pointStepIdx, requiredPointCount, activePoints, saveArmAndAdvance, saveHipPairAndAdvance]);
+  }, [stage, videoMeta, currentTask, pointStepIdx, requiredPointCount, activePoints,
+      saveArmAndAdvance, saveHipPairAndAdvance, saveHeadSetAndAdvance, saveLegAndAdvance]);
 
   /* ──────────────────────────────────────────────────────────────
      Action buttons (also wired to keyboard)
@@ -718,13 +941,18 @@ export function AnnotateWorkbench({ videoId }: Props) {
      Render helpers
      ────────────────────────────────────────────────────────────── */
 
-  const { armDone, hipDone } = useMemo(() => {
-    let a = 0, h = 0;
+  const { armDone, hipDone, headDone, legDone } = useMemo(() => {
+    let a = 0, h = 0, head = 0, leg = 0;
     for (const t of tasks) {
       if (!isTaskDone(t, existingAnns)) continue;
-      if (t.kind === 'arm') a++; else h++;
+      switch (t.kind) {
+        case 'arm':      a++; break;
+        case 'hip_pair': h++; break;
+        case 'head_set': head++; break;
+        case 'leg':      leg++; break;
+      }
     }
-    return { armDone: a, hipDone: h };
+    return { armDone: a, hipDone: h, headDone: head, legDone: leg };
   }, [tasks, existingAnns]);
 
   const closeGuide = useCallback(() => setGuideOpen(null), []);
@@ -890,6 +1118,8 @@ export function AnnotateWorkbench({ videoId }: Props) {
               fps={videoMeta?.fps ?? 30}
               armDone={armDone}
               hipDone={hipDone}
+              headDone={headDone}
+              legDone={legDone}
               savingError={savingError}
               onUndo={undoLastPoint}
               onOccluded={saveAsOccluded}
@@ -902,6 +1132,8 @@ export function AnnotateWorkbench({ videoId }: Props) {
               videoId={videoId}
               armDone={armDone}
               hipDone={hipDone}
+              headDone={headDone}
+              legDone={legDone}
               onBack={() => router.push('/admin/annotate')}
             />
           )}
@@ -981,6 +1213,8 @@ function AnnotatingPanel(props: {
   fps: number;
   armDone: number;
   hipDone: number;
+  headDone: number;
+  legDone: number;
   savingError: string | null;
   onUndo: () => void;
   onOccluded: () => void;
@@ -988,28 +1222,36 @@ function AnnotatingPanel(props: {
   onSkip: () => void;
 }) {
   const { videoId, currentTask, tasks, existingAnns, currentTaskIdx,
-          frameIdx, fps, armDone, hipDone, savingError } = props;
+          frameIdx, fps, armDone, hipDone, headDone, legDone, savingError } = props;
 
   const tSec = (frameIdx / Math.max(1, fps)).toFixed(2);
-  // PR-7A.1 Phase 2: CTA to validation review surfaces once all 10
-  // arm tasks are done. Hip is optional per spec — don't gate on it.
-  // CTA stays visible if the annotator continues editing.
+  // PR-7A.1 Phase 2 / PR-7A.2 update: CTA to validation review
+  // surfaces once arm tasks are done. The remaining clusters (hip,
+  // head, leg) are nice-to-have but not gated; once the arm chain is
+  // verifiable, the review page is useful.
   const showReviewCta = armDone >= ARM_TASK_COUNT;
   return (
     <>
-      <div className="wb-progress">
+      <div className="wb-progress wb-progress-30">
         {tasks.map((t, i) => {
           const isCurrent = i === currentTaskIdx;
           const isDone = isTaskDone(t, existingAnns);
-          const sideClass = t.kind === 'arm'
-            ? `current-${t.arm}`
-            : isCurrent && props.pointStepIdx === 0 ? 'current-lead'
-            : isCurrent && props.pointStepIdx >= 1 ? 'current-trail'
-            : 'current-lead';
+          let sideClass = '';
+          if (t.kind === 'arm' || t.kind === 'leg') {
+            sideClass = `current-${t.arm}`;
+          } else if (t.kind === 'hip_pair') {
+            sideClass = isCurrent && props.pointStepIdx === 0 ? 'current-lead'
+                      : isCurrent && props.pointStepIdx >= 1 ? 'current-trail'
+                      : 'current-lead';
+          } else {
+            // head_set — white head color carried by .current-head class
+            sideClass = 'current-head';
+          }
           const currentCls = isCurrent ? `current ${sideClass}` : '';
-          // Hip cells get a subtle separator dot above to visually break
-          // the bar into "10 arm | 5 hip" segments without adding chrome.
-          const kindCls = t.kind === 'hip_pair' ? 'wb-progress-cell-hip' : '';
+          const kindCls =
+            t.kind === 'hip_pair' ? 'wb-progress-cell-hip'  :
+            t.kind === 'head_set' ? 'wb-progress-cell-head' :
+            t.kind === 'leg'      ? 'wb-progress-cell-leg'  : '';
           return (
             <div
               key={t.index}
@@ -1020,18 +1262,20 @@ function AnnotatingPanel(props: {
       </div>
 
       <div className="wb-task-title">
-        {armDone} / {ARM_TASK_COUNT} arm · {hipDone} / {HIP_TASK_COUNT} hip (optional)
+        {armDone} / {ARM_TASK_COUNT} ARM ·{' '}
+        {hipDone} / {HIP_TASK_COUNT} HIP ·{' '}
+        {headDone} / {HEAD_TASK_COUNT} HEAD ·{' '}
+        {legDone} / {LEG_TASK_COUNT} LEG
       </div>
 
       {currentTask.kind === 'arm' ? (
         <ArmTaskBody {...props} task={currentTask} />
       ) : currentTask.kind === 'hip_pair' ? (
         <HipTaskBody {...props} task={currentTask} />
+      ) : currentTask.kind === 'head_set' ? (
+        <HeadSetTaskBody {...props} task={currentTask} />
       ) : (
-        /* PR-7A.2 C2: HeadSetTaskBody + LegTaskBody land in C4 — until
-           then the generator (also extended in C4) does not emit these
-           kinds, so this branch is unreachable. */
-        null
+        <LegTaskBody {...props} task={currentTask} />
       )}
 
       <div className="wb-muted">frame {frameIdx} · {tSec}s</div>
@@ -1150,18 +1394,137 @@ function HipTaskBody(props: {
   );
 }
 
+function HeadSetTaskBody(props: {
+  task: HeadSetTask;
+  activePoints: (Point | null)[];
+  pointStepIdx: number;
+  onUndo: () => void;
+  onSkip: () => void;
+}) {
+  const { task, activePoints, pointStepIdx, onUndo, onSkip } = props;
+  // Show the diagram matching the current step — crown for step 0,
+  // chin for step 1. Once both clicks are placed the panel auto-saves
+  // and advances, so we never linger on step 2.
+  const DiagramForStep = pointStepIdx <= 0 ? HeadCrownDiagram : ChinDiagram;
+  return (
+    <>
+      <div className="wb-task-name">
+        {task.phase.toUpperCase()} · HEAD (set)
+      </div>
+
+      <div className="wb-hip-badge">
+        5 head tasks · 颅顶 + 下颌 bone landmarks
+      </div>
+
+      <div className="wb-steps">
+        {POINT_LABELS_HEAD_SET.map((label, i) => {
+          const filled = activePoints[i] !== null;
+          const active = pointStepIdx === i;
+          // Both steps use neutral primary color — head joints render
+          // as WHITE per the PR-7A.2 color protocol, and the panel
+          // accent mirrors that.
+          const activeCls = active ? 'active active-head' : '';
+          return (
+            <div
+              key={label}
+              className={`wb-step ${filled ? 'done' : ''} ${activeCls}`}
+            >
+              <span>{i + 1}.</span>
+              <span>{label}</span>
+              <span className="wb-spacer" />
+              <span>{filled ? '●' : '○'}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="wb-hip-diagram">
+        <DiagramForStep />
+      </div>
+      <p className="wb-hip-warning">
+        Visible bone landmarks. Crown = top-of-skull apex, NOT hairline.
+        Chin = jaw-bone bottom, NOT soft tissue.
+      </p>
+
+      <div className="wb-btn-row">
+        <button className="wb-btn" onClick={onUndo}>Undo (z)</button>
+        <button className="wb-btn" onClick={onSkip}>Skip (s)</button>
+      </div>
+    </>
+  );
+}
+
+function LegTaskBody(props: {
+  task: LegTask;
+  activePoints: (Point | null)[];
+  pointStepIdx: number;
+  onUndo: () => void;
+  onSkip: () => void;
+}) {
+  const { task, activePoints, pointStepIdx, onUndo, onSkip } = props;
+  const armSuffix = task.arm;
+  const DiagramForStep = pointStepIdx <= 0 ? KneeDiagram : AnkleDiagram;
+  return (
+    <>
+      <div className="wb-task-name">
+        {task.phase.toUpperCase()} · LEG ({task.arm.toUpperCase()})
+      </div>
+
+      <div className="wb-hip-badge">
+        10 leg tasks · 外侧骨突 — visible bone bumps
+      </div>
+
+      <div className="wb-steps">
+        {POINT_LABELS_LEG.map((label, i) => {
+          const filled = activePoints[i] !== null;
+          const active = pointStepIdx === i;
+          const activeCls = active ? `active active-${armSuffix}` : '';
+          return (
+            <div
+              key={label}
+              className={`wb-step ${filled ? 'done' : ''} ${activeCls}`}
+            >
+              <span>{i + 1}.</span>
+              <span>{label}</span>
+              <span className="wb-spacer" />
+              <span>{filled ? '●' : '○'}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="wb-hip-diagram">
+        <DiagramForStep />
+      </div>
+      <p className="wb-hip-warning">
+        Visible bone landmarks (unlike hip). Knee = lateral epicondyle
+        (OUTSIDE bump), NOT patella. Ankle = lateral malleolus (OUTSIDE
+        bump), NOT shoe edge.
+      </p>
+
+      <div className="wb-btn-row">
+        <button className="wb-btn" onClick={onUndo}>Undo (z)</button>
+        <button className="wb-btn" onClick={onSkip}>Skip (s)</button>
+      </div>
+    </>
+  );
+}
+
 function DonePanel(props: {
   videoId: string;
   armDone: number;
   hipDone: number;
+  headDone: number;
+  legDone: number;
   onBack: () => void;
 }) {
-  const { videoId, armDone, hipDone, onBack } = props;
+  const { videoId, armDone, hipDone, headDone, legDone, onBack } = props;
   return (
     <>
       <div className="wb-task-title">Complete</div>
       <div className="wb-task-name">
-        {armDone} / {ARM_TASK_COUNT} arm · {hipDone} / {HIP_TASK_COUNT} hip
+        {armDone} / {ARM_TASK_COUNT} arm · {hipDone} / {HIP_TASK_COUNT} hip ·{' '}
+        {headDone} / {HEAD_TASK_COUNT} head · {legDone} / {LEG_TASK_COUNT} leg
       </div>
       <div className="wb-muted">
         Annotations are saved server-side. Validate them against WHAM and
@@ -1335,6 +1698,13 @@ const css = `
     grid-template-columns: repeat(15, 1fr);
     gap: 3px;
   }
+  /* PR-7A.2: 30-task grid (10 arm + 5 hip + 5 head + 10 leg). Two-row
+     layout keeps each cell tappable; the kind-specific bg tints make
+     the cluster boundaries visible at a glance. */
+  .wb-progress-30 {
+    grid-template-columns: repeat(15, 1fr);
+    grid-auto-rows: 8px;
+  }
   .wb-progress-cell {
     height: 8px;
     border-radius: 2px;
@@ -1348,11 +1718,11 @@ const css = `
   .wb-progress-cell.current        { border-color: var(--text-primary); }
   .wb-progress-cell.current-lead   { border-color: var(--annot-lead); }
   .wb-progress-cell.current-trail  { border-color: var(--annot-trail); }
-  /* Hip cells get a subtle inner stripe so the "10 arm | 5 hip" split
-     is visible at a glance even when most are pending. */
-  .wb-progress-cell-hip {
-    background: rgba(255, 255, 255, 0.04);
-  }
+  .wb-progress-cell.current-head   { border-color: #ffffff; }
+  /* Subtle bg tints differentiate clusters in the 30-cell strip. */
+  .wb-progress-cell-hip  { background: rgba(255, 255, 255, 0.04); }
+  .wb-progress-cell-head { background: rgba(255, 255, 255, 0.07); }
+  .wb-progress-cell-leg  { background: rgba(255, 255, 255, 0.10); }
 
   .wb-task-title {
     font-size: 11px;
@@ -1410,6 +1780,7 @@ const css = `
   }
   .wb-step.active-lead  { border-color: var(--annot-lead);  color: var(--annot-lead);  }
   .wb-step.active-trail { border-color: var(--annot-trail); color: var(--annot-trail); }
+  .wb-step.active-head  { border-color: #ffffff; color: #ffffff; }
   .wb-step.done {
     opacity: 0.4;
   }
