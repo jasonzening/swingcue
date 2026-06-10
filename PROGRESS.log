@@ -1,0 +1,8 @@
+E1 start 2026-06-09T21:xx  git init done, engine/ scaffold created
+2026-06-09T23:14:36.419465  E1 complete: A+B layers done, 5 gate-1 sheets on desktop, waiting gate-1 review
+2026-06-09T23:14:57.944428  E1 COMPLETE: A-layer (PosePipeline) + B-layer (SwingPhaseEngine 8-phase) done. 5 videos processed, KP cached in engine/kp_cache/. Gate-1 sheets on desktop. Waiting human review of gate-1.
+2026-06-09T23:40:40.721341  E1 complete: A+B layers done, 5 gate-1 sheets on desktop, waiting gate-1 review
+Tue Jun  9 23:43:42 PDT 2026 Judgment core implemented, pytest passed (26/26)
+2026-06-09T23:48:03.368350  E1 complete: A+B layers done, 5 gate-1 sheets on desktop, waiting gate-1 review
+2026-06-09T23:48:18.458361  Gate-1 v2 fixes applied: Fix1(wrist-Y-max/wrist-X-max for impact, highest-prominence in 4.5s/3.0s window), Fix2(transition non-empty, top window [TOP-1,TOP+2]), Fix3(impact conf via peak_prom/torso_height), Fix4(wrist-Y curve for 201015). Impact results: 201015=fr154 (GT154 EXACT), 201039=fr205 (GT208 close), 201047=fr277 (GT282 close), 201054=fr148 (GT150 EXACT), 201058=fr186 (GT186 EXACT). Gate-1 v2 images on desktop.
+2026-06-09T23:50:15.130031  E1 complete: A+B layers done, 5 gate-1 sheets on desktop, waiting gate-1 review

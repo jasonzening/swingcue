@@ -1,0 +1,116 @@
+LD_LIBRARY_PATH set, running RTMPose with GPU...
+E1 run_e1.py started 2026-06-09T23:13:07.355387
+
+============================================================
+Videos2026-06-09_201015_827.mp4  [face-on]
+  A-layer: running RTMPose...
+[0;93m2026-06-09 23:13:08.509134049 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:13:08.509182534 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
+[0;93m2026-06-09 23:13:08.759476079 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:13:08.759514157 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
+  A-layer: 407 frames processed @ 30fps
+  A-layer: done in 24.2s
+  Cached: Videos2026-06-09_201015_827.json
+  B-layer anchors: addr=19 top=46 impact=59 finish=79
+    address         : fr   0–  19  (20fr  633ms)
+    takeaway        : fr  20–  25  (6fr  167ms)
+    backswing       : fr  26–  45  (20fr  633ms)
+    top             : fr  46–  48  (3fr  67ms)
+    downswing       : fr  49–  55  (7fr  200ms)
+    impact          : fr  56–  62  (7fr  200ms)
+    follow_through  : fr  63– 406  (344fr  11433ms)
+  Gate-1 image: gate1_-09_201015_827.jpg
+
+============================================================
+Videos2026-06-09_201039_231.mp4  [face-on]
+  A-layer: running RTMPose...
+[0;93m2026-06-09 23:13:32.239962076 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:13:32.240005580 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
+[0;93m2026-06-09 23:13:32.386570707 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:13:32.386608510 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
+  A-layer: 310 frames processed @ 30fps
+  A-layer: done in 17.5s
+  Cached: Videos2026-06-09_201039_231.json
+  B-layer anchors: addr=80 top=146 impact=205 finish=261
+    address         : fr   0–  80  (81fr  2667ms)
+    takeaway        : fr  81–  96  (16fr  500ms)
+    backswing       : fr  97– 145  (49fr  1600ms)
+    top             : fr 146– 157  (12fr  367ms)
+    downswing       : fr 158– 201  (44fr  1433ms)
+    impact          : fr 202– 208  (7fr  200ms)
+    follow_through  : fr 209– 309  (101fr  3333ms)
+  Gate-1 image: gate1_-09_201039_231.jpg
+
+============================================================
+Videos2026-06-09_201047_915.mp4  [face-on]
+  A-layer: running RTMPose...
+[0;93m2026-06-09 23:13:49.966671767 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:13:49.966716090 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
+[0;93m2026-06-09 23:13:50.123242825 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:13:50.123281999 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
+  A-layer: 364 frames processed @ 30fps
+  A-layer: done in 20.2s
+  Cached: Videos2026-06-09_201047_915.json
+  B-layer anchors: addr=107 top=171 impact=260 finish=345
+    address         : fr   0– 107  (108fr  3567ms)
+    takeaway        : fr 108– 123  (16fr  500ms)
+    backswing       : fr 124– 170  (47fr  1533ms)
+    top             : fr 171– 188  (18fr  567ms)
+    downswing       : fr 189– 256  (68fr  2233ms)
+    impact          : fr 257– 263  (7fr  200ms)
+    follow_through  : fr 264– 363  (100fr  3300ms)
+  Gate-1 image: gate1_-09_201047_915.jpg
+
+============================================================
+Videos2026-06-09_201054_561.mp4  [down-the-line]
+  A-layer: running RTMPose...
+[0;93m2026-06-09 23:14:10.539056931 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:14:10.539095524 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
+[0;93m2026-06-09 23:14:10.688256036 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:14:10.688304132 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
+  A-layer: 199 frames processed @ 30fps
+  A-layer: done in 11.1s
+  Cached: Videos2026-06-09_201054_561.json
+  B-layer anchors: addr=90 top=133 impact=148 finish=164
+    address         : fr   0–  90  (91fr  3000ms)
+    takeaway        : fr  91– 100  (10fr  300ms)
+    backswing       : fr 101– 132  (32fr  1033ms)
+    top             : fr 133– 136  (4fr  100ms)
+    downswing       : fr 137– 144  (8fr  233ms)
+    impact          : fr 145– 151  (7fr  200ms)
+    follow_through  : fr 152– 198  (47fr  1533ms)
+  Gate-1 image: gate1_-09_201054_561.jpg
+
+============================================================
+Videos2026-06-09_201058_697.mp4  [down-the-line]
+  A-layer: running RTMPose...
+[0;93m2026-06-09 23:14:21.957225328 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:14:21.957266548 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
+[0;93m2026-06-09 23:14:22.134905505 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
+[0;93m2026-06-09 23:14:22.134938829 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
+load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
+  A-layer: 258 frames processed @ 30fps
+  A-layer: done in 14.2s
+  Cached: Videos2026-06-09_201058_697.json
+  B-layer anchors: addr=88 top=137 impact=186 finish=218
+    address         : fr   0–  88  (89fr  2933ms)
+    takeaway        : fr  89– 100  (12fr  367ms)
+    backswing       : fr 101– 136  (36fr  1167ms)
+    top             : fr 137– 146  (10fr  300ms)
+    downswing       : fr 147– 182  (36fr  1167ms)
+    impact          : fr 183– 189  (7fr  200ms)
+    follow_through  : fr 190– 257  (68fr  2233ms)
+  Gate-1 image: gate1_-09_201058_697.jpg
+
+NEEDS_HUMAN.md written.
+
+All done. Gate-1 images on desktop. Waiting for review.
