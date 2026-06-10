@@ -6,3 +6,12 @@ Tue Jun  9 23:43:42 PDT 2026 Judgment core implemented, pytest passed (26/26)
 2026-06-09T23:48:03.368350  E1 complete: A+B layers done, 5 gate-1 sheets on desktop, waiting gate-1 review
 2026-06-09T23:48:18.458361  Gate-1 v2 fixes applied: Fix1(wrist-Y-max/wrist-X-max for impact, highest-prominence in 4.5s/3.0s window), Fix2(transition non-empty, top window [TOP-1,TOP+2]), Fix3(impact conf via peak_prom/torso_height), Fix4(wrist-Y curve for 201015). Impact results: 201015=fr154 (GT154 EXACT), 201039=fr205 (GT208 close), 201047=fr277 (GT282 close), 201054=fr148 (GT150 EXACT), 201058=fr186 (GT186 EXACT). Gate-1 v2 images on desktop.
 2026-06-09T23:50:15.130031  E1 complete: A+B layers done, 5 gate-1 sheets on desktop, waiting gate-1 review
+2026-06-09T23:50:39.441274  gate-1 v2 regen complete, all 5 within 5fr GT; judgment core 26/26 pytest; waiting human gate-1 review
+2026-06-10T10:10:18.929966  E1 v3: multi-swing+conf fix, GT export, gate-1 v3 sheets on desktop
+2026-06-10T10:57:12.374782  E1 v3: multi-swing+conf fix, GT export, gate-1 v3 sheets on desktop
+2026-06-10T10:58:25.364870  E1 v3: multi-swing+conf fix, GT export, gate-1 v3 sheets on desktop
+2026-06-10T11:10:52.927739  E1 v3: multi-swing+conf fix, GT export, gate-1 v3 sheets on desktop
+2026-06-10T11:14:11.721072  E1 v3: multi-swing+conf fix, GT export, gate-1 v3 sheets on desktop
+2026-06-10T11:36:12.232426  E1 v3: multi-swing+conf fix, GT export, gate-1 v3 sheets on desktop
+2026-06-10T12:45  FAULT_VISUAL_STANDARDS: start research, 5 faults, timebox 3h
+2026-06-10T13:20  FAULT_VISUAL_STANDARDS: research complete, compiling docs/FAULT_VISUAL_STANDARDS.md

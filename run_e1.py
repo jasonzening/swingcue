@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_e1.py — E1 top-level runner
+run_e1.py — E1 top-level runner  (v3 — multi-swing + real conf)
 
 For each of the 5 new videos:
   1. A layer: run RTMPose (or load cached JSON)
@@ -24,10 +24,10 @@ sys.path.insert(0, "/home/jason/projects/swingcue-postest")
 from engine.a_measurement.pose_pipeline import PosePipeline, FrameMeasurement
 from engine.b_phase.swing_phase import SwingPhaseEngine, PhaseAnnotation, AnchorFrames, PHASE_NAMES
 
-INPUT   = Path("/home/jason/projects/swingcue-postest/input")
+INPUT    = Path("/home/jason/projects/swingcue-postest/input")
 KP_CACHE = Path("/home/jason/projects/swingcue-postest/engine/kp_cache")
-GATE1   = Path("/home/jason/projects/swingcue-postest/keyframes/gate1_preview")
-DESK    = Path("/mnt/c/Users/jason/Desktop/rtmpose_results/preview/gate1")
+GATE1    = Path("/home/jason/projects/swingcue-postest/keyframes/gate1_preview")
+DESK     = Path("/mnt/c/Users/jason/Desktop/rtmpose_results/preview/gate1")
 KP_CACHE.mkdir(parents=True, exist_ok=True)
 GATE1.mkdir(parents=True, exist_ok=True)
 DESK.mkdir(parents=True, exist_ok=True)
@@ -41,20 +41,20 @@ VIDEOS = {
 }
 
 PHASE_COLORS = {
-    "address":      (120, 120, 120),
-    "takeaway":     (200, 150,  50),
-    "backswing":    (200, 100,  30),
-    "top":          (50,  50,  220),
-    "transition":   (180,  50, 180),
-    "downswing":    (50,  180, 220),
-    "impact":       (50,  220,  50),
+    "address":        (120, 120, 120),
+    "takeaway":       (200, 150,  50),
+    "backswing":      (200, 100,  30),
+    "top":            (50,   50, 220),
+    "transition":     (180,  50, 180),
+    "downswing":      (50,  180, 220),
+    "impact":         (50,  220,  50),
     "follow_through": (100, 200, 100),
 }
 
 FONT = cv2.FONT_HERSHEY_DUPLEX
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 
 def get_frame(video_path: str, frame_idx: int) -> np.ndarray:
     cap = cv2.VideoCapture(video_path)
@@ -79,8 +79,23 @@ def phase_summary(annotations: List[PhaseAnnotation]) -> dict:
 def representative_frame(annotations: List[PhaseAnnotation], phase: str) -> int:
     """Middle frame of that phase."""
     frames = [a.frame_idx for a in annotations if a.phase == phase]
-    if not frames: return 0
-    return frames[len(frames)//2]
+    if not frames:
+        return 0
+    return frames[len(frames) // 2]
+
+
+def _anchor_label(anchors: AnchorFrames) -> str:
+    """Single-line text for the gate-1 header; shows swing_count when > 1."""
+    parts = []
+    sc = getattr(anchors, "swing_count", 1)
+    fse = getattr(anchors, "first_swing_end", -1)
+    if sc > 1:
+        parts.append(f"SWINGS={sc}  first_end=fr{fse}")
+    parts.append(f"addr=fr{anchors.address}")
+    parts.append(f"top=fr{anchors.top}(tc={anchors.top_conf:.2f})")
+    parts.append(f"impact=fr{anchors.impact}(ic={anchors.impact_conf:.2f})")
+    parts.append(f"finish=fr{anchors.finish}")
+    return "  ".join(parts)
 
 
 def make_phase_sheet(video_path: str, stem: str, angle: str,
@@ -97,30 +112,37 @@ def make_phase_sheet(video_path: str, stem: str, angle: str,
 
     # ── Timeline bar ──────────────────────────────────────────────────────────
     bar_h = 50
-    timeline = np.zeros((bar_h, SHEET_W, 3), np.uint8); timeline[:] = (20,20,20)
+    timeline = np.zeros((bar_h, SHEET_W, 3), np.uint8); timeline[:] = (20, 20, 20)
     for ann in annotations:
         x = int(ann.frame_idx / n * SHEET_W)
         color = PHASE_COLORS[ann.phase]
-        timeline[:, x:x+2] = color
+        timeline[:, x:x + 2] = color
 
     # Phase labels on timeline
     summary = phase_summary(annotations)
     for phase in PHASE_NAMES:
-        if phase not in summary: continue
+        if phase not in summary:
+            continue
         s, e, _ = summary[phase]
-        x0 = int(s / n * SHEET_W); x1 = int(e / n * SHEET_W)
+        x0 = int(s / n * SHEET_W)
         color = PHASE_COLORS[phase]
-        cv2.putText(timeline, phase[:4].upper(),
-                    (x0+2, bar_h-8), FONT, 0.42, color, 1)
+        cv2.putText(timeline, phase[:4].upper(), (x0 + 2, bar_h - 8), FONT, 0.42, color, 1)
+
+    # first_swing_end marker (red vertical line) if multi-swing
+    fse = getattr(anchors, "first_swing_end", -1)
+    if fse >= 0 and fse < n:
+        x_fse = int(fse / n * SHEET_W)
+        cv2.line(timeline, (x_fse, 0), (x_fse, bar_h), (0, 80, 255), 2)
+        cv2.putText(timeline, "1st-end", (max(0, x_fse - 40), bar_h - 4), FONT, 0.35, (0, 80, 255), 1)
 
     # Anchor markers
-    for name, fr, c in [("A", anchors.address, (180,180,180)),
-                         ("T", anchors.top,     (100,100,255)),
-                         ("I", anchors.impact,  (80,255,80)),
-                         ("F", anchors.finish,  (180,100,180))]:
+    for name, fr, c in [("A", anchors.address, (180, 180, 180)),
+                         ("T", anchors.top,     (100, 100, 255)),
+                         ("I", anchors.impact,  (80,  255,  80)),
+                         ("F", anchors.finish,  (180, 100, 180))]:
         x = int(fr / n * SHEET_W)
-        cv2.line(timeline, (x,0), (x,bar_h), c, 2)
-        cv2.putText(timeline, name, (x+2, 14), FONT, 0.45, c, 1)
+        cv2.line(timeline, (x, 0), (x, bar_h), c, 2)
+        cv2.putText(timeline, name, (x + 2, 14), FONT, 0.45, c, 1)
 
     # ── Thumbnail strip ───────────────────────────────────────────────────────
     THUMB_W = SHEET_W // 8
@@ -134,23 +156,22 @@ def make_phase_sheet(video_path: str, stem: str, angle: str,
         fh, fw = frame.shape[:2]
         target_aspect = 16 / 9
         if fh / fw > target_aspect:
-            # Too tall: crop height
             new_h = int(fw * target_aspect)
             y0 = (fh - new_h) // 2
-            frame = frame[y0:y0+new_h, :]
+            frame = frame[y0:y0 + new_h, :]
         thumb = cv2.resize(frame, (THUMB_W, THUMB_H))
 
         # Color border
         color = PHASE_COLORS[phase]
-        cv2.rectangle(thumb, (0,0), (THUMB_W-1, THUMB_H-1), color, 4)
+        cv2.rectangle(thumb, (0, 0), (THUMB_W - 1, THUMB_H - 1), color, 4)
 
         # Phase label banner
-        banner = np.zeros((38, THUMB_W, 3), np.uint8); banner[:] = (15,15,15)
-        cv2.putText(banner, phase.upper(), (4,22), FONT, 0.50, color, 1)
+        banner = np.zeros((38, THUMB_W, 3), np.uint8); banner[:] = (15, 15, 15)
+        cv2.putText(banner, phase.upper(), (4, 22), FONT, 0.50, color, 1)
         if phase in summary:
             s, e, cnt = summary[phase]
-            dur_ms = int((e-s)/fps*1000)
-            cv2.putText(banner, f"fr{s}-{e} {dur_ms}ms", (4,34), FONT, 0.38, (160,160,160), 1)
+            dur_ms = int((e - s) / fps * 1000)
+            cv2.putText(banner, f"fr{s}-{e} {dur_ms}ms", (4, 34), FONT, 0.38, (160, 160, 160), 1)
 
         # Anchor indicator
         if phase in summary:
@@ -159,8 +180,8 @@ def make_phase_sheet(video_path: str, stem: str, angle: str,
                          anchors.impact: "IMP", anchors.finish: "FIN"}
             for afr, alabel in anchor_fi.items():
                 if s <= afr <= e:
-                    ax = int((afr - s) / max(e-s,1) * THUMB_W)
-                    cv2.line(thumb, (ax, 0), (ax, THUMB_H), (255,255,255), 1)
+                    ax = int((afr - s) / max(e - s, 1) * THUMB_W)
+                    cv2.line(thumb, (ax, 0), (ax, THUMB_H), (255, 255, 255), 1)
 
         thumbs.append(np.vstack([banner, thumb]))
 
@@ -168,35 +189,32 @@ def make_phase_sheet(video_path: str, stem: str, angle: str,
 
     # ── Text table ────────────────────────────────────────────────────────────
     row_h = 28; cols = 5
-    table_h = (len(PHASE_NAMES)+2) * row_h
-    table = np.zeros((table_h, SHEET_W, 3), np.uint8); table[:] = (18,18,18)
+    table_h = (len(PHASE_NAMES) + 2) * row_h
+    table = np.zeros((table_h, SHEET_W, 3), np.uint8); table[:] = (18, 18, 18)
 
     headers = ["Phase", "Start fr", "End fr", "Frames", "Duration"]
     for ci, h in enumerate(headers):
-        cv2.putText(table, h, (12 + ci*(SHEET_W//cols), row_h-6),
-                    FONT, 0.52, (200,200,200), 1)
-    cv2.line(table, (0,row_h), (SHEET_W, row_h), (60,60,60), 1)
+        cv2.putText(table, h, (12 + ci * (SHEET_W // cols), row_h - 6),
+                    FONT, 0.52, (200, 200, 200), 1)
+    cv2.line(table, (0, row_h), (SHEET_W, row_h), (60, 60, 60), 1)
 
     for ri, phase in enumerate(PHASE_NAMES):
-        y = (ri+2)*row_h - 6
+        y = (ri + 2) * row_h - 6
         color = PHASE_COLORS[phase]
         if phase in summary:
-            s, e, cnt = summary[phase]; dur_ms = int((e-s)/fps*1000)
+            s, e, cnt = summary[phase]; dur_ms = int((e - s) / fps * 1000)
             vals = [phase, str(s), str(e), str(cnt), f"{dur_ms}ms"]
         else:
             vals = [phase, "-", "-", "0", "-"]
         for ci, v in enumerate(vals):
-            cv2.putText(table, v, (12 + ci*(SHEET_W//cols), y), FONT, 0.50, color, 1)
+            cv2.putText(table, v, (12 + ci * (SHEET_W // cols), y), FONT, 0.50, color, 1)
 
     # ── Header ────────────────────────────────────────────────────────────────
-    hdr = np.zeros((54, SHEET_W, 3), np.uint8); hdr[:] = (25,25,25)
+    hdr = np.zeros((54, SHEET_W, 3), np.uint8); hdr[:] = (25, 25, 25)
     cv2.putText(hdr, f"{stem}  [{angle}]  {n}fr @{fps:.0f}fps",
-                (10, 26), FONT, 0.70, (220,220,220), 1)
-    cv2.putText(hdr,
-                f"Anchors: address=fr{anchors.address}  top=fr{anchors.top}  "
-                f"impact=fr{anchors.impact}(conf={anchors.impact_conf:.2f})  "
-                f"finish=fr{anchors.finish}",
-                (10, 48), FONT, 0.50, (140,140,140), 1)
+                (10, 26), FONT, 0.70, (220, 220, 220), 1)
+    cv2.putText(hdr, _anchor_label(anchors),
+                (10, 48), FONT, 0.50, (140, 140, 140), 1)
 
     return np.vstack([hdr, timeline, strip, table])
 
@@ -223,13 +241,6 @@ def run_video(vname: str, angle: str) -> bool:
         t0 = time.time()
         measurements, fps = pipeline.run(vpath, verbose=True)
         print(f"  A-layer: done in {time.time()-t0:.1f}s")
-        # Save cache as standard RTMPose JSON format
-        frames_data = []
-        for m in measurements:
-            kp_dict = {}
-            for name in pipeline.JOINT_NAMES if hasattr(pipeline, 'JOINT_NAMES') else []:
-                pass
-        # Use simplified cache
         _save_kp_cache(measurements, fps, vname, cache_path)
 
     # B layer
@@ -237,22 +248,25 @@ def run_video(vname: str, angle: str) -> bool:
     annotations, anchors = engine.run(measurements, fps, angle=angle)
 
     psummary = phase_summary(annotations)
-    print(f"  B-layer anchors: addr={anchors.address} top={anchors.top} "
-          f"impact={anchors.impact} finish={anchors.finish}")
+    sc = getattr(anchors, "swing_count", 1)
+    fse = getattr(anchors, "first_swing_end", -1)
+    print(f"  B-layer: swing_count={sc}  first_swing_end=fr{fse}")
+    print(f"  B-layer anchors: addr=fr{anchors.address} top=fr{anchors.top}(tc={anchors.top_conf:.2f}) "
+          f"impact=fr{anchors.impact}(ic={anchors.impact_conf:.2f}) finish=fr{anchors.finish}")
     for p in PHASE_NAMES:
         if p in psummary:
-            s,e,cnt = psummary[p]
-            print(f"    {p:16s}: fr{s:4d}–{e:4d}  ({cnt}fr  {(e-s)/fps*1000:.0f}ms)")
+            s, e, cnt = psummary[p]
+            print(f"    {p:16s}: fr{s:4d}-{e:4d}  ({cnt}fr  {(e-s)/fps*1000:.0f}ms)")
 
     # Gate-1 sheet
     sheet = make_phase_sheet(vpath, stem, angle, annotations, anchors, fps)
-    out   = GATE1 / f"gate1_{stem}.jpg"
-    desk  = DESK  / f"gate1_{stem}.jpg"
+    out  = GATE1 / f"gate1_{stem}.jpg"
+    desk = DESK  / f"gate1_{stem}.jpg"
     cv2.imwrite(str(out),  sheet, [cv2.IMWRITE_JPEG_QUALITY, 92])
     cv2.imwrite(str(desk), sheet, [cv2.IMWRITE_JPEG_QUALITY, 92])
     print(f"  Gate-1 image: {out.name}")
 
-    # Fix 4: wrist-Y curve for 201015
+    # Wrist-Y curve for 201015 (multi-swing diagnostic)
     if "201015" in stem:
         generate_wrist_y_curve(measurements, fps, anchors, stem, DESK)
 
@@ -260,7 +274,7 @@ def run_video(vname: str, angle: str) -> bool:
 
 
 def generate_wrist_y_curve(measurements, fps, anchors, video_stem, dest_dir):
-    """Generate a wrist-Y vs frame plot for diagnostic purposes (Fix 4)."""
+    """Generate a wrist-Y vs frame plot with swing-segment boundaries."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -289,18 +303,24 @@ def generate_wrist_y_curve(measurements, fps, anchors, video_stem, dest_dir):
     ax.plot(ys, alpha=0.3, color="steelblue", label="wrist-Y raw")
     ax.plot(ys_s, color="steelblue", linewidth=2, label="wrist-Y smoothed")
 
-    colors = {"address": "gray", "top": "blue", "impact": "green", "finish": "purple"}
     for name, fr, c in [("address", anchors.address, "gray"),
-                        ("top",     anchors.top,     "blue"),
-                        ("impact",  anchors.impact,  "green"),
-                        ("finish",  anchors.finish,  "purple")]:
+                         ("top",     anchors.top,     "blue"),
+                         ("impact",  anchors.impact,  "green"),
+                         ("finish",  anchors.finish,  "purple")]:
         ax.axvline(fr, color=c, linestyle="--", linewidth=1.5, label=f"{name} fr{fr}")
 
+    # first_swing_end boundary
+    fse = getattr(anchors, "first_swing_end", -1)
+    if fse >= 0:
+        ax.axvline(fse, color="red", linestyle=":", linewidth=2.0,
+                   label=f"first_swing_end fr{fse}")
+
+    sc = getattr(anchors, "swing_count", 1)
     ax.set_xlabel("Frame")
     ax.set_ylabel("Wrist Y (pixels, down=high)")
-    ax.set_title(f"Wrist-Y vs Frame — {video_stem}")
+    ax.set_title(f"Wrist-Y vs Frame — {video_stem}  [swing_count={sc}]")
     ax.legend(fontsize=8)
-    ax.invert_yaxis()  # Y increases downward in image coords
+    ax.invert_yaxis()
     plt.tight_layout()
 
     out_path = Path(dest_dir) / f"{video_stem}_wrist_y_curve.png"
@@ -340,7 +360,7 @@ def _save_kp_cache(measurements: List[FrameMeasurement], fps: float,
 
 def main():
     import datetime
-    print(f"E1 run_e1.py started {datetime.datetime.now().isoformat()}")
+    print(f"E1 run_e1.py v3 started {datetime.datetime.now().isoformat()}")
 
     for vname, angle in VIDEOS.items():
         run_video(vname, angle)
@@ -349,30 +369,32 @@ def main():
     needs = Path("/home/jason/projects/swingcue-postest/NEEDS_HUMAN.md")
     needs.write_text(
         "# NEEDS_HUMAN.md\n\n"
-        "## Gate-1 v2 ready for review\n\n"
-        "B层8阶段标注已完成（v2修复版）。5段视频的阶段摘要图放在：\n"
+        "## Gate-1 v3 ready for review\n\n"
+        "B层8阶段标注已完成（v3修复版）。5段视频的阶段摘要图放在：\n"
         "- WSL: ~/projects/swingcue-postest/keyframes/gate1_preview/\n"
         "- 桌面: C:\\Users\\jason\\Desktop\\rtmpose_results\\preview\\gate1\\\n\n"
-        "v2修复内容:\n"
-        "- Fix1: impact用wrist-Y-max(face-on)/wrist-X-max(DTL)，取第一个峰（非全局最大）\n"
-        "- Fix2: transition阶段不再为空，top阶段窗口[TOP-1, TOP+2]\n"
-        "- Fix3: impact置信度改用峰值prominence/torso_height\n"
-        "- Fix4: 201015_wrist_y_curve.png已生成在桌面\n\n"
+        "v3修复内容：\n"
+        "- 多挥杆检测（201015含3次挥杆，已截取第一次挥杆范围做检测）\n"
+        "- 输出 swing_count 与 first_swing_end，显示在 gate1 图头\n"
+        "- impact 改取第一个峰（chronological），不再取最高prominence峰\n"
+        "- 置信度三因子公式：信号显著度50%+多挥杆歧义30%+关节质量20%\n"
+        "- 等待人工 GT 标注（201058 fr180-200 / 201015 fr55-72 单帧图在桌面 gate1_gt/）\n\n"
+        "**注意：GT 只来自人工标注，不得使用检测值自造基准。**\n\n"
         "请核对每张图：\n"
-        "1. 8个阶段分得对不对？\n"
-        "2. 特别看 address/top/impact 的缩略图是否对应正确的动作\n"
-        "3. 如有问题请指出具体视频和阶段\n\n"
-        "人验收通过前，E2代码可以继续写但不得用这些帧号做C层计算。\n"
+        "1. 8阶段分得对不对？\n"
+        "2. address/top/impact 缩略图是否对应正确动作\n"
+        "3. 201015 的 swing_count 是否正确\n"
+        "4. 各 conf 是否有区分度（不再全=1.00）\n"
     )
-    print(f"\nNEEDS_HUMAN.md written.")
+    print("\nNEEDS_HUMAN.md written.")
 
     # Update PROGRESS.log
     prog = Path("/home/jason/projects/swingcue-postest/PROGRESS.log")
     with open(prog, "a") as f:
-        f.write(f"{datetime.datetime.now().isoformat()}  E1 complete: A+B layers done, "
-                f"5 gate-1 sheets on desktop, waiting gate-1 review\n")
+        f.write(f"{datetime.datetime.now().isoformat()}  E1 v3: multi-swing+conf fix, "
+                f"GT export, gate-1 v3 sheets on desktop\n")
 
-    print("\nAll done. Gate-1 images on desktop. Waiting for review.")
+    print("\nAll done. Gate-1 v3 images on desktop. Waiting for review.")
 
 
 if __name__ == "__main__":

@@ -183,24 +183,22 @@ class RootCauseEngine:
         r2: FaultDetection,
         other_faults: list[FaultDetection],
     ) -> RootCauseResult:
-        """Only R2 (hip thrust without observed posture loss yet).
+        """Only R2 (hip shift without observed posture loss).
 
-        Spec: mild hip-only -> below report threshold, do not output.
+        In 2D DTL view, R2 alone cannot distinguish:
+          (a) healthy lateral weight shift toward target — normal technique
+          (b) early extension hip thrust toward ball — fault
+        R1 (spine rise) is required as a co-indicator.
+
+        First closed loop rule: suppress R2-only; output none.
+        (Spec for mild hip-only: below report threshold, do not output.)
         """
-        if r2.severity == "mild":
-            return RootCauseResult(
-                root_cause="none",
-                certainty="none",
-                note="r2_mild_only_below_report_threshold",
-            )
-        # Significant hip displacement without R1 -> possible early extension tendency
+        # Both mild and significant R2-only -> suppressed in first closed loop
+        # 2D DTL cannot distinguish lateral weight shift from early extension hip thrust
         return RootCauseResult(
-            root_cause="early_extension",
-            certainty="possible",
-            supporting_evidence=[r2],
-            causal_chain=["hip_toward_ball"],
-            independent_faults=other_faults,
-            note="r2_only_possible_ee_tendency",
+            root_cause="none",
+            certainty="none",
+            note="r2_only_suppressed_2d_dtl_ambiguity",
         )
 
 
