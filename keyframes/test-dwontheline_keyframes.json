@@ -1,0 +1,16 @@
+{
+  "keyframes": {
+    "address": 10,
+    "top": 31,
+    "impact": 47,
+    "finish": 68
+  },
+  "confidence": {
+    "address": 0.534,
+    "top": 1.0,
+    "impact": 0.77,
+    "finish": 0.566
+  },
+  "fps": 30.002500208350696,
+  "n_frames": 120
+}
