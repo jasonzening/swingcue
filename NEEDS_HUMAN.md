@@ -20,3 +20,23 @@ v3修复内容：
 2. address/top/impact 缩略图是否对应正确动作
 3. 201015 的 swing_count 是否正确
 4. 各 conf 是否有区分度（不再全=1.00）
+
+
+## GT Line Rendering — gt_lines/ (2026-06-10)
+
+Rendered 227 annotated frames to:
+  Desktop/rtmpose_results/preview/gt_lines/
+
+Per-video sub-folders:
+  DTL (201054, 201058): Tush Line (yellow) + Spine axis (cyan)
+    -> Window: P5 transition through impact+5
+  Face-on (201015, 201039, 201047):
+    backswing/   : Head vertical line (magenta) — RP check
+    downswing/   : Head horizontal line (orange) — LoP check
+    followthrough/: Lead forearm chain (green) + elbow angle — CW check
+
+**NOT RENDERED** (deferred):
+  - Shaft plane line (Over-the-Top check): requires ball/club detection pipeline
+    which is not yet built. Will be added when club detection flow is complete.
+
+Human action: inspect frames in gt_lines/ and confirm or correct anchor frames.
