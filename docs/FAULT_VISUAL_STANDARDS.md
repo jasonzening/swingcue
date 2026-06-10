@@ -1,9 +1,10 @@
 # FAULT_VISUAL_STANDARDS.md
 # 挥杆错误动作目测判定标准
 
-**版本**: v0.1  
-**日期**: 2026-06-10  
+**版本**: v0.2  
+**日期**: 2026-06-10 (v0.2 修订: 2026-06-10)  
 **状态**: ⚠️ 待 Jason + Claude 验收，验收通过前不得被任何下游任务引用  
+**v0.2 修订内容**: ①EE 主机位更正为 DTL；②§5 Across-the-Line 行重写；③§3 检验法步骤精度声明；④§4 定义补术语澄清；⑤阶段窗口 P6-P7 → P5-P7；⑥来源 URL 修正。
 **编写方式**: 通过网络检索权威来源（TPI / PGA / 生物力学期刊 / 知名教学网站）整理，
 所有量化数值均标注出处；检索不到的字段明确写"未检索到"。
 
@@ -28,22 +29,22 @@
 ---
 
 ### 【适用机位】
-**主要机位：正面（Face-On）**  
-正面机位能直接显示臀部/骻部在矢状面内向前（向球）的位移，是诊断 Early Extension 的权威机位。
+**主要机位：DTL（侧面）**  
+DTL 是诊断 Early Extension 的权威机位。理由：EE 的核心运动是臀部/骻部**向球方向（前方）**的位移，该运动垂直于 DTL 相机轴，在 DTL 画面内呈清晰的**横向位移**，直接可见；在正面（Face-On）机位下，该前向运动沿相机纵深方向，2D 投影被压缩，无法可靠量测。
 
-**辅助机位：侧面（Down-the-Line, DTL）**  
-侧面机位可辅助确认"起身"后果（脊柱伸展），但无法直接呈现前方向的髋顶运动。
+**辅助机位：正面（Face-On）**  
+正面机位可辅助确认"起身"后果（脊柱矢状面伸展），以及观察头部垂直方向位移，但无法呈现 EE 的定义性前向髋顶运动。
 
-> **角度门控铁律**：Early Extension 必须从正面机位确认，DTL 仅作辅助。
+> **角度门控铁律**：Early Extension 必须从 DTL 机位确认，正面机位仅作辅助。
 
 ---
 
 ### 【经典目测检验法】——"臀线测试"（Tush Line Test）
 此测试由 Golf Channel《School of Golf》主持人 Martin Hall 推广，并被整合进 TPI Level 1/2 教练认证协议。
 
-**操作步骤**（正面机位）：
+**操作步骤**（DTL 机位）：
 1. 在 **address 帧**，沿髋部后缘（臀部最突出点）画一条**垂直参考线**（与地面垂直，贯穿画面上下）。此线即"臀线"（Tush Line）。
-2. 观察 **transition → downswing → impact** 阶段窗口（P6–P7）。
+2. 观察 **transition → downswing → impact** 阶段窗口（P5–P7）。
 3. **判定**：若在此窗口内，臀部后缘向前越过臀线、离开该线向球方向位移 → **Early Extension 触发**。
 
 **正常动作参考**：整个下杆过程中，臀部后缘应保持接触或贴近臀线，全程维持 address 建立的髋关节屈曲位置。
@@ -64,10 +65,10 @@
 | 易混淆错误 | 区分方式 |
 |---|---|
 | **Loss of Posture（失去姿势）** | Loss of Posture 是上位概念（任何方向的脊柱角变化），EE 是其前向子类型。区分：看运动方向——纯 Loss of Posture 可向任意方向，EE 必须有髋部前移（向球）。 |
-| **Slide（侧滑）** | Slide = 髋部侧向（目标方向）平移；EE = 髋部前向（向球）位移。两者运动方向不同，可在正面机位区分：Slide 是横向，EE 是前后向。 |
+| **Slide（侧滑）** | Slide = 髋部侧向（目标方向）平移；EE = 髋部前向（向球）位移。两者运动方向不同，在 DTL 机位区分：Slide 是沿目标线的侧移（画面内呈纵向）；EE 是垂直目标线的前移（画面内呈横向）。 |
 | **Sway（晃动）** | Sway 发生在反杆阶段，下盘向后滑；EE 发生在下杆阶段，髋部前推。不同阶段窗口。 |
 | **Flat Shoulder Plane（肩面过平）** | FlatShP 是旋转型错误，EE 是平移型错误；两者常共存但诊断轴不同。 |
-| **Reverse Spine Angle（反向脊柱角）** | RSA 是反杆缺陷（P4），EE 是下杆缺陷（P6-P7）；阶段窗口完全不同。EE 常作为 RSA 的下杆补偿出现。 |
+| **Reverse Spine Angle（反向脊柱角）** | RSA 是反杆缺陷（P4），EE 是下杆缺陷（P5–P7）；阶段窗口完全不同。EE 常作为 RSA 的下杆补偿出现。详见 §4 术语说明。 |
 
 ---
 
@@ -77,7 +78,7 @@
 |---|---|---|
 | TPI (Titleist Performance Institute) | TPI 官方教学体系 | https://www.mytpi.com/articles/swing/early_extension |
 | TPI Big 12 Swing Faults | TPI | https://www.mytpi.com/articles/swing/the_big_12_swing_faults |
-| Golf Channel / Martin Hall School of Golf | 知名教练教学（Golf Channel 节目） | https://www.golfchannel.com/ |
+| Golf Channel / Martin Hall School of Golf | 知名教练教学（Golf Channel 节目） | 仅节目来源，无可链接文章；参见 Golf Channel《School of Golf》栏目（原播出平台 https://www.golfchannel.com/ 已重组，具体集数不可稳定链接） |
 | Golf Digest instruction | 知名教学刊物 | https://www.golfdigest.com/ |
 | Rotary Swing | 认证教练教学网站 | https://rotaryswing.com/golf-instruction/golf-swing-faults/early-extension/ |
 | Golf.com / GOLF Magazine | 知名教学刊物 | https://golf.com/instruction/ |
@@ -110,12 +111,12 @@ Loss of Posture 是指高尔夫手在挥杆中偏离了 address 时建立的脊�
 **DTL 机位——脊柱角度线测试**：
 1. 在 **address 帧（P1）**，沿脊柱方向从骶骨到头顶画一条**斜线**（即 address 脊柱轴线）。
 2. 在同一帧，可沿膝盖前方画**胫骨参考线**作为下半身固定参考。
-3. 观察 **transition → downswing → impact** 阶段窗口。
+3. 观察 **transition → downswing → impact** 阶段窗口（P5–P7）。
 4. **判定（伸展型）**：脊柱轴线在该窗口内变直（与地面夹角变大，即前倾角减小）、头部相对上移 → Loss of Posture 触发。
 
 **正面机位——头部水平线测试**：
 1. 在 **address 帧**，在头部位置画一条**水平线**。
-2. 观察 transition → impact 阶段窗口。
+2. 观察 transition → impact 阶段窗口（P5–P7）。
 3. **判定**：头部上移（起身型）或下移（塌腰型）越过该水平线 → 异常。
 
 > 注：教练习惯在视频分析软件（Hudl Technique、V1 Golf 等）中直接绘制上述线条，这是 PGA 和 TPI 认证课程中的标准实操工具。
@@ -136,10 +137,10 @@ Loss of Posture 是指高尔夫手在挥杆中偏离了 address 时建立的脊�
 
 | 易混淆错误 | 区分方式 |
 |---|---|
-| **Early Extension（早伸）** | EE = 髋部前移（向球方向），正面机位诊断。Loss of Posture 伸展型 = 脊柱在矢状面变直（起身），DTL 诊断。两者常共存，但诊断轴（前后 vs 旋转/伸展）和机位不同。 |
+| **Early Extension（早伸）** | EE = 髋部前移（向球方向），**DTL 机位诊断**（前向位移垂直于 DTL 相机轴，横向直接可见）。Loss of Posture 伸展型 = 脊柱在矢状面变直（起身），DTL 诊断。两者均以 DTL 为主机位，但诊断轴不同：EE 看臀线前移，LoP 看脊柱前倾角变化。 |
 | **S-Posture（S 型姿势）** | S-Posture 是 **setup 静态缺陷**（骨盆前倾过大导致腰部过度前凸），不是运动型缺陷；在 P1 帧即可看到。Loss of Posture 是**动态运动缺陷**，在挥杆过程中发生。 |
 | **C-Posture（C 型姿势）** | C-Posture 是 setup 静态缺陷（胸椎过度后凸，肩膀前屈），同样在 P1 帧即可识别。 |
-| **Reverse Spine Angle（反向脊柱角）** | RSA 是**额状面**的侧向倾斜（躯干上半身向目标侧倾），正面机位诊断，主要在 P4（反杆顶点）。Loss of Posture 伸展型是**矢状面**的角度变化，DTL 诊断，主要在 P6–P7。 |
+| **Reverse Spine Angle（反向脊柱角）** | RSA 是**额状面**的侧向倾斜（躯干上半身向目标侧倾），正面机位诊断，主要在 P4（反杆顶点）。Loss of Posture 伸展型是**矢状面**的角度变化，DTL 诊断，主要在 P5–P7。 |
 
 ---
 
@@ -182,7 +183,9 @@ DTL 可见肘部向外突出，但该角度主要用于杆路、击打平面等�
 
 **操作步骤**（正面机位）：
 1. 在 **address 帧（P1）**，记录前侧手臂（左臂，右撇子）从肩部到肘部的**自然伸展方向**。
-2. 画或想象一条沿前侧上臂方向延伸的**参考线**（从肩膀穿过肘部延伸至前臂方向）。
+2. 在视频分析软件中**实际绘制**一条沿前侧上臂方向延伸的**参考线**（从肩膀穿过肘部延伸至前臂方向）。此线必须在 address 帧绘制并锁定，不得凭目测估算。
+
+   > **精度声明**：本检验为形态判读（肘部弯曲方向是否离开参考线），精度低于画线越线类定量检验。GT 确认时需同时给出肘角数值参考：170–180° 为正常锚点（Coleman 2005, Nesbit 2005），明显低于该范围且肘尖指向外侧方可判定 Chicken Wing。
 3. 观察 **impact → 早期随挥阶段**，具体窗口：双手到达目标侧大腿高度之前（约 P7–P8 初段）。
 4. **判定**：
    - **正常**：前臂相对伸展，肘部向下折叠（朝地面方向或向身体后方）；整体随挥呈现延伸旋转姿态。
@@ -207,7 +210,7 @@ DTL 可见肘部向外突出，但该角度主要用于杆路、击打平面等�
 
 | 易混淆错误 | 区分方式 |
 |---|---|
-| **Early Extension** | 两者常共存，均可导致推击/推切。区分：EE = 髋顶球（正面机位，臀线测试），Chicken Wing = 前臂肘部外翻（正面机位，肘部方向测试）。EE 是下半身/躯干动作，Chicken Wing 是上肢动作。 |
+| **Early Extension** | 两者常共存，均可导致推击/推切。区分：EE = 髋顶球（**DTL 机位**，臀线测试），Chicken Wing = 前臂肘部外翻（**正面机位**，肘部方向测试）。EE 是下半身/躯干动作，Chicken Wing 是上肢动作；两者机位不同。 |
 | **Casting / Over-the-Top** | Casting 在**下杆初段**（P5 前）即发生（过早释放杆角），DTL 最易看到；Chicken Wing 在 **impact/随挥阶段**（P7）发生，正面机位。时序不同，机位不同。 |
 | **Flip / Scoop（翻腕）** | Flip = 冲击时后手腕伸展，杆头超过双手，DTL 可见杆身负倾角；Chicken Wing = 前肘外翻，正面机位可见。两者常同时发生：Flip 会诱发 Chicken Wing（手腕翻转促使肘部翘起），但可以单独存在。 |
 | **Blocked Shot（推拨击球）** | 推拨 = 前臂整体维持延伸但未发生旋转/释放；Chicken Wing = 前肘可见物理弯曲向外翘起。判别依据：**前肘是否出现明显弯曲**是关键形状差异。 |
@@ -233,6 +236,8 @@ DTL 可见肘部向外突出，但该角度主要用于杆路、击打平面等�
 
 ### 【定义】
 Reverse Pivot（重心反转，TPI 官方术语：Reverse Spine Angle）是一种**反杆阶段**的挥杆缺陷：高尔夫手的躯干上半身在反杆时**向目标方向侧倾**，体重随之转移到前侧（目标侧）脚，与正确的反杆加载方向完全相反——正确应将体重加载到后侧（trail）脚。由于体重在反杆顶点时已经压在前侧，下杆时高尔夫手必须向后或大幅补偿，导致击球不稳定、力量损失、并增加腰背部损伤风险。TPI 将其列为十二大挥杆缺陷的第 5 项（Reverse Spine Angle）。
+
+**术语澄清**：教学俗称"Reverse Pivot（重心反转）"与 TPI 官方术语"Reverse Spine Angle（脊柱侧倾）"描述同一缺陷簇的两个观察面——前者侧重体重分布（可用 force plate 或目测前侧膝盖位移量化），后者侧重脊柱在额状面的侧倾方向（目测主要用头部垂线与脊柱倾向检验）。本文档合并处理：§4 经典目测检验法中**头部垂线测试**对应重心分布面（Reverse Pivot），**脊柱侧倾补充检验**对应 RSA 面（Reverse Spine Angle），两个测试分别指向同一缺陷的不同表现维度。
 
 **参考来源**：TPI Level 教学体系；Rotary Swing；Golf Digest；Golfweek；生物力学综述文献。
 
@@ -285,7 +290,7 @@ DTL 主要用于矢状面缺陷（Loss of Posture、EE、Over-the-Top），对 R
 | **Loss of Posture（失去姿势）** | Loss of Posture = **矢状面**脊柱前倾角变化，DTL 诊断；Reverse Pivot = **额状面**侧倾，正面机位诊断。两者在不同平面、不同机位。TPI 将其列为独立的十二大缺陷条目。 |
 | **S-Posture（S 型姿势）** | S-Posture 是**setup 静态缺陷**（骨盆前倾过大），P1 帧即可见，不是挥杆运动缺陷。Reverse Pivot 是**动态运动缺陷**，发生在反杆过程中。S-Posture 可能诱发 RP 但两者不等同。 |
 | **Flat Shoulder Plane（肩面过平）** | Flat Shoulder Plane 常作为 Reverse Pivot 的**共生后果**出现（躯干前倾倒置自然导致肩面过于水平），但 RP 是根因，肩面过平是表现。关注躯干侧倾方向（正面机位）可区分根因。 |
-| **Early Extension** | EE 是**下杆**阶段（P6–P7）的髋部前推缺陷；Reverse Pivot 是**反杆**阶段（P3–P4）的缺陷。TPI 生物力学研究指出 RP 常在下杆时**引发** EE 作为补偿动作，但阶段窗口和诊断机位不同。 |
+| **Early Extension** | EE 是**下杆**阶段（P5–P7）的髋部前推缺陷（DTL 机位，臀线测试）；Reverse Pivot 是**反杆**阶段（P3–P4）的缺陷（正面机位）。TPI 生物力学研究指出 RP 常在下杆时**引发** EE 作为补偿动作，但阶段窗口和诊断机位不同。 |
 
 ---
 
@@ -373,7 +378,7 @@ https://blog.trackmangolf.com/the-real-reason-you-slice/
 |---|---|
 | **Casting / 过早释放（Early Release）** | Casting = 下杆时手腕角度过早释放（打开杆角），DTL 可见前臂-杆身角度过早变直；Over-the-Top = 杆路方向错误（外→内），可在没有明显 Casting 的情况下出现。区分：看**杆路方向**（外→内 = OTT），再看**手腕角度释放时机**（过早 = Casting）。两者常共存但可单独存在。 |
 | **陡峭击球角（Steep Attack Angle）** | 攻角陡不一定等于 OTT。一个球手可以有内→外杆路配合陡峭攻角。区分：**Divot 方向**是分水岭——Divot 指向左（右撇子）= OTT 外→内；Divot 指向目标或偏右 = 可能只是攻角陡，非 OTT。 |
-| **Across-the-Line（跨线，反杆顶点杆身指向右侧）** | Across-the-Line 是**反杆顶点**的杆身位置问题（杆头指向目标线右侧），通常诱发**内→外**（偏右）杆路，与 OTT 的外→内方向**相反**。两者均在 DTL 可见，但运动方向完全相反。区分：在 P4（顶点）看杆身是指向左（across-the-line，高风险 OTT）还是右（laid off）。等等——注意：laid-off（杆头指向目标线左侧）才是 OTT 的典型反杆顶点位置；across-the-line（指向右侧）反而诱发内→外路径。这是一个常见认知反转，需特别注意。 |
+| **Across-the-Line / Laid-Off（反杆顶点杆身指向偏差）** | 顶点杆身位置（across-the-line = 指向目标线右侧；laid-off = 指向目标线左侧）与下杆路径的对应关系在教学界存在争议，并非确定性规律（受握把、平面角度、身体旋转量等多因素影响）。OTT 的诊断以**下杆初段的杆路本身**为准（是否越过杆面平面线外侧，或 Divot 是否指向目标左侧），不以反杆顶点位置作为判据。 |
 
 ---
 
@@ -381,7 +386,7 @@ https://blog.trackmangolf.com/the-real-reason-you-slice/
 
 | 来源 | 类型 | URL |
 |---|---|---|
-| TPI (Titleist Performance Institute) | TPI 官方体系 | https://www.tpiGolf.com |
+| TPI (Titleist Performance Institute) | TPI 官方体系 | https://www.mytpi.com/articles/swing/over_the_top |
 | Golf Digest instruction | 知名教学刊物 | https://www.golfdigest.com/story/over-the-top-golf-swing |
 | Golf Monthly instruction | 知名教学刊物 | https://www.golfmonthly.com/tips/golf-instruction/how-to-stop-coming-over-the-top-in-your-golf-swing-228521 |
 | Rotary Swing | 认证教练教学网站 | https://rotaryswing.com/golf-instruction/golf-swing-basics/over-the-top-golf-swing/ |
@@ -398,8 +403,8 @@ https://blog.trackmangolf.com/the-real-reason-you-slice/
 
 | 缺陷 | 主要机位 | 辅助机位 | 主要检验阶段窗口 |
 |---|---|---|---|
-| Early Extension | **正面** | DTL | transition → impact (P6–P7) |
-| Loss of Posture | **DTL** | 正面 | transition → impact (P6–P7) |
+| Early Extension | **DTL** | 正面 | transition → impact (P5–P7) |
+| Loss of Posture | **DTL** | 正面 | transition → impact (P5–P7) |
 | Chicken Wing | **正面** | DTL | impact → 早期随挥 (P7–P8) |
 | Reverse Pivot | **正面** | DTL | 反杆阶段至顶点 (P3–P4) |
 | Over-the-Top | **DTL** | 正面 | 下杆初始阶段 (P5–P6) |
@@ -419,4 +424,4 @@ https://blog.trackmangolf.com/the-real-reason-you-slice/
 
 ---
 
-*文件结束 — v0.1 草稿，待验收*
+*文件结束 — v0.2 草稿，待验收*
