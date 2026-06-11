@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(28)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Interior design showcase of a sloped-roof loft home (bathrooms, living spaces).",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Luxury minimalist bathroom in sloped-roof loft with freestanding oval bathtub and skylights.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 63,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Contemporary bathroom with white vessel sink, backlit arched mirror, herringbone wood wall.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 127,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Modern luxury attic bathroom with round freestanding tub beneath skylight.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 190,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Stunning modern luxury attic bathroom with round tub beneath large Velux skylight.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 254,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Bright minimalist attic loft living room with white boucle sectional sofa and skylights.",
+      "hard_pass": false
+    }
+  ]
+}

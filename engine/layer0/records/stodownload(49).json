@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(49)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Kitchen/bathroom faucet product video with only partial hand visible in some frames.",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Hand and foot partially visible pointing toward hidden-slot faucet built into curved stone basin.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 89,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Ground-level photo of large circular stone/concrete object on stone-tiled floor.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 178,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Partially visible hand holds pull-out spray head from rose-gold kitchen faucet as water streams into dark undermount sink.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 267,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Dimly lit kitchen sink with tall gooseneck faucet and partially visible human hand gripping sink edge.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 356,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Heavily blurred image through wet/dirty glass surface with indistinct background.",
+      "hard_pass": false
+    }
+  ]
+}

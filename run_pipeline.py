@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from engine.a_measurement.pose_pipeline import PosePipeline
 from engine.b_phase.swing_phase import SwingPhaseEngine, PHASE_NAMES
 from engine.c_features.feature_extractor import FeatureExtractor
+from engine.layer0.perception_gate import PerceptionGate
 from src.judgment.rules import (
     bone_length_sentinel,
     r1_loss_of_posture,

@@ -1,0 +1,56 @@
+{
+  "video_stem": "test-dwontheline",
+  "verdict": "needs_human",
+  "angle": "inconsistent",
+  "reason": "All 5 frames: real golfer, 1 person, full body visible (hard criteria PASS). BUT camera angle inconsistent: fr0/fr24 = face-on; fr48/fr72/fr96 = DTL. Video likely contains two swings from different angles. Needs human to split into single-angle segments before pipeline ingestion.",
+  "sh_ratio": 0.07,
+  "sh_angle": "DTL",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man in dark polo and khaki pants at golf address position in suburban backyard, gripping iron club.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 24,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man in casual clothing performs golf iron swing at impact/follow-through in sunny suburban backyard.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 48,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Man in gray t-shirt performs golf swing from behind (DTL) in suburban backyard with pine tree.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 72,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer in branded golf shirt completes full follow-through from DTL in residential backyard.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 96,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer in ResinGear branded shirt completes iron follow-through from DTL camera position.",
+      "hard_pass": true
+    }
+  ]
+}

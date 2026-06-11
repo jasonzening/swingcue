@@ -1,0 +1,10 @@
+{
+  "video_stem": "Videos2026-06-09_201039_231",
+  "verdict": "PASS",
+  "angle": "face-on",
+  "reason": "Pre-Layer0 video; manually reviewed by Jason+Claude in Gate-1 sessions; accepted as ground truth baseline.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": []
+}

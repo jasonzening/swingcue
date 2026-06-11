@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(43)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Kitchen product promo — rose gold smart pull-out faucet with waterfall stream mode.",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Hand demonstrates rose gold pull-out kitchen faucet producing waterfall water stream over dark granite sink.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 61,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Hand holds detached pull-out wand from rose gold smart kitchen faucet, water streaming into sink.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 123,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Luxury rose gold kitchen faucet with digital display over dark granite sink, pull-out spray wand in use.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 185,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Dimly lit modern luxury kitchen with dark wood cabinetry and light countertops, no people.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 247,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Sleek contemporary open-plan kitchen with large island, warm wood accents, bar stools.",
+      "hard_pass": false
+    }
+  ]
+}

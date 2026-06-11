@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(91)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Kitchen showroom product demonstration with female presenter. No golf activity.",
+  "sh_ratio": 0.774,
+  "sh_angle": "face-on",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Woman in gray blazer demonstrates laterally-sliding marble kitchen island in modern showroom.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 80,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Woman in beige blazer stands beside sliding marble kitchen island in sleek modern kitchen showroom.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 160,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Woman browses luxury kitchen showroom featuring marble island with retractable faucet.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 240,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Large marble counter/wall panel with gold LED accent lighting in luxury showroom or hotel lobby.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 320,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Organized double-layer kitchen drawer with warm orange wooden insert holding sorted silverware.",
+      "hard_pass": false
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(53)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Chinese bathroom interior design tutorial — 3D renders with fixture installation height annotations. No real human, no golf swing.",
+  "sh_ratio": 0.186,
+  "sh_angle": "DTL",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "3D architectural rendering of luxurious marble bathroom with Chinese installation-height measurements.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 51,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Luxury CGI bathroom render with gold-accented marble walls and Chinese fixture-height annotations.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 102,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Luxury marble bathroom interior design render featuring gold fixtures and Chinese measurement guidelines.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 153,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Luxury marble bathroom render with gold heated towel rail and annotated Chinese height measurements.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 204,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Luxury marble bathroom render with gold fixtures and Chinese-language height annotations with golden reference line.",
+      "hard_pass": false
+    }
+  ]
+}

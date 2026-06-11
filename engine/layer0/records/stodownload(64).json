@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(64)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. High-end kitchen and dining room interior design photography. No people present.",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Sleek minimalist kitchen with Bosch appliances, marble island, dining table and circular pendant light.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 71,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Modern kitchen island with built-in induction cooktop photographed against flat-panel white cabinetry.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 142,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Minimalist kitchen with dark stone backsplash, handle-less white cabinetry, dried branch near sink.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 213,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Bright minimalist dining room with rounded light-wood table overlooking snowy winter landscape.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 284,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Dark stone kitchen island with built-in outlets and pop-up cooktop, light wood dining table with white chairs.",
+      "hard_pass": false
+    }
+  ]
+}

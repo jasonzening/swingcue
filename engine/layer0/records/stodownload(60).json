@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(60)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Chinese smart-lighting promotional video showing interior rooms at varying color temperatures (2500K–6000K).",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Chinese lighting advertisement — open-plan kitchen/dining at 4000K neutral color temperature.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 51,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Smart lighting promo — modern kitchen/dining bathed in 2500K warm golden-amber light.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 103,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Chinese lighting ad displaying modern interior at 3500K with warm-to-cool UI overlay.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 154,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Smart lighting ad — minimalist open-plan dining/living at 4000K with overlaid scale graphic.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 206,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Stylish modern kitchen/dining with Chinese overlay graphics demonstrating 5500K cool lighting.",
+      "hard_pass": false
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(45)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Chinese villa promotional video — secret hidden door/staircase under sliding kitchen island.",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 1,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Hand reveals hidden staircase under sliding wooden kitchen island in luxurious villa.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 79,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Sage-green kitchen island in modern open-plan villa with Chinese text about hidden door feature.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 158,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Wooden kitchen island top slid open on rails, revealing glowing orange-lit hidden staircase below.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 237,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Hidden staircase under sliding table, hand/orange sleeve visible accessing secret underground passage.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 316,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Top-down view of narrow traditional wooden staircase with dual handrails leading down.",
+      "hard_pass": false
+    }
+  ]
+}

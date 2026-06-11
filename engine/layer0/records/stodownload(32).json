@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(32)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Chinese interior design concept video — black-and-white cave stone (洞石风) residential design.",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Empty modern room with dark cave-stone accent wall, herringbone wood floor, Chinese text overlay.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 58,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Modern empty room with faux cave-stone feature wall, chevron floor, black lighting fixtures.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 116,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Monochromatic apartment with cave-stone accent wall, white kitchen cabinetry, grey sofa.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 174,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Dramatically lit cave-stone accent wall bathed in teal LED lighting with Chinese text.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 232,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Monochromatic apartment with natural stone accent wall, white cabinetry, herringbone floor.",
+      "hard_pass": false
+    }
+  ]
+}

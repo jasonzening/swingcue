@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(24)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Kitchen furniture/cabinetry showroom promotional video.",
+  "sh_ratio": 0.556,
+  "sh_angle": "face-on",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Man in dark gray suit examines open corner cabinet in kitchen showroom.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 94,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Man interacts with rotating carousel storage in luxury kitchen showroom.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 188,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": true,
+      "q5_desc": "Woman in yellow blazer reaches toward open burgundy storage cabinet in kitchen showroom.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 282,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": true,
+      "q5_desc": "Person in tan blazer opens tall pantry cabinet in modern kitchen showroom.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 376,
+      "q1_golf": false,
+      "q2_persons": 1,
+      "q3_angle": "other",
+      "q4_fullbody": true,
+      "q5_desc": "Woman demonstrates pull-out pantry storage in burgundy-and-wood kitchen showroom.",
+      "hard_pass": false
+    }
+  ]
+}

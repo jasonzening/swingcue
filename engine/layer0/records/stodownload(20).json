@@ -1,0 +1,56 @@
+{
+  "video_stem": "stodownload(20)",
+  "verdict": "REJECT",
+  "angle": "other",
+  "reason": "No golf content. Chinese interior design/real estate video showcasing a minimalist duplex apartment.",
+  "sh_ratio": null,
+  "sh_angle": "no_data",
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Minimalist duplex apartment real estate — luxury bathroom with freestanding oval bathtub.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 98,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Spa-like bathroom with freestanding oval tub through a doorway.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 196,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Top-down view of modern interior staircase with warm LED strip lighting.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 295,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Modern home upper landing with glass stair railing and warmly lit wooden staircase.",
+      "hard_pass": false
+    },
+    {
+      "frame_idx": 393,
+      "q1_golf": false,
+      "q2_persons": 0,
+      "q3_angle": "other",
+      "q4_fullbody": false,
+      "q5_desc": "Minimalist bedroom with white duvet, patterned pillows, floating oak nightstand.",
+      "hard_pass": false
+    }
+  ]
+}
