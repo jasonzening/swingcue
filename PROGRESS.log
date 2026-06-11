@@ -22,3 +22,5 @@ Tue Jun  9 23:43:42 PDT 2026 Judgment core implemented, pytest passed (26/26)
 2026-06-10T21:06:41.594713  GT measurement report complete: /mnt/c/Users/jason/Desktop/rtmpose_results/preview/gt_measure
 2026-06-10T21:40:48.837953  CW window fix complete: corrected elbow measurements in peak_frames_v2/
 2026-06-10T22:15  orientation resolver complete: 30/30 tests pass, GT_LABELS updated
+2026-06-10T22:37:59.706501  normal_group screening complete: 2 DTL-ready, 2 face-on
+2026-06-10T22:38:02.924019  normal_group ingest: 2 DTL, 2 face-on registered only

@@ -78,6 +78,16 @@ class SwingPhaseEngine:
             angle: str = "auto") -> tuple[List[PhaseAnnotation], AnchorFrames]:
         n = len(measurements)
         xs, ys = self._extract_wrist(measurements, n)
+        # Guard: if wrist track is all-NaN (no detections above threshold),
+        # return degenerate anchors rather than crashing savgol_filter.
+        if np.all(np.isnan(xs)) or np.all(np.isnan(ys)):
+            degenerate = AnchorFrames(
+                address=0, top=0, impact=n//2, finish=n-1,
+                impact_conf=0.0, top_conf=0.0, swing_count=0, first_swing_end=n,
+            )
+            self.swing_count = 0; self.first_swing_end = n
+            annotations = [PhaseAnnotation(i, "address", 0.0) for i in range(n)]
+            return annotations, degenerate
         anchors = self._detect_anchors(measurements, xs, ys, fps, angle)
         fse = anchors.first_swing_end if anchors.first_swing_end >= 0 else n
         annotations = self._assign_phases(n, anchors, measurements, fse)
