@@ -54,3 +54,53 @@
 ## 7. 人回来时的交接
 
 Hermes 在每轮结束/卡住时,产出一句话总线状态:"已完成 T1-T3,T4 BLOCKED(原因),T5-T6 待依赖,NEEDS_HUMAN 有 2 项"。人只需读 TASK_QUEUE.md + NEEDS_HUMAN.md 即可全掌握。
+
+## 8. GT 生产流程（Ground Truth 生产铁律）
+
+GT = Ground Truth，是 C/D 层阈值校准的唯一合法依据。本节固定流水线与铁律。
+
+### 8.1 五步流水线
+
+```
+① 画线渲染
+   按 FAULT_VISUAL_STANDARDS.md 当前版本，对目标视频跑 render_gt_lines.py。
+   输出：gt_lines/<vid_id>/ 各子窗口标注帧。
+   规范：所有参考线在 address 帧定坐标，固定叠加到窗口内每帧。
+
+② Hermes 出测量报告（只数字，禁标签）
+   跑 gt_measurement_report.py，输出每段视频几何测量值与曲线图。
+   严禁在报告中出现任何缺陷名称、疑似判断、阈值比较结论。
+   输出：gt_measure/ 曲线图 + peak_frames/ 峰值帧标注图 + GT_MEASUREMENT_SUMMARY.md
+
+③ 数字指认峰值帧
+   Hermes 将测量峰值（帧号 + 数值）以纯数字形式呈报给人。
+   人根据峰值帧号打开对应标注图，用眼睛确认峰值帧的动作形态。
+
+④ 人看帧定性 + 意图确认（Jason 执行）
+   人工确认：该帧数值是否对应真实动作？意图错误是什么？
+   Hermes 不得代替人完成定性判断。
+
+⑤ 写入 GT_LABELS.md
+   由 Hermes 按人工确认结果如实录入 docs/GT_LABELS.md。
+   标签格式：视频 × 缺陷类型 × 确认结论（阴性/阳性/待定）+ 测量数据引用。
+```
+
+### 8.2 GT 铁律
+
+- **Hermes 永不直接产出缺陷标签**。测量报告只输出数字，定性由人完成。
+- **GT 必须经人工确认**。任何未经 Jason 确认的标签不得写入 GT_LABELS.md。
+- **禁止用自己的检测值当 GT**（禁止"自造 GT"）。检测值是估算，GT 是人工确认。
+- **GT_LABELS.md 写入后不得被引擎代码直接反向调参**。阈值调整需另起任务经人批准。
+- **窗口定义以 FAULT_VISUAL_STANDARDS 当前版本为准**，不得用固定帧数代替动态标准。
+  例：Chicken Wing 窗口 = [impact, 第一个 wrist_mid_y < hip_mid_y 的帧]，不得固定为 impact+8。
+
+### 8.3 文件路径约定
+
+| 文件 | 路径 | 用途 |
+|---|---|---|
+| 画线渲染 | Desktop/rtmpose_results/preview/gt_lines/ | 供人肉眼验证参考线位置 |
+| 测量曲线 | Desktop/rtmpose_results/preview/gt_measure/ | 供人判读峰值 |
+| 峰值标注帧 | Desktop/rtmpose_results/preview/gt_measure/peak_frames/ | 供人定性确认 |
+| 修正窗口帧 | Desktop/rtmpose_results/preview/gt_measure/peak_frames_v2/ | 动态窗口修正后的帧 |
+| GT 标签档案 | docs/GT_LABELS.md | 唯一合法 GT 来源，版本化管理 |
+
