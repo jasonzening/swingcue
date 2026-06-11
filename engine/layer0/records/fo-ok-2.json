@@ -1,0 +1,56 @@
+{
+  "video_stem": "fo-ok-2",
+  "verdict": "PASS",
+  "angle": "face-on",
+  "reason": "5/5 q1=YES,q2=1,q4=YES, consistently face-on. Matches prefix fo-ok.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Young man executing golf swing at impact, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 21,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf swing, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 42,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf swing follow-through, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 64,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf swing follow-through, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 85,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Full follow-through with motion blur, face-on.",
+      "hard_pass": true
+    }
+  ]
+}

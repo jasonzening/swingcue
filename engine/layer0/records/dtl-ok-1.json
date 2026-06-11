@@ -1,0 +1,56 @@
+{
+  "video_stem": "dtl-ok-1",
+  "verdict": "needs_human",
+  "angle": "mixed",
+  "reason": "4/5 face-on, 1 DTL (follow-through). Prefix dtl conflicts with predominantly face-on result. Paused per angle-conflict rule.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at golf address in sunny backyard, iron club, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 24,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf address, sunny backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 48,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Iron swing at impact, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 73,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Top of backswing, sunny backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 97,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Follow-through from behind, ResinGem shirt.",
+      "hard_pass": true
+    }
+  ]
+}

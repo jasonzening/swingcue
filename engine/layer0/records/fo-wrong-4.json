@@ -1,0 +1,56 @@
+{
+  "video_stem": "fo-wrong-4",
+  "verdict": "needs_human",
+  "angle": "mixed",
+  "reason": "3 face-on, 2 DTL. Prefix fo expected face-on; fr125/fr167 read as DTL → angle conflict → paused.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Young man at golf address, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 41,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf address with iron, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 83,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf address, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 125,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Follow-through DTL view.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 167,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Full follow-through DTL, dirt flying at impact.",
+      "hard_pass": true
+    }
+  ]
+}

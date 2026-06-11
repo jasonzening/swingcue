@@ -1,0 +1,56 @@
+{
+  "video_stem": "fo-wrong-1",
+  "verdict": "PASS",
+  "angle": "face-on",
+  "reason": "5/5 pass. Consistently face-on. Note: sampled frames all at address/setup; may contain multiple swings.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Young man at golf address, yellow ball, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 72,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at address over yellow ball, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 145,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf address with iron, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 218,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at address with yellow ball, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 291,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man near impact, face-on.",
+      "hard_pass": true
+    }
+  ]
+}

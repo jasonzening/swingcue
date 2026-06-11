@@ -1,0 +1,56 @@
+{
+  "video_stem": "fo-ok-1",
+  "verdict": "PASS",
+  "angle": "face-on",
+  "reason": "5/5 q1=YES,q2=1,q4=YES, consistently face-on. Matches prefix fo-ok.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Young man at golf address, gray polo, sunny backyard.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 22,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf address, iron club, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 44,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golf address/impact, yellow practice ball visible.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 67,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Follow-through, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 89,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Iron swing at impact, face-on.",
+      "hard_pass": true
+    }
+  ]
+}
