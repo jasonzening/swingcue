@@ -11,13 +11,35 @@
 
 ## 方向约定
 
-- 球手：右手持杆（all five videos）  
-- 正面机位（face-on）：目标侧 = 画面右侧（golfer faces camera, target is to golfer's left = screen right）  
-- DTL 机位：球侧 = address 帧 `wrist_mid_x > hip_mid_x` 方向（已在 C 层 FeatureExtractor 中按此约定执行）  
-- 头部横向位移符号：`+` = 画面右 = 目标侧；`-` = 画面左 = 后侧  
-- 头部纵向位移符号：`+` = 头部上移；`-` = 头部下移  
-- 髋部 hip_disp：`+` = hip_mid_x 向球侧位移（fraction of torso_h）  
+> 本节方向约定由 **`engine/orientation/resolver.py` OrientationResolver** 确定性计算，
+> 无需人工猜测摄像机朝向。以下为解析器在五段视频上的输出（均无冲突）。
+> 人工确认值（Jason, 2026-06-10）作为对照留存于本节末尾。
+
+**解析器输出**（`OrientationResult`，来自 B 层锚点 + cached keypoints）：
+
+| 视频 | angle | handedness | target_side | trail_side | ball_side | confidence |
+|---|---|---|---|---|---|---|
+| 201015 | face-on | right | right | left | — | single_evidence (no usable top) |
+| 201039 | face-on | right | right | left | — | two_evidence |
+| 201047 | face-on | right | right | left | — | two_evidence |
+| 201054 | DTL | — | — | — | right | single_evidence |
+| 201058 | DTL | — | — | — | right | single_evidence |
+
+**解析器规则**（确定性，无解释空间）：
+- face-on 主证据：`trail_side = sign(wrist_mid_x[top] − wrist_mid_x[address])`；`target_side = 反向`；`handedness = opposite(trail_side)`
+- face-on 兜底：`target_side_2 = sign(wrist_mid_x[impact+5] − wrist_mid_x[impact])`；与主证据冲突 → conflict=True，写 NEEDS_HUMAN
+- 无可用 top（201015，address==top）→ 仅用兜底，confidence=single_evidence
+- DTL：`ball_side = sign(wrist_mid_x[address] − hip_mid_x[address])`
+
+**信号含义（本视频集）**：
+- 正面机位：目标侧 = 画面右（`target_side=right`）；后侧 = 画面左
+- 头部横向位移符号：`+` = 画面右 = 目标侧；`-` = 画面左 = 后侧
+- 头部纵向位移符号：`+` = 头部上移；`-` = 头部下移
+- 髋部 hip_disp：`+` = hip_mid_x 向 `ball_side`（右）位移（fraction of torso_h）
 - 脊柱 spine_delta：`+` = 前倾角减小（脊柱变直）；`-` = 前倾角增大
+
+**人工对照确认**（Jason, 2026-06-10）：全部五段视频均为右手持杆（right-handed），  
+目标侧为画面右，与解析器输出一致，无冲突。
 
 ---
 
