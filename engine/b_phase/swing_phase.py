@@ -1,6 +1,14 @@
 """
 engine/b_phase/swing_phase.py
-B Layer — Swing Phase Engine  (v3.3 — speed-gated impact, ordering guard)
+B Layer — Swing Phase Engine  (v3.4 — conf formula fix: signal_range normalization)
+
+Key change v3.4 vs v3.3:
+  sig_score now uses signal_range (xs_range for DTL, ys_range for face-on) as denominator
+  instead of ys_range*0.25.  ys_range*0.25 was too small — every real swing cleared it and
+  got clipped to 1.0.  Using full signal_range gives natural 0-1 spread (e.g. DTL impact
+  X-motion ~160px vs face-on Y-motion ~400px, reflecting detection difficulty).
+
+  top_conf uses ys_range (not ys_range*0.70) to avoid DTL clips at >1.0.
 
 Key change v3.3 vs v3.2:
   _detect_anchors now passes real_impacts (speed-filtered list from _detect_swing_count)
@@ -25,7 +33,7 @@ Multi-swing detection algorithm:
   5. All anchor detection runs in [0, first_swing_end] only
 
 Confidence formula (3-factor):
-  sig_score (50%): peak_prominence / (wrist_Y_range × 0.25)
+  sig_score (50%): peak_prominence / signal_range  (signal=xs for DTL, ys for face-on)
   ambiguity (30%): 1 − 0.25×(swing_count−1), min 0.2
   joint_qual(20%): mean RTMPose quality ±3fr around impact
 
@@ -196,7 +204,11 @@ class SwingPhaseEngine:
 
         ys_range = float(ys_s[:n_eff].max() - ys_s[:n_eff].min())
         ys_range = max(ys_range, 30.0)
-        top_conf = float(np.clip(top_prom / (ys_range * 0.70), 0.0, 1.0))
+        xs_range = float(xs_s[:n_eff].max() - xs_s[:n_eff].min())
+        xs_range = max(xs_range, 30.0)
+        signal_range = xs_range if angle == "down-the-line" else ys_range
+        # top_conf: backswing height / full wrist-Y range (capped at 1.0)
+        top_conf = float(np.clip(top_prom / ys_range, 0.0, 1.0))
 
         # ── impact (with speed-gate and ordering guard) ───────────────────────
         # Pass real_impacts[0] as a hint — the speed-filtered first-swing peak.
@@ -208,6 +220,7 @@ class SwingPhaseEngine:
             measurements=measurements,
             swing_count=swing_count,
             ys_range=ys_range,
+            signal_range=signal_range,
             swing1_hint=swing1_hint,
         )
 
@@ -257,6 +270,7 @@ class SwingPhaseEngine:
     def _detect_impact(self, xs_s, ys_s, spd, fps, angle, address, top, n_eff,
                        measurements=None, swing_count: int = 1,
                        ys_range: float = 150.0,
+                       signal_range: float = 150.0,
                        swing1_hint: Optional[int] = None) -> tuple[int, float]:
         """
         Impact detection with speed-gate and swing1_hint.
@@ -281,7 +295,7 @@ class SwingPhaseEngine:
                 # Hint passes speed gate — use it
                 return self._score_impact(
                     swing1_hint, xs_s, ys_s, spd, fps, angle, address, top,
-                    n_eff, measurements, swing_count, ys_range,
+                    n_eff, measurements, swing_count, ys_range, signal_range,
                     method="hint"
                 )
 
@@ -298,7 +312,7 @@ class SwingPhaseEngine:
             fb = swing1_hint if swing1_hint else top + 1
             return self._score_impact(
                 fb, xs_s, ys_s, spd, fps, angle, address, top,
-                n_eff, measurements, swing_count, ys_range, method="fallback"
+                n_eff, measurements, swing_count, ys_range, signal_range, method="fallback"
             )
 
         full_peaks, full_props = find_peaks(
@@ -314,7 +328,7 @@ class SwingPhaseEngine:
                 # argmax failed speed gate — prefer hint even if it's before top
                 return self._score_impact(
                     swing1_hint, xs_s, ys_s, spd, fps, angle, address, top,
-                    n_eff, measurements, swing_count, ys_range, method="hint_fallback"
+                    n_eff, measurements, swing_count, ys_range, signal_range, method="hint_fallback"
                 )
             impact = best_fr
         else:
@@ -325,19 +339,25 @@ class SwingPhaseEngine:
                 # Peak fails speed gate — prefer hint
                 return self._score_impact(
                     swing1_hint, xs_s, ys_s, spd, fps, angle, address, top,
-                    n_eff, measurements, swing_count, ys_range, method="hint_speedgate"
+                    n_eff, measurements, swing_count, ys_range, signal_range, method="hint_speedgate"
                 )
             impact = best_fr
 
         return self._score_impact(
             impact, xs_s, ys_s, spd, fps, angle, address, top,
-            n_eff, measurements, swing_count, ys_range, method="peak"
+            n_eff, measurements, swing_count, ys_range, signal_range, method="peak"
         )
 
     def _score_impact(self, impact: int, xs_s, ys_s, spd, fps, angle,
                       address, top, n_eff, measurements,
-                      swing_count, ys_range, method: str = "peak") -> tuple[int, float]:
-        """Compute confidence for a given impact frame."""
+                      swing_count, ys_range, signal_range, method: str = "peak") -> tuple[int, float]:
+        """Compute confidence for a given impact frame.
+
+        sig_score: peak_prominence / signal_range
+          signal = xs for DTL (forward hand motion), ys for face-on (downward hand motion).
+          Using full signal_range (not ys*0.25) ensures scores spread over 0-1 naturally.
+          Real swings typically give prominence ~0.3-0.7 of full range.
+        """
         signal = xs_s if angle == "down-the-line" else ys_s
 
         # Peak prominence: compare signal[impact] to nearby minimum
@@ -346,8 +366,8 @@ class SwingPhaseEngine:
         region = signal[lo_w:hi_w]
         peak_prom = float(signal[impact] - region.min()) if len(region) > 0 else 0.0
 
-        # Factor 1: signal significance
-        norm_base = max(ys_range * 0.25, 30.0)
+        # Factor 1: signal significance — prominence as fraction of full signal range
+        norm_base = max(signal_range, 30.0)
         sig_score = float(np.clip(peak_prom / norm_base, 0.0, 1.0))
 
         # Factor 2: multi-swing ambiguity
