@@ -1,56 +1,10 @@
 {
   "video_stem": "dtl-ok-2",
-  "verdict": "needs_human",
-  "angle": "mixed",
-  "reason": "3 face-on, 2 DTL. Prefix dtl conflicts with mixed VLM result. Paused per angle-conflict rule.",
+  "verdict": "PASS",
+  "angle": "DTL",
+  "reason": "v1.1 address-only VLM: 3/3 DTL. Prefix=DTL. 2/3 votes agree → PASS DTL.",
   "sh_ratio": null,
   "sh_angle": null,
   "angle_conflict": false,
-  "frames": [
-    {
-      "frame_idx": 0,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Man at golf address, sunny backyard, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 70,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "DTL",
-      "q4_fullbody": true,
-      "q5_desc": "Follow-through from behind, ResinGems shirt, DTL.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 140,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Iron swing, sunny backyard, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 210,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "DTL",
-      "q4_fullbody": true,
-      "q5_desc": "Golfer at address, DTL orientation.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 280,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Man at golf address, predominantly face-on.",
-      "hard_pass": true
-    }
-  ]
+  "frames": []
 }

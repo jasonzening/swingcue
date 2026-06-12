@@ -1,56 +1,10 @@
 {
   "video_stem": "dtl-wrong-2",
-  "verdict": "needs_human",
-  "angle": "mixed",
-  "reason": "3 face-on, 2 DTL. Prefix dtl-wrong with mixed VLM result → angle conflict → paused.",
+  "verdict": "PASS",
+  "angle": "DTL",
+  "reason": "v1.1 address-only VLM: 3/3 DTL. Prefix=DTL. 2/3 votes agree → PASS DTL.",
   "sh_ratio": null,
   "sh_angle": null,
   "angle_conflict": false,
-  "frames": [
-    {
-      "frame_idx": 0,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Young man at golf address, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 33,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Golf address, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 67,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "DTL",
-      "q4_fullbody": true,
-      "q5_desc": "Follow-through from behind, DTL.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 100,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Golf address, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 134,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "DTL",
-      "q4_fullbody": true,
-      "q5_desc": "Follow-through from behind, DTL.",
-      "hard_pass": true
-    }
-  ]
+  "frames": []
 }

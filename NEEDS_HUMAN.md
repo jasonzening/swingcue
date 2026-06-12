@@ -40,3 +40,16 @@ Per-video sub-folders:
     which is not yet built. Will be added when club detection flow is complete.
 
 Human action: inspect frames in gt_lines/ and confirm or correct anchor frames.
+
+
+## fo-ok-2 Keypoint Jitter — Sentinel Gap (2026-06-11)
+
+fr75 head keypoint shows single-frame jump (head_x -54px, head_y -108px) then immediately returns to normal at fr76. This makes fr75 measurement values (head_lat=-70.9%, head_vert=+72.5%) invalid outliers.
+
+**哨兵缺口**: 需关键点时序连贯性检查 (keypoint temporal coherence sentinel).
+A per-frame sentinel should flag single-frame outliers where |Δhead| > 2× median inter-frame delta. Not implemented yet.
+
+**Corrected measurements for fo-ok-2**:
+  With fr75 masked, true peaks are approximately:
+  head_lat_neg: fr80 ~ -21.6% (smooth downtrend)
+  head_vert: negative throughout (head moves DOWN during downswing)

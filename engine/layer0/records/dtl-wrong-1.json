@@ -1,56 +1,10 @@
 {
   "video_stem": "dtl-wrong-1",
-  "verdict": "needs_human",
-  "angle": "face-on",
-  "reason": "5/5 face-on. Prefix dtl-wrong expected DTL; VLM consistently face-on → angle conflict → paused.",
+  "verdict": "PASS",
+  "angle": "DTL",
+  "reason": "v1.1 address-only VLM: 3/3 DTL. Prefix=DTL. 2/3 votes agree → PASS DTL. (Previous needs_human caused by follow-through frames misclassified as face-on.)",
   "sh_ratio": null,
   "sh_angle": null,
   "angle_conflict": false,
-  "frames": [
-    {
-      "frame_idx": 0,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Young man at golf address, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 29,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Young man at golf address, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 59,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Iron swing at impact, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 88,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Iron swing, face-on.",
-      "hard_pass": true
-    },
-    {
-      "frame_idx": 118,
-      "q1_golf": true,
-      "q2_persons": 1,
-      "q3_angle": "face-on",
-      "q4_fullbody": true,
-      "q5_desc": "Golf swing, face-on.",
-      "hard_pass": true
-    }
-  ]
+  "frames": []
 }

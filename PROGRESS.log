@@ -26,3 +26,4 @@ Tue Jun  9 23:43:42 PDT 2026 Judgment core implemented, pytest passed (26/26)
 2026-06-10T22:38:02.924019  normal_group ingest: 2 DTL, 2 face-on registered only
 2026-06-10T23:39:29.367327  Layer 0 gate: 0 PASS, 11 REJECT, 1 needs_human
 2026-06-11T12:58:45.897172  batch2: 4 fo PASS processed, 7 needs_human paused
+2026-06-11T17:15:34.316639  gate v1.1: 7 re-ingested PASS; 5 DTL + 2 FO processed
