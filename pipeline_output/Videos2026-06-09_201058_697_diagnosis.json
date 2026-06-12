@@ -1,0 +1,45 @@
+{
+  "video": "Videos2026-06-09_201058_697",
+  "angle": "down-the-line",
+  "fps": 30.001162835768827,
+  "n_frames": 258,
+  "b_layer": {
+    "swing_count": 1,
+    "first_swing_end": 257,
+    "address": 88,
+    "top": 137,
+    "top_conf": 1.0,
+    "impact": 186,
+    "impact_conf": 0.929,
+    "finish": 218
+  },
+  "gt_impact": 186,
+  "gt_error_frames": 0,
+  "c_layer": {
+    "torso_h": 215.7464941248995,
+    "addr_spine_deg": 33.84,
+    "unreliable_ratio": 0.0
+  },
+  "d_layer_faults": [
+    {
+      "fault_type": "hip_toward_ball",
+      "phase_window": "transition-impact",
+      "evidence": {
+        "feature": "hip_shift",
+        "peak_value": 0.1483,
+        "onset_frame": 140,
+        "frames_sustained": 50
+      },
+      "severity": "significant",
+      "confidence": 0.481
+    }
+  ],
+  "status": "ok",
+  "root_cause": "none",
+  "certainty": "none",
+  "causal_chain": [],
+  "supporting_evidence": [],
+  "independent_faults": [],
+  "note": "r2_only_suppressed_2d_dtl_ambiguity",
+  "one_liner": "这一杆姿势保持得不错,没有检出明显问题。"
+}
