@@ -12,7 +12,8 @@ Each frame gets:
   - Frame info banner
   - mask_quality score
 
-Outputs: Desktop/rtmpose_results/preview/batch2/r2prime_check/
+Outputs: Desktop/rtmpose_results/preview/batch2/r2prime_check_v11/
+(v1.1: 4-point SAM2 prompt, updated peak frames from v1.1 table)
 """
 import sys, json, math
 from pathlib import Path
@@ -29,7 +30,7 @@ from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 PROJ   = Path("/home/jason/projects/swingcue-postest")
-DEST   = Path("/mnt/c/Users/jason/Desktop/rtmpose_results/preview/batch2/r2prime_check")
+DEST   = Path("/mnt/c/Users/jason/Desktop/rtmpose_results/preview/batch2/r2prime_check_v11")
 DEST.mkdir(parents=True, exist_ok=True)
 
 SAM2_CFG  = "configs/sam2.1/sam2.1_hiera_t.yaml"
@@ -38,22 +39,22 @@ BAND_FRAC = 0.12
 FONT = cv2.FONT_HERSHEY_DUPLEX
 
 VIDEOS = [
-    ("dtl-ok-1",    84,
+    ("dtl-ok-1",    82,
      PROJ/"engine/kp_cache/batch2/dtl-ok-1.json",
      PROJ/"input/dtl-ok-1.mp4"),
-    ("dtl-ok-2",    109,
+    ("dtl-ok-2",    104,
      PROJ/"engine/kp_cache/batch2/dtl-ok-2.json",
      PROJ/"input/dtl-ok-2.mp4"),
-    ("dtl-wrong-1", 98,
+    ("dtl-wrong-1", 92,
      PROJ/"engine/kp_cache/batch2/dtl-wrong-1.json",
      PROJ/"input/dtl-wrong-1.mp4"),
     ("dtl-wrong-2", 85,
      PROJ/"engine/kp_cache/batch2/dtl-wrong-2.json",
      PROJ/"input/dtl-wrong-2.mp4"),
-    ("201058",      181,
+    ("201058",      186,
      PROJ/"engine/kp_cache/Videos2026-06-09_201058_697.json",
      PROJ/"input/Videos2026-06-09_201058_697.mp4"),
-    ("201054",      153,
+    ("201054",      148,
      PROJ/"engine/kp_cache/Videos2026-06-09_201054_561.json",
      PROJ/"input/Videos2026-06-09_201054_561.mp4"),
 ]
@@ -103,10 +104,33 @@ def torso_h_from_kp(kps, thr=0.3):
     return 200.0
 
 
-def run_sam2_frame(predictor, frame_bgr, hip_pt):
-    """Run SAM2 on one BGR frame, return (mask_bool, score)."""
+def _build_4pt_prompt_render(kps, thr=0.3):
+    """Build 4-point SAM2 prompt from kp dict (render_r2prime_check format)."""
+    def valid(k): return k.get("score", 0) >= thr and k.get("x", 0) > 0 and k.get("y", 0) > 0
+    def mid(a, b): return ((a["x"]+b["x"])/2, (a["y"]+b["y"])/2)
+    ls = kps.get("left_shoulder",{}); rs = kps.get("right_shoulder",{})
+    lh = kps.get("left_hip",{});  rh = kps.get("right_hip",{})
+    lk = kps.get("left_knee",{}); rk = kps.get("right_knee",{})
+    la = kps.get("left_ankle",{}); ra = kps.get("right_ankle",{})
+    if not all(valid(x) for x in [ls, rs, lh, rh, lk, rk, la, ra]):
+        return None, None
+    pts = [mid(ls, rs), mid(lh, rh), mid(lk, rk), mid(la, ra)]
+    coords = np.array([[p[0], p[1]] for p in pts], dtype=np.float32)
+    labels = np.ones(4, dtype=np.int32)
+    return coords, labels
+
+
+def run_sam2_frame(predictor, frame_bgr, hip_pt, kps=None):
+    """Run SAM2 on one BGR frame. Uses 4-pt prompt if kps provided, else 1-pt fallback."""
     frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     predictor.set_image(frame_rgb)
+    if kps is not None:
+        coords, labels = _build_4pt_prompt_render(kps)
+        if coords is not None:
+            masks, scores, _ = predictor.predict(
+                point_coords=coords, point_labels=labels, multimask_output=False)
+            return masks[0].astype(bool), float(scores[0])
+    # fallback: 1-point at hip_mid
     masks, scores, _ = predictor.predict(
         point_coords=np.array([[hip_pt[0], hip_pt[1]]]),
         point_labels=np.array([1]),
@@ -242,7 +266,8 @@ def main():
         # Run SAM2 on address frame to get addr_rear_x
         addr_frame_bgr = get_frame(str(video_path), addr_fr)
         addr_mask, addr_mq = run_sam2_frame(predictor, addr_frame_bgr,
-                                            addr_hip_pt if addr_hip_pt else (360, 400))
+                                            addr_hip_pt if addr_hip_pt else (360, 400),
+                                            kps=kps_addr)
         addr_rear_x = find_rear_edge(addr_mask, band_y_lo, band_y_hi, rear_is_left)
         print(f"  addr=fr{addr_fr}  ball_side={ball_side}  torso_h={torso_h:.0f}  "
               f"band=[{band_y_lo:.0f},{band_y_hi:.0f}]  addr_rear_x={addr_rear_x}")
@@ -263,7 +288,7 @@ def main():
             if hip_pt is None:
                 hip_pt = addr_hip_pt  # fallback to address hip
 
-            mask, mq = run_sam2_frame(predictor, frame_bgr, hip_pt)
+            mask, mq = run_sam2_frame(predictor, frame_bgr, hip_pt, kps=kps)
             quality_report[stem][fr_idx] = round(mq, 4)
             rear_x = find_rear_edge(mask, band_y_lo, band_y_hi, rear_is_left)
 

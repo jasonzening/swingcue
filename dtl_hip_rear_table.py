@@ -88,6 +88,7 @@ for stem, kp_path, video_path, group, excluded in DTL_VIDEOS:
         "hip_rear_peak_pct": None,
         "hip_rear_addr_rear_x": None,
         "hip_rear_torso_h": None,
+        "hip_rear_nan_count": None,
         "hip_rear_note": "",
     }
 
@@ -113,6 +114,7 @@ for stem, kp_path, video_path, group, excluded in DTL_VIDEOS:
                 str(video_path), measurements, anchors,
                 ball_side=ball_side,
                 phase_labels=phase_labels,
+                kp_json=kp_json,
             )
             # Window peak
             valid_frames = [f for f in rear_result.window_frames
@@ -126,8 +128,9 @@ for stem, kp_path, video_path, group, excluded in DTL_VIDEOS:
                 row["hip_rear_peak_pct"]    = round(rear_peak_val * 100, 1)
                 row["hip_rear_addr_rear_x"] = round(rear_result.addr_rear_x, 1)
                 row["hip_rear_torso_h"]     = round(rear_result.torso_h, 1)
+                row["hip_rear_nan_count"]   = rear_result.nan_count
                 print(f"  hip_mid:  fr{hip_mid_peak_fr}  {hip_mid_peak_val*100:.1f}%")
-                print(f"  hip_rear: fr{rear_peak_fr}  {rear_peak_val*100:.1f}%")
+                print(f"  hip_rear: fr{rear_peak_fr}  {rear_peak_val*100:.1f}%  nan_count={rear_result.nan_count}")
                 print(f"  addr_rear_x={rear_result.addr_rear_x:.0f}  torso_h={rear_result.torso_h:.0f}")
             else:
                 row["hip_rear_note"] = "no valid frames in window"
@@ -143,17 +146,18 @@ print("\n" + "="*110)
 print("DTL 七段 hip_mid vs hip_rear 对照表")
 print("="*110)
 print(f"{'stem':12s} {'group':15s} {'exc':3s} {'addr':>5} {'impact':>6} "
-      f"{'hip_mid_fr':>10} {'hip_mid%':>9} {'hip_rear_fr':>11} {'hip_rear%':>10}  note")
-print("-"*110)
+      f"{'hip_mid_fr':>10} {'hip_mid%':>9} {'hip_rear_fr':>11} {'hip_rear%':>10} {'nan':>5}  note")
+print("-"*115)
 for r in rows:
     exc = "Y" if r["excluded"] else " "
     hm_fr  = f"fr{r['hip_mid_peak_fr']}"   if r["hip_mid_peak_fr"]  is not None else "—"
     hm_pct = f"{r['hip_mid_peak_pct']:+.1f}%" if r["hip_mid_peak_pct"] is not None else "—"
     hr_fr  = f"fr{r['hip_rear_peak_fr']}"  if r["hip_rear_peak_fr"] is not None else "—"
     hr_pct = f"{r['hip_rear_peak_pct']:+.1f}%" if r["hip_rear_peak_pct"] is not None else "—"
+    nan_c  = str(r["hip_rear_nan_count"]) if r["hip_rear_nan_count"] is not None else "—"
     note   = r["hip_rear_note"][:30] if r["hip_rear_note"] else ""
     print(f"{r['stem']:12s} {r['group']:15s} {exc:3s} {r['addr']:5d} {r['impact']:6d} "
-          f"{hm_fr:>10} {hm_pct:>9} {hr_fr:>11} {hr_pct:>10}  {note}")
+          f"{hm_fr:>10} {hm_pct:>9} {hr_fr:>11} {hr_pct:>10} {nan_c:>5}  {note}")
 
 # Group distribution (excluding dtl-wrong-3 and using corrected groups)
 print("\n" + "="*70)
