@@ -1,8 +1,8 @@
 {
   "video_stem": "dtl-eet-3",
-  "verdict": "needs_human",
-  "angle": "mixed",
-  "reason": "4/5 face-on + 1/5 DTL. Prefix dtl conflicts with face-on dominant. Same VLM artifact as batch2 dtl-wrong-*. Needs human angle confirmation.",
+  "verdict": "PASS",
+  "angle": "DTL",
+  "reason": "4/5 face-on + 1/5 DTL. Prefix dtl conflicts with face-on dominant. Same VLM artifact as batch2 dtl-wrong-*. Needs human angle confirmation. | HUMAN_OVERRIDE: DTL confirmed by Jason 2026-07-03",
   "sh_ratio": null,
   "sh_angle": null,
   "angle_conflict": false,
@@ -52,5 +52,7 @@
       "q5_desc": "Golfer at full finish, DTL angle, backyard hedge.",
       "hard_pass": true
     }
-  ]
+  ],
+  "human_override": "DTL",
+  "human_override_reason": "address帧golfer侧身、球杆指向目标线；VLM被低头姿态误导，误判face-on。人工仲裁2026-07-03。"
 }

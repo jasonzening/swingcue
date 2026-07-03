@@ -1,0 +1,61 @@
+{
+  "video": "dtl-eet-3",
+  "angle": "down-the-line",
+  "fps": 30.00344867226118,
+  "n_frames": 87,
+  "b_layer": {
+    "addr": 18,
+    "top": 48,
+    "top_conf": 0.738,
+    "impact": 65,
+    "impact_conf": 0.903,
+    "finish": 85,
+    "swing_count": 1
+  },
+  "c_layer": {
+    "torso_h": 172.60020551298442,
+    "addr_spine_deg": 31.29,
+    "unreliable_ratio": 0.0
+  },
+  "hip_mid_peak": {
+    "fr": 68,
+    "pct": 36.5
+  },
+  "hip_rear_peak": {
+    "fr": 65,
+    "pct": 36.5
+  },
+  "spine_peak": {
+    "fr": 65,
+    "deg": -25.6
+  },
+  "nan_count": 0,
+  "d_layer_r1": null,
+  "d_layer_r2": {
+    "fault_type": "hip_toward_ball",
+    "phase_window": "transition-impact",
+    "evidence": {
+      "feature": "hip_shift",
+      "peak_value": 0.3654,
+      "onset_frame": 51,
+      "frames_sustained": 18
+    },
+    "severity": "significant",
+    "confidence": 0.5006
+  },
+  "e_layer": {
+    "root_cause": "none",
+    "certainty": "none"
+  },
+  "f_layer": {
+    "one_liner": "这一杆姿势保持得不错,没有检出明显问题。"
+  },
+  "status": "ok",
+  "root_cause": "none",
+  "certainty": "none",
+  "causal_chain": [],
+  "supporting_evidence": [],
+  "independent_faults": [],
+  "note": "r2_only_suppressed_2d_dtl_ambiguity",
+  "one_liner": "这一杆姿势保持得不错,没有检出明显问题。"
+}
