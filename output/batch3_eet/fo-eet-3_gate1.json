@@ -1,0 +1,32 @@
+{
+  "stem": "fo-eet-3",
+  "fps": 30.002655102221436,
+  "n_frames": 113,
+  "anchors": {
+    "address": 18,
+    "top": 46,
+    "top_conf": 0.68,
+    "impact": 59,
+    "impact_conf": 0.862,
+    "finish": 92,
+    "swing_count": 1
+  },
+  "torso_height_px": 131.0,
+  "head_lat": {
+    "peak_fr": 50,
+    "peak_px": -23.8,
+    "peak_pct": -18.1
+  },
+  "head_vert": {
+    "peak_fr": 46,
+    "peak_px": 24.6,
+    "peak_pct": 18.8
+  },
+  "elbow_angles": {
+    "right_at_address": 175.7,
+    "right_at_top": 121.8,
+    "right_at_impact": 176.1,
+    "left_at_impact": 168.5
+  },
+  "nan_count": 0
+}

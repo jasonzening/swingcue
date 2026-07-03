@@ -1,5 +1,37 @@
 # NEEDS_HUMAN.md
 
+---
+
+## batch3 EET — dtl-eet-1/2/3 机位确认 (2026-07-03)
+
+**状态**: Layer 0 感知门 → needs_human，管线暂停
+
+**问题**: 三段 dtl-eet-* 文件名前缀为 dtl，但 VLM 采样 5 帧结果如下：
+
+| 片段 | 面向镜头帧数 | DTL帧数 | VLM判断 |
+|---|---|---|---|
+| dtl-eet-1 | 3/5 (fr0,50,101) | 2/5 (fr152,202) | mixed |
+| dtl-eet-2 | 4/5 (fr0,32,65,97) | 1/5 (fr129) | mixed |
+| dtl-eet-3 | 4/5 (fr0,21,43,65) | 1/5 (fr86) | mixed |
+
+VLM + 人工抽帧确认：fr0/fr50/fr101 golfer正脸朝向镜头，是真face-on。
+fr152/fr202/fr129/fr86等 follow-through 帧才是DTL。
+
+dtl-eet-1 追加异常：fr0-101 golfer穿polo+floral shorts；
+fr152开始换成sweatshirt+tie-dye shorts → **疑似剪辑了不同场次素材**。
+
+**请人工确认**：
+1. dtl-eet-1：是否包含两段不同次击球/不同服装拼接？前段(fr0-101)实际是 face-on 机位？
+2. dtl-eet-2：前4/5帧都是 face-on 机位，仅 fr129 是 DTL。这段是否为 face-on 素材（应归 fo-eet-*）？
+3. dtl-eet-3：同上，4/5 face-on，仅最后 follow-through 是 DTL。
+4. 确认后重新标注机位（dtl vs face-on），或说明是有意"混合机位"素材。
+
+确认后 Hermes 可继续跑 DTL 管线（Step 3）。
+
+fo-eet-1/2/3 Layer 0 已 PASS（face-on 一致），Step 4 已完成，见下方数据。
+
+---
+
 ## Gate-1 v1.1 batch2 结果 — 待人工审核 (2026-06-11)
 
 11段新素材全部过 Gate v1.1（address静止段帧+三票制），gate1 sheet 在桌面：

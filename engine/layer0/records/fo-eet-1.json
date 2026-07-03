@@ -1,0 +1,56 @@
+{
+  "video_stem": "fo-eet-1",
+  "verdict": "PASS",
+  "angle": "face-on",
+  "reason": "4/5 face-on dominant; fr227 follow-through reads DTL (known rotation artifact). Prefix fo matches dominant angle.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Young man in navy shirt/floral shorts at address in backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 57,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at address over yellow ball in backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 114,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at address in backyard, navy shirt/tie-dye shorts, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 171,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at or just past impact in follow-through, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 227,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Man at full finish position from DTL angle, backyard.",
+      "hard_pass": true
+    }
+  ]
+}

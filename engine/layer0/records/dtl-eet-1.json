@@ -1,0 +1,56 @@
+{
+  "video_stem": "dtl-eet-1",
+  "verdict": "needs_human",
+  "angle": "mixed",
+  "reason": "3/5 face-on + 2/5 DTL. Prefix dtl conflicts with face-on dominant frames. Same VLM artifact as batch2 dtl-wrong-*. Needs human angle confirmation.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man in navy polo/floral shorts at address, backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 50,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Same golfer at address, slightly adjusted, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 101,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at address with iron, backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 152,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Man in navy sweatshirt/shorts at follow-through, DTL.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 202,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at follow-through, DTL, alignment stick visible.",
+      "hard_pass": true
+    }
+  ]
+}

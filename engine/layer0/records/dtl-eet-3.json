@@ -1,0 +1,56 @@
+{
+  "video_stem": "dtl-eet-3",
+  "verdict": "needs_human",
+  "angle": "mixed",
+  "reason": "4/5 face-on + 1/5 DTL. Prefix dtl conflicts with face-on dominant. Same VLM artifact as batch2 dtl-wrong-*. Needs human angle confirmation.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man in navy shirt/floral shorts at address, backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 21,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at address holding iron, face-on, green hedges.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 43,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at top of backswing, face-on, yellow ball at feet.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 65,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at/just past impact, face-on, backyard.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 86,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at full finish, DTL angle, backyard hedge.",
+      "hard_pass": true
+    }
+  ]
+}

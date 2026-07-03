@@ -1,0 +1,56 @@
+{
+  "video_stem": "fo-eet-3",
+  "verdict": "PASS",
+  "angle": "face-on",
+  "reason": "4/5 face-on dominant; fr84 follow-through reads DTL (known rotation artifact). Prefix fo matches dominant angle.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at address, navy shirt/tropical shorts, backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 28,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at impact, club motion-blurred, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 56,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Golfer at/past impact, yellow ball/tee visible, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 84,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Full follow-through from DTL angle (rotation artifact), backyard.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 112,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Full follow-through, face-on, backyard.",
+      "hard_pass": true
+    }
+  ]
+}

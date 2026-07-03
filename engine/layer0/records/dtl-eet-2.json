@@ -1,0 +1,56 @@
+{
+  "video_stem": "dtl-eet-2",
+  "verdict": "needs_human",
+  "angle": "mixed",
+  "reason": "4/5 face-on + 1/5 DTL. Prefix dtl conflicts with face-on dominant. Same VLM artifact as batch2 dtl-wrong-*. Needs human angle confirmation.",
+  "sh_ratio": null,
+  "sh_angle": null,
+  "angle_conflict": false,
+  "frames": [
+    {
+      "frame_idx": 0,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Young man in floral shorts at address in backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 32,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man at address with iron, sunny backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 65,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man in floral shorts near impact, backyard, face-on.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 97,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "face-on",
+      "q4_fullbody": true,
+      "q5_desc": "Man in navy shirt at follow-through, face-on, green hedges.",
+      "hard_pass": true
+    },
+    {
+      "frame_idx": 129,
+      "q1_golf": true,
+      "q2_persons": 1,
+      "q3_angle": "DTL",
+      "q4_fullbody": true,
+      "q5_desc": "Man completing iron follow-through, viewed from behind (DTL), backyard.",
+      "hard_pass": true
+    }
+  ]
+}
