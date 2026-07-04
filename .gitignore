@@ -1,0 +1,30 @@
+# 虚拟环境(依赖,不进git)
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# 模型权重(放本地+网盘,不进git)
+models/
+*.pt
+*.pth
+*.onnx
+
+# 数据与中间产物
+input/
+output/
+output_archive_*.tar.gz
+keyframes/
+pipeline_output/
+kp_cache/
+engine/kp_cache/
+TARViTPose/
+
+# 备份包
+*.tar.gz
+
+# Windows 垃圾标记
+*:Zone.Identifier
+*Zone.Identifier
+
+# 临时脚本(可选,先留着不排除)

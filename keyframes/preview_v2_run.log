@@ -1,129 +1,0 @@
-LD_LIBRARY_PATH set, running RTMPose with GPU...
-Processing 5 videos...
-
-
-============================================================
-Videos2026-06-09_201015_827.mp4
-  Classifying angle...
-Downloading: "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_tiny_8xb8-300e_humanart-6f3252f9.zip" to /home/jason/.cache/rtmlib/hub/checkpoints/yolox_tiny_8xb8-300e_humanart-6f3252f9.zip
-  0%|          | 0.00/18.0M [00:00<?, ?B/s]  2%|▏         | 304k/18.0M [00:00<00:06, 3.06MB/s]  7%|▋         | 1.31M/18.0M [00:00<00:02, 7.36MB/s] 12%|█▏        | 2.24M/18.0M [00:00<00:01, 8.29MB/s] 17%|█▋        | 3.03M/18.0M [00:00<00:02, 7.55MB/s] 23%|██▎       | 4.21M/18.0M [00:00<00:01, 9.12MB/s] 29%|██▉       | 5.20M/18.0M [00:00<00:01, 9.53MB/s] 36%|███▋      | 6.53M/18.0M [00:00<00:01, 10.9MB/s] 43%|████▎     | 7.77M/18.0M [00:00<00:00, 11.4MB/s] 49%|████▉     | 8.87M/18.0M [00:00<00:00, 10.1MB/s] 56%|█████▋    | 10.1M/18.0M [00:01<00:00, 10.7MB/s] 63%|██████▎   | 11.4M/18.0M [00:01<00:00, 11.3MB/s] 69%|██████▉   | 12.5M/18.0M [00:01<00:00, 11.1MB/s] 76%|███████▋  | 13.8M/18.0M [00:01<00:00, 11.8MB/s] 83%|████████▎ | 14.9M/18.0M [00:01<00:00, 11.7MB/s] 90%|████████▉ | 16.2M/18.0M [00:01<00:00, 12.2MB/s] 97%|█████████▋| 17.4M/18.0M [00:01<00:00, 12.2MB/s]100%|██████████| 18.0M/18.0M [00:01<00:00, 10.6MB/s]
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_tiny_8xb8-300e_humanart-6f3252f9.onnx with onnxruntime backend
-Downloading: "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip" to /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.zip
-  0%|          | 0.00/19.5M [00:00<?, ?B/s]  2%|▏         | 320k/19.5M [00:00<00:06, 3.19MB/s]  5%|▍         | 968k/19.5M [00:00<00:03, 5.18MB/s]  8%|▊         | 1.60M/19.5M [00:00<00:03, 5.13MB/s] 12%|█▏        | 2.41M/19.5M [00:00<00:02, 6.34MB/s] 18%|█▊        | 3.45M/19.5M [00:00<00:02, 7.78MB/s] 23%|██▎       | 4.55M/19.5M [00:00<00:01, 8.99MB/s] 29%|██▉       | 5.73M/19.5M [00:00<00:01, 10.0MB/s] 35%|███▌      | 6.87M/19.5M [00:00<00:01, 10.6MB/s] 41%|████      | 7.95M/19.5M [00:00<00:01, 10.7MB/s] 46%|████▋     | 9.05M/19.5M [00:01<00:01, 10.9MB/s] 52%|█████▏    | 10.2M/19.5M [00:01<00:00, 11.2MB/s] 58%|█████▊    | 11.3M/19.5M [00:01<00:01, 5.15MB/s] 62%|██████▏   | 12.1M/19.5M [00:01<00:01, 4.86MB/s] 65%|██████▌   | 12.8M/19.5M [00:02<00:01, 4.71MB/s] 68%|██████▊   | 13.4M/19.5M [00:02<00:01, 4.53MB/s] 71%|███████   | 13.9M/19.5M [00:02<00:01, 4.59MB/s] 74%|███████▍  | 14.4M/19.5M [00:02<00:01, 4.61MB/s] 78%|███████▊  | 15.2M/19.5M [00:02<00:00, 5.31MB/s] 83%|████████▎ | 16.2M/19.5M [00:02<00:00, 6.41MB/s] 88%|████████▊ | 17.1M/19.5M [00:02<00:00, 6.80MB/s] 93%|█████████▎| 18.1M/19.5M [00:02<00:00, 7.15MB/s] 98%|█████████▊| 19.2M/19.5M [00:02<00:00, 8.31MB/s]100%|██████████| 19.5M/19.5M [00:02<00:00, 6.83MB/s]
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx with onnxruntime backend
-  Angle: face-on
-  Running RTMPose + SwingPhaseDetector...
-[0;93m2026-06-09 20:26:43.306921975 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:26:43.306966617 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
-[0;93m2026-06-09 20:26:43.558114581 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:26:43.558155100 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
-  RTMPose inference on 407 frames...
-  Keyframes:
-    address   : fr  19  (633ms)  conf=0.57
-    top       : fr  46  (1533ms)  conf=1.00
-    impact    : fr  59  (1967ms)  conf=0.86
-    finish    : fr  79  (2633ms)  conf=0.43
-    Saved: -09_201015_827_address_fr19.jpg
-    Saved: -09_201015_827_top_fr46.jpg
-    Saved: -09_201015_827_impact_fr59.jpg
-    Saved: -09_201015_827_finish_fr79.jpg
-
-============================================================
-Videos2026-06-09_201039_231.mp4
-  Classifying angle...
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_tiny_8xb8-300e_humanart-6f3252f9.onnx with onnxruntime backend
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx with onnxruntime backend
-  Angle: face-on
-  Running RTMPose + SwingPhaseDetector...
-[0;93m2026-06-09 20:27:07.640600963 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:07.640643786 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
-[0;93m2026-06-09 20:27:07.794462728 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:07.794505060 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
-  RTMPose inference on 310 frames...
-  Keyframes:
-    address   : fr  80  (2667ms)  conf=0.56
-    top       : fr 146  (4867ms)  conf=1.00
-    impact    : fr 205  (6833ms)  conf=0.86
-    finish    : fr 261  (8700ms)  conf=0.40
-    Saved: -09_201039_231_address_fr80.jpg
-    Saved: -09_201039_231_top_fr146.jpg
-    Saved: -09_201039_231_impact_fr205.jpg
-    Saved: -09_201039_231_finish_fr261.jpg
-
-============================================================
-Videos2026-06-09_201047_915.mp4
-  Classifying angle...
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_tiny_8xb8-300e_humanart-6f3252f9.onnx with onnxruntime backend
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx with onnxruntime backend
-  Angle: face-on
-  Running RTMPose + SwingPhaseDetector...
-[0;93m2026-06-09 20:27:25.371051397 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:25.371090063 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
-[0;93m2026-06-09 20:27:25.548064902 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:25.548105768 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
-  RTMPose inference on 364 frames...
-  Keyframes:
-    address   : fr 107  (3567ms)  conf=0.55
-    top       : fr 171  (5700ms)  conf=1.00
-    impact    : fr 277  (9233ms)  conf=0.88
-    finish    : fr 345  (11500ms)  conf=0.25
-    Saved: -09_201047_915_address_fr107.jpg
-    Saved: -09_201047_915_top_fr171.jpg
-    Saved: -09_201047_915_impact_fr277.jpg
-    Saved: -09_201047_915_finish_fr345.jpg
-
-============================================================
-Videos2026-06-09_201054_561.mp4
-  Classifying angle...
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_tiny_8xb8-300e_humanart-6f3252f9.onnx with onnxruntime backend
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx with onnxruntime backend
-  Angle: down-the-line
-  Running RTMPose + SwingPhaseDetector...
-[0;93m2026-06-09 20:27:46.152507662 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:46.152549223 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
-[0;93m2026-06-09 20:27:46.302794058 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:46.302830681 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
-  RTMPose inference on 199 frames...
-  Keyframes:
-    address   : fr  90  (3000ms)  conf=0.54
-    top       : fr 133  (4433ms)  conf=1.00
-    impact    : fr 150  (5000ms)  conf=0.88
-    finish    : fr 164  (5466ms)  conf=0.00
-    Saved: -09_201054_561_address_fr90.jpg
-    Saved: -09_201054_561_top_fr133.jpg
-    Saved: -09_201054_561_impact_fr150.jpg
-    Saved: -09_201054_561_finish_fr164.jpg
-
-============================================================
-Videos2026-06-09_201058_697.mp4
-  Classifying angle...
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_tiny_8xb8-300e_humanart-6f3252f9.onnx with onnxruntime backend
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx with onnxruntime backend
-  Angle: down-the-line
-  Running RTMPose + SwingPhaseDetector...
-[0;93m2026-06-09 20:27:57.983030311 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:57.983075495 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/yolox_x_8xb8-300e_humanart-a39d44ed.onnx with onnxruntime backend
-[0;93m2026-06-09 20:27:58.135223699 [W:onnxruntime:, session_state.cc:1367 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.[m
-[0;93m2026-06-09 20:27:58.135259800 [W:onnxruntime:, session_state.cc:1369 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.[m
-load /home/jason/.cache/rtmlib/hub/checkpoints/rtmpose-x_simcc-body7_pt-body7_700e-384x288-71d7b7e9_20230629.onnx with onnxruntime backend
-  RTMPose inference on 258 frames...
-  Keyframes:
-    address   : fr  88  (2933ms)  conf=0.60
-    top       : fr 137  (4566ms)  conf=1.00
-    impact    : fr 185  (6166ms)  conf=0.83
-    finish    : fr 218  (7266ms)  conf=0.45
-    Saved: -09_201058_697_address_fr88.jpg
-    Saved: -09_201058_697_top_fr137.jpg
-    Saved: -09_201058_697_impact_fr185.jpg
-    Saved: -09_201058_697_finish_fr218.jpg
-
-All done.
