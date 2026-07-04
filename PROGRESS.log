@@ -29,3 +29,4 @@ Tue Jun  9 23:43:42 PDT 2026 Judgment core implemented, pytest passed (26/26)
 2026-06-11T17:15:34.316639  gate v1.1: 7 re-ingested PASS; 5 DTL + 2 FO processed
 2026-07-03T12:22:29  batch3 EET: Step1 intent pre-reg + Step2 Layer0(fo-eet-*=PASS,dtl-eet-*=needs_human) + Step4 fo-eet-* Gate1+head_ref_v2 complete. DTL Step3 paused: dtl-eet-* machine angle conflict. NEEDS_HUMAN updated.
 2026-07-03T16:09:25  batch3 EET: dtl-eet-2/3 Layer0 human_override PASS + Step3 A→F + SAM2 hip_rear + Step5 renders done. dtl-eet-2: hip_rear=fr98/+33.9% spine=fr98/-15.6° R1=none R2=significant(0.524). dtl-eet-3: hip_rear=fr65/+36.5% spine=fr65/-25.6° R1=none R2=significant(0.501). Renders at Desktop/rtmpose_results/preview/batch3_eet/. dtl-eet-1 paused Jason review.
+2026-07-03T16:30:00  同人配对差值分析完成(7段DTL): 汇总总表+基线差值+数字观察。output/within_subject_paired_diff.md + Desktop/preview/within_subject_paired_diff.md
