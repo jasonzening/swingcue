@@ -1,0 +1,68 @@
+{
+  "results": [
+    {
+      "stem": "dtl-4_left",
+      "marker": "checkmark(✓)",
+      "target_side": "right",
+      "addr_fr": 33,
+      "top_fr": 69,
+      "impact_fr": 226,
+      "addr_tilt": null,
+      "addr_sw": 3.0,
+      "addr_note": "sh_w=3.0px<20 (shoulders stacked, DTL-ish pose)",
+      "top_tilt": 27.03,
+      "top_sw": 149.8,
+      "top_note": "ok",
+      "trajectory_len": 37,
+      "trajectory_valid": 35
+    },
+    {
+      "stem": "dtl-4_right",
+      "marker": "cross(✗)",
+      "target_side": "right",
+      "addr_fr": 49,
+      "top_fr": 81,
+      "impact_fr": 162,
+      "addr_tilt": null,
+      "addr_sw": 3.0,
+      "addr_note": "sh_w=3.0px<20 (shoulders stacked, DTL-ish pose)",
+      "top_tilt": 25.54,
+      "top_sw": 148.4,
+      "top_note": "ok",
+      "trajectory_len": 33,
+      "trajectory_valid": 31
+    },
+    {
+      "stem": "dlt-6_left",
+      "marker": "cross(✗)",
+      "target_side": null,
+      "addr_fr": 7,
+      "top_fr": 26,
+      "impact_fr": 74,
+      "addr_tilt": -2.86,
+      "addr_sw": 162.4,
+      "addr_note": "ok",
+      "top_tilt": -3.56,
+      "top_sw": 83.8,
+      "top_note": "ok",
+      "trajectory_len": 20,
+      "trajectory_valid": 20
+    },
+    {
+      "stem": "dlt-6_right",
+      "marker": "OK(○)",
+      "target_side": "right",
+      "addr_fr": 7,
+      "top_fr": 28,
+      "impact_fr": 51,
+      "addr_tilt": -2.4,
+      "addr_sw": 164.3,
+      "addr_note": "ok",
+      "top_tilt": -2.44,
+      "top_sw": 61.1,
+      "top_note": "ok",
+      "trajectory_len": 22,
+      "trajectory_valid": 22
+    }
+  ]
+}
