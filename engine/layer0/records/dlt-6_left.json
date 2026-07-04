@@ -1,0 +1,10 @@
+{
+  "stem": "dlt-6_left",
+  "vlm_angle": "face-on",
+  "vlm_verdict": "PASS",
+  "vlm_reason": "5/5 frames face-on 1-person golf content. KORSA sim. Angle=face-on.",
+  "persons_per_frame": 1,
+  "human_override": null,
+  "angle_note": "face-on (not DTL) — hip_mid/hip_rear/spine_delta features N/A",
+  "dtl_features_available": false
+}

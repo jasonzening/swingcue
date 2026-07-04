@@ -1,0 +1,10 @@
+{
+  "stem": "dlt-6_right",
+  "vlm_angle": "face-on",
+  "vlm_verdict": "needs_human",
+  "vlm_reason": "5/5 frames face-on; 2 persons detected — primary golfer + partial coach/observer at left edge. Non-blocking; entered with caveat.",
+  "persons_per_frame": 2,
+  "human_override": null,
+  "angle_note": "face-on (not DTL) — hip_mid/hip_rear/spine_delta features N/A",
+  "dtl_features_available": false
+}
