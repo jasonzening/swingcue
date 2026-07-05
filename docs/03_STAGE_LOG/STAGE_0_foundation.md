@@ -127,5 +127,36 @@
   - 全程腕振幅 311px (是 fo-eet-2 的 1.12x)，运动确实存在
   - 分叉点: find_top_v2 区间假设, 非感知层失效
   - B-layer gate1 已在 fr185 检测到 top (top_conf=0.0 = 低置信信号)
-  
-修复设计: 待 Jason 视觉裁决后另立规格 (架构方向 = 感知质量证书下沉 Layer 2)
+
+---
+
+## TOPV3-001 完成记录 — 2026-07-05 ✅
+
+**任务**: top 检测 v3 — 回归 B 层单一事实源
+
+**关卡3 裁决更新**: 从"有条件通过"升级为 **PASS (v3)**
+
+### 各步完成状态
+
+| 步骤 | 内容 | 状态 | commit |
+|------|------|------|--------|
+| 第0步 | GT 登记: fo-eet-1 top GT=fr185, fr211反面事实 | ✅ | 58d4c4c |
+| 第1步 | B 层 top_conf fallback bug 修复 (DIAG-001) | ✅ | 061dde3 |
+| 第1步追加A | 6段视频 top_conf 分布 + 82%截止线边距报告 | ✅ | — (报告在 DIAG-001 链路) |
+| 第1步追加B | 技术债登记 (FACE_ON_TRILINE_GEOMETRY_SPEC §9) | ✅ | 本批 |
+| 第2步 | gate3 v3: B层单一事实源, 删除独立top检测器 | ✅ | 本批 |
+| 第2步 | 阴性对照素材裁剪 + kp_cache (150帧+180帧) | ✅ | 本批 |
+| 第3步 | 全量重验 5项验收标准全 PASS | ✅ | 本批 |
+
+### 关卡3 v3 验收: 5项全过
+
+1. fo-eet-1 top=fr185 ✅ (GT±2), 诊断 None ✅
+2. fo-eet-2/3, fo-ok-1/2: top 合理, 诊断全 None ✅
+3. clip_016: left=Confirmed ✅, right=None ✅
+4. 阴性对照: fo-eet-1-neg-setup → SILENT(conf_gate, conf=0.197); fo-eet-1-neg-truncated → SILENT(conf_gate, conf=0.000) ✅
+5. DTL 门控: dtl-eet-2/3 全部 SKIPPED(camera_gate) ✅
+
+### 沉默阈值状态
+- top_conf 沉默阈值 = **0.50 (provisional)**
+- 阴性对照余量: 正常视频最低 0.652, 阴性最高 0.197, 安全余量 0.452
+- 正式定版: 待更多阴性对照数据后由 Jason 拍板

@@ -1,0 +1,8 @@
+{
+  "clip_id": "fo-eet-1-neg-setup",
+  "camera_view": "face-on",
+  "verdict": "PASS",
+  "source": "human_manual",
+  "note": "negative control clip cropped from fo-eet-1; face-on confirmed by inheritance",
+  "date": "2026-07-05"
+}
