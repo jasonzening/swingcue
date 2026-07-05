@@ -151,7 +151,26 @@
 
 ---
 
-## 待创始人拍板项
+## 8. 第一版实现状态 (2026-07-04) ✅
+
+关卡1/2/3 全部通过，第一诊断闭环成立。
+
+| 模块 | 文件 | 状态 |
+|------|------|------|
+| 三线几何测量 | engine/features/triline_geometry.py | ✅ v0.1 |
+| top 检测 v2 | gate3_no_false_positive.py (find_top_v2) | ✅ zone[15%,65%]+amp≥40px |
+| 参考基准飞轮 | engine/reference_flywheel/baseline_v1.json | ✅ n=1, 带[-18.8,+5.0]° |
+| 不误报验证 | output/gate3_no_fp/gate3_results_v2.json | ✅ 0/5误报, 阳性对照Confirmed |
+
+top 检测 v2 规则:
+  1. 搜索区间 [15%, 65%] — 排除 setup 和收杆段
+  2. 区间内 wrist_y 振幅 >= 40px — 无真实上杆则沉默
+  3. 上述任一失败 → phase_detection_low_confidence → SILENT
+
+已知限制 (下版本升级项):
+  - 基准 n=1，带宽保守 ±12°；累积到 n≥5 后收窄
+  - top 检测依赖正面 wrist_y；DTL 机位不适用
+  - 仅 shoulder_lateral_tilt 出诊断；髋旋转/平移为第二目标
 
 1. 三线定义与髋旋转/平移判据是否认可。
 2. 均等权重起步 + FAULT_VISUAL_STANDARDS 作先验 — 已确认。

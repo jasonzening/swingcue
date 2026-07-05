@@ -67,6 +67,7 @@
 - **2026-07-04**:破局点2完成 — Video Profiler v0.1 Gate1/2/3;137段全库体检表;313张身份证。
 - **2026-07-04**:破局点3阶段完成 — 24对 face_on+full_swing 配对识别;几何复核 clip_129(确认)/clip_130/131(待复核);pair_candidates_24.md 产出。
 - **2026-07-04**:关卡1+2 完成 — 三线几何测量层 v0.1 建立;参考基准飞轮 baseline_v1 写入;合格配对筛查终审。
+- **2026-07-04**:关卡3 完成 — 不误报验证 PASS (v2 top检测: zone[15%,65%]+amp≥40px); 第一诊断闭环成立。
 
 ## 更新 2026-07-04:第一诊断目标已选定
 - 破局点3收敛选举完成。22对配对可测性筛查:主导差异全部为 spine_lateral_tilt。
@@ -88,3 +89,26 @@
 - **飞轮主力路线修正**: 飞轮主力素材将来需靠**自采同人配对** (同一人在镜头前分别做对/错各一次);
   教练分屏视频仅作补充参考，不作主力数据来源。
 - **当前状态**: baseline_v1 以 clip_016 单对起步，权重100%，飞轮设计允许。
+
+## 第一诊断闭环 (reverse pivot, face-on) v1 成立 — 2026-07-04 ✅
+
+**关卡1** — 三线几何测量层 v0.1:
+  engine/features/triline_geometry.py, kp_guard≥0.30, 肩宽归一化, 窗口中位数top±5帧
+
+**关卡2** — 参考基准飞轮 baseline_v1:
+  先验基准(TPI §4) + clip_016配对(正确-6.8°/错误+29.1°)
+  正确带: [-18.8°, +5.0°]  置信账本: None/Possible/Likely/Confirmed
+
+**关卡3** — 不误报验证 PASS:
+  top检测v2: zone[15%,65%] + zone内wrist振幅≥40px
+  结果: 5/5正常杆=None/SILENT(无误报), 阳性对照=Confirmed
+  fo-eet-1 正确沉默(amp=10.6px < 40px, 无真实上杆峰)
+
+**API**:
+  from engine.reference_flywheel import query_tilt
+  r = query_tilt(tilt_deg=12.5)  # → {"confidence": "Likely", ...}
+
+**已知限制**:
+  - 基准 n=1, 带宽保守(±12°); n≥5后收窄
+  - top检测依赖正面wrist_y最低点, 侧面(DTL)视频不适用
+  - 仅对 shoulder_lateral_tilt 出诊断; 髋旋转/平移为下一目标

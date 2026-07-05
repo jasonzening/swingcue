@@ -11,7 +11,7 @@ PROJ = Path("/home/jason/projects/swingcue-postest")
 sys.path.insert(0, str(PROJ))
 
 from engine.features.triline_geometry import _safe_pt, _lateral_tilt_deg, render_triline_frame
-from gate3_no_false_positive import load_kp_json, find_top, tilt_from_kps
+from gate3_no_false_positive import load_kp_json, find_top_v2, tilt_from_kps
 
 CLIPS = [
     ("fo-eet-1", "input/fo-eet-1.mp4", None),
@@ -26,7 +26,7 @@ OUT_WIN = Path("/mnt/c/Users/jason/Desktop/rtmpose_results/preview/gate3_no_fp")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 OUT_WIN.mkdir(parents=True, exist_ok=True)
 
-RESULTS = json.load(open(OUT_DIR / "gate3_results.json"))["results"]
+RESULTS = json.load(open(OUT_DIR / "gate3_results_v2.json"))["results"]
 res_by_id = {r["clip_id"]: r for r in RESULTS}
 
 for clip_id, rel_vid, _ in CLIPS:
@@ -51,6 +51,10 @@ for clip_id, rel_vid, _ in CLIPS:
     # Get keypoints from kp_cache for this frame
     kp_json = load_kp_json(clip_id)
     frames  = kp_json.get("frames", []) if kp_json else []
+    top_idx_computed, amp_px, _ = find_top_v2(frames) if frames else (None, 0, 0)
+    # Use top_idx from results JSON (should match), fall back to recomputed
+    if top_idx is None:
+        top_idx = top_idx_computed
     kps     = {}
     if top_idx < len(frames):
         p = frames[top_idx].get("persons", [])
