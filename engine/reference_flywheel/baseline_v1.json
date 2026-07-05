@@ -80,7 +80,13 @@
   },
 
   "confidence_ledger_thresholds": {
-    "_note": "Single-signal Possible; two-signal OR single large deviation = Likely; at-or-beyond paired error = Confirmed.",
+    "_note": "Strict > boundaries. Exactly AT threshold stays in lower bucket (e.g. tilt=+5.0 is in-band/None, not Possible).",
+    "_boundary_table": {
+      "tilt <= +5.0":           "None (in correct band)",
+      "+5.0 < tilt <= +15.0":  "Possible (needs second signal before firing indicator)",
+      "+15.0 < tilt <= +28.0": "Likely (strong single signal, may fire with note)",
+      "tilt > +28.0":          "Confirmed (at or beyond paired error magnitude)"
+    },
     "possible_above_deg": 5.0,
     "likely_above_deg": 15.0,
     "confirmed_above_deg": 28.0,

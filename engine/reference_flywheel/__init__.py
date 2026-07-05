@@ -47,11 +47,17 @@ def query_tilt(tilt_deg: float, baseline: dict | None = None) -> dict:
     delta_from_mu = tilt_deg - mu
     delta_from_upper = tilt_deg - hi
 
-    if tilt_deg >= ledger["confirmed_above_deg"]:
+    # Strict > boundaries: exactly at threshold stays in lower bucket.
+    # tilt <= band_upper  → None (in band)
+    # band_upper < tilt <= possible_above_deg boundary: N/A (band_upper == possible threshold)
+    # tilt > possible_above_deg  → Possible
+    # tilt > likely_above_deg    → Likely
+    # tilt > confirmed_above_deg → Confirmed
+    if tilt_deg > ledger["confirmed_above_deg"]:
         confidence = "Confirmed"
-    elif tilt_deg >= ledger["likely_above_deg"]:
+    elif tilt_deg > ledger["likely_above_deg"]:
         confidence = "Likely"
-    elif tilt_deg >= ledger["possible_above_deg"]:
+    elif tilt_deg > ledger["possible_above_deg"]:
         confidence = "Possible"
     else:
         confidence = "None"
