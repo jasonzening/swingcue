@@ -160,3 +160,44 @@
 - top_conf 沉默阈值 = **0.50 (provisional)**
 - 阴性对照余量: 正常视频最低 0.652, 阴性最高 0.197, 安全余量 0.452
 - 正式定版: 待更多阴性对照数据后由 Jason 拍板
+
+---
+
+## CUE-001 完成记录 — 2026-07-05
+
+**任务**: Cue 设计语言 v0.1 落档 + 第一个视觉指示器(reverse pivot)实现
+
+**里程碑**: Next-Swing Loop 的 cue 端首次成形
+
+### 关卡A — CUE_DESIGN_LANGUAGE v0.1
+- 六条设计法则(前注意承载/箭头即指令/禁缺失式/一图一对比/外部焦点/色盲冗余)
+- 六原语词汇表(P1正确区/P2现状线/P3方向箭头/P4关节圈/P5栅栏线/P6幽灵v1不实现)
+- 三句型(α角度类/β越线类/γ形变类)
+- 错误×指示器映射表13行
+- 验收方法论: 3秒测试，裁决人Jason
+- 文档地位: 与FAULT_VISUAL_STANDARDS同级先验基准，设计先行纪律延伸到cue层
+- commit: 9c0a82d
+
+### 关卡B — VISUAL_INDICATOR_V1 实现
+- `cue_renderer/` 纯消费者模块: payload.py + reverse_pivot.py
+- `run_cue_renders.py` 验收运行脚本
+- 渲染: P1绿色楔(正确带) + P2偏差线(深红/橙渐变) + P3弧箭头 + 底部文案
+- 置信门: Confirmed/Likely→完整cue; Possible/None→中性帧; SILENT→重拍引导
+- 灰度自查版随彩色版同时输出
+
+### 验收: 9/9 全通过 PASS (等待3秒测试终审)
+
+| clip | 置信 | 预期 | 结果 |
+|------|------|------|------|
+| fo-eet-1 | None | None | ✅ |
+| fo-eet-2 | None | None | ✅ |
+| fo-eet-3 | None | None | ✅ |
+| fo-ok-1 | None | None | ✅ |
+| fo-ok-2 | None | None | ✅ |
+| fo-eet-1-neg-setup | SILENT | SILENT | ✅ |
+| fo-eet-1-neg-truncated | SILENT | SILENT | ✅ |
+| clip_016/left | Confirmed | Confirmed | ✅ |
+| clip_016/right | None | None | ✅ |
+
+**输出位置**: `C:\Users\jason\Desktop\rtmpose_results\preview\cue_renders\reverse_pivot\`
+**等待**: Jason 3秒测试终审 (clip_016_left_top_cue.jpg)
