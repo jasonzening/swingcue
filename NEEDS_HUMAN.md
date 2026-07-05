@@ -108,3 +108,31 @@ Per-video sub-folders:
 **NOT RENDERED**: Shaft plane (Over-the-Top) — requires club detection (not yet built).
 
 Human action: inspect frames in gt_lines/ and confirm or correct anchor frames.
+
+---
+
+## clip_129 (dlt-6) 实际错误类型 (2026-07-04)
+
+**状态**: 需人工目视确认
+
+**背景**:
+- clip_129 = dtl-1/dlt-6.mp4, split-screen, left=✗(cross), right=○(OK)
+- gate1 全量帧分析: swing_phase top=fr26
+  LEFT tilt@top = -3.39° / RIGHT tilt@top = -2.83° / diff = 0.56°
+- 结论: 两半脊柱侧倾几乎相同, 不是 spine_lateral_tilt 错误
+- 已从 spine_lateral_tilt 基准构建中移除
+
+**待确认**: 打开 preview/split_check/dlt-6/left.mp4 + right.mp4
+目视确认该配对讲解的是什么错误类型 (候选: sway/手腕控制/杆头路径)
+确认后更新本条目并记录到 docs/GT_LABELS.md。
+
+---
+
+## clip_035/039/041 配对筛查剔除记录 (2026-07-04)
+
+**clip_035** (134. 不同杆数的区别): 非同人配对 — 120杆 vs 72杆不同水平球员对比，剔除。
+
+**clip_039** (138. 读者一眼就看懂为什么要这么练): 背面机位(非face-on)，剔除。
+  inventory: angle=DTL+static (与Gate3=face_on+full_swing冲突，人工目视确认为DTL，以人工为准)
+
+**clip_041** (15. 增加20m后不击打后地的挥杆方法): 非同人配对 — Beginner vs Pro对比，剔除。
