@@ -1,0 +1,625 @@
+{
+  "pairs": [
+    {
+      "pair_num": 1,
+      "parent_id": "clip_003",
+      "source_file": "102. 🏌🏻️‍♀️学习铁杆、木杆的击球释放点＃#高尔夫教学#高尔夫挥杆#江山高尔夫学院#广州高尔夫好去处#高尔夫练习场#江山高尔夫俱乐部#魅力高尔夫.mp4",
+      "left_metrics": {
+        "sway_range": 0.5222918840730765,
+        "tilt_top": -0.406346233309022,
+        "head_range": 0.5855907099578006,
+        "n_valid": 34,
+        "top_fr_idx": 7,
+        "mean_torso_h": 185.28213954537298,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.3017214452230765,
+        "tilt_top": 0.8303154862580217,
+        "head_range": 0.34704755298909834,
+        "n_valid": 36,
+        "top_fr_idx": 7,
+        "mean_torso_h": 194.16608294464754,
+        "note": "ok"
+      },
+      "diff_sway": 0.22057043885,
+      "diff_tilt": 1.2366617195670435,
+      "diff_head": 0.23854315696870226,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 2,
+      "parent_id": "clip_005",
+      "source_file": "104. ✨高尔夫教学🏌🏻️‍♀️#高尔夫挥杆#玩转高尔夫#江山高尔夫学院#广州高尔夫好去处#高尔夫练习场#江山高尔夫俱乐部#魅力高尔夫.mp4",
+      "left_metrics": {
+        "sway_range": 0.7083432650271765,
+        "tilt_top": -7.2570344463837735,
+        "head_range": 1.1431403204720827,
+        "n_valid": 32,
+        "top_fr_idx": 17,
+        "mean_torso_h": 253.22004914948405,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.9262975665774731,
+        "tilt_top": -8.004728857292857,
+        "head_range": 0.8087319869211026,
+        "n_valid": 36,
+        "top_fr_idx": 17,
+        "mean_torso_h": 236.98805599864176,
+        "note": "ok"
+      },
+      "diff_sway": 0.2179543015502966,
+      "diff_tilt": 0.7476944109090837,
+      "diff_head": 0.3344083335509801,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 3,
+      "parent_id": "clip_016",
+      "source_file": "115. 好的旋转方向是：身体按照顺序自然旋转。#高尔夫 #golf #golfswing #高尔夫课程 #高尔夫挥杆 #golflesson #golflife.mp4",
+      "left_metrics": {
+        "sway_range": 0.28190175167343295,
+        "tilt_top": 29.027189852598305,
+        "head_range": 0.7854818399928941,
+        "n_valid": 40,
+        "top_fr_idx": 24,
+        "mean_torso_h": 323.92396553500083,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.48797605406656785,
+        "tilt_top": -6.949143089675257,
+        "head_range": 0.6243504254539541,
+        "n_valid": 40,
+        "top_fr_idx": 6,
+        "mean_torso_h": 326.14786390512126,
+        "note": "ok"
+      },
+      "diff_sway": 0.2060743023931349,
+      "diff_tilt": 35.97633294227356,
+      "diff_head": 0.16113141453893998,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 4,
+      "parent_id": "clip_025",
+      "source_file": "125. wrist control#高尔夫 #golf #golfswing #高尔夫课程 #高尔夫挥杆 #golflesson #golflife.mp4",
+      "left_metrics": {
+        "sway_range": 0.8967289614050068,
+        "tilt_top": -4.6241513284290745,
+        "head_range": 0.9839291988912265,
+        "n_valid": 39,
+        "top_fr_idx": 20,
+        "mean_torso_h": 253.98180362729667,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.9508761625270109,
+        "tilt_top": -2.332023681623061,
+        "head_range": 1.0279618997646813,
+        "n_valid": 29,
+        "top_fr_idx": 0,
+        "mean_torso_h": 254.21014179740908,
+        "note": "ok"
+      },
+      "diff_sway": 0.05414720112200411,
+      "diff_tilt": 2.2921276468060134,
+      "diff_head": 0.04403270087345479,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 5,
+      "parent_id": "clip_026",
+      "source_file": "126. wrist control#高尔夫 #golf #golfswing #高尔夫课程 #高尔夫挥杆 #golflesson #golflife.mp4",
+      "left_metrics": {
+        "sway_range": 0.8967289614050068,
+        "tilt_top": -4.6241513284290745,
+        "head_range": 0.9839291988912265,
+        "n_valid": 39,
+        "top_fr_idx": 20,
+        "mean_torso_h": 253.98180362729667,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.9508761625270109,
+        "tilt_top": -2.332023681623061,
+        "head_range": 1.0279618997646813,
+        "n_valid": 29,
+        "top_fr_idx": 0,
+        "mean_torso_h": 254.21014179740908,
+        "note": "ok"
+      },
+      "diff_sway": 0.05414720112200411,
+      "diff_tilt": 2.2921276468060134,
+      "diff_head": 0.04403270087345479,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 6,
+      "parent_id": "clip_035",
+      "source_file": "134. 不同杆数的区别#高尔夫球#高尔夫 #高尔夫教学 #高尔夫教练 #又直又远.mp4",
+      "left_metrics": {
+        "sway_range": 0.3638960110668351,
+        "tilt_top": -17.927920698675425,
+        "head_range": 0.2523766491893078,
+        "n_valid": 37,
+        "top_fr_idx": 8,
+        "mean_torso_h": 141.75518652226938,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.22908297755048496,
+        "tilt_top": -1.7357046850638105,
+        "head_range": 0.18248916272327254,
+        "n_valid": 37,
+        "top_fr_idx": 4,
+        "mean_torso_h": 139.52387838951242,
+        "note": "ok"
+      },
+      "diff_sway": 0.13481303351635016,
+      "diff_tilt": 16.192216013611613,
+      "diff_head": 0.06988748646603526,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 7,
+      "parent_id": "clip_039",
+      "source_file": "138. 读者一眼就看懂为什么要这么练.mp4",
+      "left_metrics": {
+        "sway_range": 0.8271047935728523,
+        "tilt_top": -9.995456133987654,
+        "head_range": 0.988433184520842,
+        "n_valid": 14,
+        "top_fr_idx": 7,
+        "mean_torso_h": 212.92988756036453,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.6000481936539379,
+        "tilt_top": 5.95535855081419,
+        "head_range": 0.9174196579190076,
+        "n_valid": 30,
+        "top_fr_idx": 8,
+        "mean_torso_h": 226.17460144736245,
+        "note": "ok"
+      },
+      "diff_sway": 0.22705659991891436,
+      "diff_tilt": 15.950814684801845,
+      "diff_head": 0.07101352660183435,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 8,
+      "parent_id": "clip_041",
+      "source_file": "15. 增加20m后 不击打后地的 挥杆方法.mp4",
+      "left_metrics": {
+        "sway_range": 0.3400511285959044,
+        "tilt_top": -16.538430519712723,
+        "head_range": 0.8170188099322196,
+        "n_valid": 38,
+        "top_fr_idx": 20,
+        "mean_torso_h": 131.01682151150803,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.6756769279545239,
+        "tilt_top": -3.027245016857875,
+        "head_range": 1.0617640789896143,
+        "n_valid": 38,
+        "top_fr_idx": 23,
+        "mean_torso_h": 107.9988170108608,
+        "note": "ok"
+      },
+      "diff_sway": 0.3356257993586195,
+      "diff_tilt": 13.511185502854847,
+      "diff_head": 0.2447452690573947,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 9,
+      "parent_id": "clip_045",
+      "source_file": "19. 热评：让挥杆变得更简单#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 1.9980639513911989,
+        "tilt_top": -9.192243471262968,
+        "head_range": 2.1308808984713132,
+        "n_valid": 9,
+        "top_fr_idx": 4,
+        "mean_torso_h": 142.7114646344156,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.8021008799506258,
+        "tilt_top": -10.942184880070497,
+        "head_range": 1.0350744462503174,
+        "n_valid": 39,
+        "top_fr_idx": 5,
+        "mean_torso_h": 153.47696354178964,
+        "note": "ok"
+      },
+      "diff_sway": 1.195963071440573,
+      "diff_tilt": 1.7499414088075298,
+      "diff_head": 1.0958064522209958,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 10,
+      "parent_id": "clip_048",
+      "source_file": "21. 热评：让挥杆变得更简单#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 1.9980639513911989,
+        "tilt_top": -9.192243471262968,
+        "head_range": 2.1308808984713132,
+        "n_valid": 9,
+        "top_fr_idx": 4,
+        "mean_torso_h": 142.7114646344156,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.8021008799506258,
+        "tilt_top": -10.942184880070497,
+        "head_range": 1.0350744462503174,
+        "n_valid": 39,
+        "top_fr_idx": 5,
+        "mean_torso_h": 153.47696354178964,
+        "note": "ok"
+      },
+      "diff_sway": 1.195963071440573,
+      "diff_tilt": 1.7499414088075298,
+      "diff_head": 1.0958064522209958,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 11,
+      "parent_id": "clip_054",
+      "source_file": "27. 热评：让挥杆变得更简单#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 1.2722663998418433,
+        "tilt_top": -5.961089782578596,
+        "head_range": 1.351647698864208,
+        "n_valid": 30,
+        "top_fr_idx": 3,
+        "mean_torso_h": 168.2386624222208,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 1.1172232176088421,
+        "tilt_top": -8.541839397887765,
+        "head_range": 1.3525643892012609,
+        "n_valid": 35,
+        "top_fr_idx": 3,
+        "mean_torso_h": 176.69999737150627,
+        "note": "ok"
+      },
+      "diff_sway": 0.15504318223300118,
+      "diff_tilt": 2.580749615309169,
+      "diff_head": 0.0009166903370527724,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 12,
+      "parent_id": "clip_064",
+      "source_file": "36. 热评：让挥杆变得更简单#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 0.9975312860268799,
+        "tilt_top": -1.1419573267890033,
+        "head_range": 1.1130429715877332,
+        "n_valid": 35,
+        "top_fr_idx": 20,
+        "mean_torso_h": 161.96410209426045,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 1.2454810260796887,
+        "tilt_top": -2.702944139144495,
+        "head_range": 1.3124480854530294,
+        "n_valid": 13,
+        "top_fr_idx": 6,
+        "mean_torso_h": 165.66119432510504,
+        "note": "ok"
+      },
+      "diff_sway": 0.2479497400528088,
+      "diff_tilt": 1.5609868123554917,
+      "diff_head": 0.19940511386529614,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 13,
+      "parent_id": "clip_078",
+      "source_file": "51. 高尔夫挥杆动作的正误对比教学，核心是纠正下杆时的发力和转体方式：#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 0.6220156264545141,
+        "tilt_top": -11.611486423888492,
+        "head_range": 0.6038248199426142,
+        "n_valid": 39,
+        "top_fr_idx": 6,
+        "mean_torso_h": 135.74662204856406,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.41354430104222195,
+        "tilt_top": -12.439562018846525,
+        "head_range": 0.43336529303478294,
+        "n_valid": 39,
+        "top_fr_idx": 9,
+        "mean_torso_h": 136.58844718331056,
+        "note": "ok"
+      },
+      "diff_sway": 0.20847132541229219,
+      "diff_tilt": 0.8280755949580332,
+      "diff_head": 0.17045952690783123,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 14,
+      "parent_id": "clip_099",
+      "source_file": "70. 让挥杆变得更简单#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 0.8351690377861436,
+        "tilt_top": -4.452571631365691,
+        "head_range": 1.0788460003713436,
+        "n_valid": 36,
+        "top_fr_idx": 24,
+        "mean_torso_h": 308.33630214551187,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.8193499620912136,
+        "tilt_top": 1.2137120577538065,
+        "head_range": 0.88986391955192,
+        "n_valid": 39,
+        "top_fr_idx": 21,
+        "mean_torso_h": 331.65321760188226,
+        "note": "ok"
+      },
+      "diff_sway": 0.015819075694930018,
+      "diff_tilt": 5.666283689119497,
+      "diff_head": 0.18898208081942358,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 15,
+      "parent_id": "clip_113",
+      "source_file": "83. #高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 0.8088071510582104,
+        "tilt_top": -32.13724823389899,
+        "head_range": 0.3458409822545861,
+        "n_valid": 38,
+        "top_fr_idx": 23,
+        "mean_torso_h": 221.3721868702484,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.8455805008449725,
+        "tilt_top": -30.82485867129116,
+        "head_range": 0.6418708876283794,
+        "n_valid": 38,
+        "top_fr_idx": 23,
+        "mean_torso_h": 206.98864013531866,
+        "note": "ok"
+      },
+      "diff_sway": 0.036773349786762055,
+      "diff_tilt": 1.3123895626078266,
+      "diff_head": 0.2960299053737933,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 16,
+      "parent_id": "clip_119",
+      "source_file": "89. 热评：让挥杆变得更简单#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 1.9980639513911989,
+        "tilt_top": -9.192243471262968,
+        "head_range": 2.1308808984713132,
+        "n_valid": 9,
+        "top_fr_idx": 4,
+        "mean_torso_h": 142.7114646344156,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.8021008799506258,
+        "tilt_top": -10.942184880070497,
+        "head_range": 1.0350744462503174,
+        "n_valid": 39,
+        "top_fr_idx": 5,
+        "mean_torso_h": 153.47696354178964,
+        "note": "ok"
+      },
+      "diff_sway": 1.195963071440573,
+      "diff_tilt": 1.7499414088075298,
+      "diff_head": 1.0958064522209958,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 17,
+      "parent_id": "clip_121",
+      "source_file": "90. 热评：让挥杆变得更简单#高尔夫#高尔夫教学#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 1.2722663998418433,
+        "tilt_top": -5.961089782578596,
+        "head_range": 1.351647698864208,
+        "n_valid": 30,
+        "top_fr_idx": 3,
+        "mean_torso_h": 168.2386624222208,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 1.1172232176088421,
+        "tilt_top": -8.541839397887765,
+        "head_range": 1.3525643892012609,
+        "n_valid": 35,
+        "top_fr_idx": 3,
+        "mean_torso_h": 176.69999737150627,
+        "note": "ok"
+      },
+      "diff_sway": 0.15504318223300118,
+      "diff_tilt": 2.580749615309169,
+      "diff_head": 0.0009166903370527724,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 18,
+      "parent_id": "clip_124",
+      "source_file": "93. 你看懂了吗？#高尔夫挥杆.mp4",
+      "left_metrics": {
+        "sway_range": 0.30358229130040615,
+        "tilt_top": -11.173838241814721,
+        "head_range": 0.1743056307745186,
+        "n_valid": 38,
+        "top_fr_idx": 7,
+        "mean_torso_h": 132.07165736969614,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.5855298786106063,
+        "tilt_top": -8.934078018853711,
+        "head_range": 0.6208276097353723,
+        "n_valid": 38,
+        "top_fr_idx": 7,
+        "mean_torso_h": 139.75322300461167,
+        "note": "ok"
+      },
+      "diff_sway": 0.2819475873102002,
+      "diff_tilt": 2.23976022296101,
+      "diff_head": 0.4465219789608537,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 19,
+      "parent_id": "clip_126",
+      "source_file": "97. 高尔夫推杆分享⛳＃#高尔夫教学#高尔夫挥杆#江山高尔夫学院#广州高尔夫好去处#玩转高尔夫#高尔夫练习场#江山高尔夫俱乐部#魅力高尔夫.mp4",
+      "left_metrics": {
+        "sway_range": 0.08094795023932591,
+        "tilt_top": -5.735364333324645,
+        "head_range": 0.16202993321086342,
+        "n_valid": 33,
+        "top_fr_idx": 12,
+        "mean_torso_h": 193.16675715085074,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.2773726926310882,
+        "tilt_top": -1.636577006040361,
+        "head_range": 0.11868413144992007,
+        "n_valid": 37,
+        "top_fr_idx": 13,
+        "mean_torso_h": 168.99644862425149,
+        "note": "ok"
+      },
+      "diff_sway": 0.1964247423917623,
+      "diff_tilt": 4.098787327284284,
+      "diff_head": 0.04334580176094335,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 20,
+      "parent_id": "clip_127",
+      "source_file": "98. ✨沙坑切球分享#高尔夫教学#高尔夫挥杆#江山高尔夫学院#广州高尔夫好去处#高尔夫练习场#江山高尔夫俱乐部#魅力高尔夫.mp4",
+      "left_metrics": {
+        "sway_range": 0.28070360007585293,
+        "tilt_top": -2.3930579322030106,
+        "head_range": 0.42640787955179177,
+        "n_valid": 30,
+        "top_fr_idx": 16,
+        "mean_torso_h": 208.9478164600306,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 0.4792606150609134,
+        "tilt_top": -1.9978798564766747,
+        "head_range": 0.28473652591033743,
+        "n_valid": 26,
+        "top_fr_idx": 15,
+        "mean_torso_h": 184.6914699417222,
+        "note": "ok"
+      },
+      "diff_sway": 0.19855701498506045,
+      "diff_tilt": 0.3951780757263359,
+      "diff_head": 0.14167135364145433,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 21,
+      "parent_id": "clip_128",
+      "source_file": "99. 🏌🏻️‍♀️高尔夫学习#高尔夫教学#高尔夫挥杆#玩转高尔夫#广州高尔夫好去处#高尔夫练习场#江山高尔夫学院＃#江山高尔夫俱乐部.mp4",
+      "left_metrics": {
+        "sway_range": 0.6254012877605871,
+        "tilt_top": -5.710592961974439,
+        "head_range": 0.9900803644636715,
+        "n_valid": 33,
+        "top_fr_idx": 5,
+        "mean_torso_h": 222.17372957242424,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 1.0765956017086118,
+        "tilt_top": -2.324382970948172,
+        "head_range": 1.145576511939345,
+        "n_valid": 36,
+        "top_fr_idx": 6,
+        "mean_torso_h": 218.16524294933413,
+        "note": "ok"
+      },
+      "diff_sway": 0.4511943139480247,
+      "diff_tilt": 3.386209991026267,
+      "diff_head": 0.15549614747567353,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    },
+    {
+      "pair_num": 22,
+      "parent_id": "clip_129",
+      "source_file": "dtl-1/dlt-6.mp4",
+      "left_metrics": {
+        "sway_range": 0.8940034207579867,
+        "tilt_top": -17.07256481159051,
+        "head_range": 0.6230906804948346,
+        "n_valid": 209,
+        "top_fr_idx": 52,
+        "mean_torso_h": 239.6082487432548,
+        "note": "ok"
+      },
+      "right_metrics": {
+        "sway_range": 1.0462987067283152,
+        "tilt_top": 21.68689442328589,
+        "head_range": 0.4490472686123847,
+        "n_valid": 209,
+        "top_fr_idx": 80,
+        "mean_torso_h": 242.41838037018738,
+        "note": "ok"
+      },
+      "diff_sway": 0.1522952859703285,
+      "diff_tilt": 38.7594592348764,
+      "diff_head": 0.17404341188244993,
+      "dominant_dim": "tilt",
+      "category": "主维度=tilt"
+    }
+  ],
+  "excluded": [
+    "clip_131",
+    "clip_130"
+  ],
+  "exclusion_reason": "sh_lat_ratio both halves <0.30 → DTL geometry, needs human visual review"
+}
