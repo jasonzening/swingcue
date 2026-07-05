@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-05 — CUE-002 追加§7 关卡关闭
-**最新 commit**: `71d8194` — docs(CUE-002-§7): PROJECT_STATE.md新建 + 铁律CUE-D(关卡强绑定) + design_iterations/预留目录
+**最后更新**: 2026-07-05 — CUE-002 补正（SAMPLES_INDEX VLM内容废弃，改为报告逐字摘取）
+**最新 commit**: *(本次 commit)*
 **分支**: master（已 push）
 
 ---
