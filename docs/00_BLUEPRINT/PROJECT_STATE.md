@@ -5,7 +5,7 @@
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
 **最后更新**: 2026-07-05 — CUE-002 补正（SAMPLES_INDEX VLM内容废弃，改为报告逐字摘取）
-**最新 commit**: *(本次 commit)*
+**最新 commit**: `d493af4` — fix(CUE-002-补正): SAMPLES_INDEX VLM内容全废弃 — 改为报告v0.2逐字摘取
 **分支**: master（已 push）
 
 ---
