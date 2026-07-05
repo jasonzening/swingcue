@@ -195,8 +195,12 @@ class SwingPhaseEngine:
         peaks_l, pp = find_peaks(-ys_region, prominence=30, distance=int(fps * 0.25))
         if len(peaks_l) == 0:
             top = address + int(np.argmin(ys_region))
-            left_h  = ys_region[0]  - ys_region.min()
-            right_h = ys_region[-1] - ys_region.min()
+            # Fix: use actual max on each side of top, not the region boundary.
+            # ys_region[-1] == ys_region.min() when argmin is at the right edge,
+            # which made right_h=0 and top_conf=0.0 (DIAG-001 bug).
+            top_val = ys_s[top]
+            left_h  = float(ys_s[address:top].max() - top_val) if top > address else 0.0
+            right_h = float(ys_s[top:n_eff].max()   - top_val) if top < n_eff   else 0.0
             top_prom = float(min(left_h, right_h))
         else:
             top = address + peaks_l[0]
