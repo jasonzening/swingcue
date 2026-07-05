@@ -1,0 +1,93 @@
+{
+  "_meta": {
+    "version": "v1",
+    "created": "2026-07-04",
+    "feature": "shoulder_lateral_tilt @ top",
+    "convention": "atan2(dx, -dy) in degrees. Positive = toward target (LEFT in face-on view). Negative = toward trail side (RIGHT in face-on view).",
+    "swing_phase_window": "top ± 5 frames (wrist-Y minimum, front 70% of clip)",
+    "normalization": "shoulder-width normalized keypoints, kp_guard >= 0.30",
+    "fault_class": "reverse_pivot / reverse_spine_angle (TPI Big-12 Fault #5)",
+    "camera_view_required": "face_on"
+  },
+
+  "prior": {
+    "_source": "FAULT_VISUAL_STANDARDS.md §4 Reverse Pivot (TPI Level 1/2, Hume 2005, Nesbit 2005)",
+    "_note": "No peer-reviewed angle threshold found. Teaching convention: correct = neutral or slightly trail-side at top (P4). Quantitative range derived from TPI teaching standard, not a published clinical threshold.",
+    "correct_description": "Spine neutral or slightly toward trail side (right for RH golfer) at backswing top. Head stays at or behind plumb line.",
+    "correct_tilt_direction": "neutral_to_trail",
+    "correct_tilt_center_deg": -3.0,
+    "correct_tilt_range_deg": [-8.0, 3.0],
+    "error_description": "Upper body leans toward target side at backswing top, reversing weight transfer.",
+    "error_direction": "toward_target",
+    "error_threshold_indicative_deg": 5.0,
+    "prior_weight": "anchor (always active, not averaged into mu directly — sets direction guard)"
+  },
+
+  "correct_pool": {
+    "_note": "Correct-half samples from same-person paired comparisons. n=1 → single sample dominates. Shoulder-width normalized.",
+    "n": 1,
+    "samples": [
+      {
+        "clip_id": "clip_016",
+        "side": "right",
+        "label": "correct",
+        "tilt_median_deg": -6.8,
+        "window_values_deg": [null],
+        "_note": "window values from gate1_tilt_report_v2.md; v2 report records median=-6.8, stable window 28.0~29.4 on LEFT; right median=-6.8. Exact per-frame window not stored in report — re-run gate1_triline_validation.py for raw values.",
+        "tilt_window_stable": true,
+        "pairing_quality": "same_person_confirmed_human",
+        "weight": 1.0
+      }
+    ],
+    "mu_deg": -6.8,
+    "std_estimate_deg": null,
+    "_std_note": "n=1, std undefined. Use conservative band width below."
+  },
+
+  "error_reference": {
+    "_note": "Error-half samples. Define error magnitude and direction vector.",
+    "n": 1,
+    "samples": [
+      {
+        "clip_id": "clip_016",
+        "side": "left",
+        "label": "error",
+        "tilt_median_deg": 29.1,
+        "error_type": "reverse_pivot",
+        "direction": "toward_target",
+        "pairing_quality": "same_person_confirmed_human",
+        "weight": 1.0
+      }
+    ],
+    "mu_deg": 29.1
+  },
+
+  "error_indicator": {
+    "_note": "Diff vector: error_half - correct_half. Records the geometric signature of this fault.",
+    "delta_deg": 35.9,
+    "delta_direction": "toward_target (positive = LEFT in face-on frame)",
+    "indicator_axis": "shoulder_lateral_tilt @ top",
+    "interpretation": "Each +1 degree toward target at top is 1 degree of reverse-pivot signal. The error half sits +35.9 deg from the correct half for this paired example."
+  },
+
+  "reference_band": {
+    "_derivation": "n=1 → correct sample (-6.8°) is the sole data point. Band width conservative: ±12° to guard against false positives given single-sample uncertainty. Prior confirms direction (trail-side is correct). Upper bound rounded to +5° to stay within prior's [−8, +3] range plus noise tolerance.",
+    "center_mu_deg": -6.8,
+    "band_lower_deg": -18.8,
+    "band_upper_deg": 5.0,
+    "band_width_logic": "conservative single-sample: center ± 12° but upper capped at +5° to align with prior directional guard",
+    "update_rule": "On each new confirmed same-person paired sample: add correct_half to correct_pool, recompute mu = mean(all correct samples), band_width shrinks toward ±6° at n=5, ±4° at n=10."
+  },
+
+  "confidence_ledger_thresholds": {
+    "_note": "Single-signal Possible; two-signal OR single large deviation = Likely; at-or-beyond paired error = Confirmed.",
+    "possible_above_deg": 5.0,
+    "likely_above_deg": 15.0,
+    "confirmed_above_deg": 28.0,
+    "_self_check": {
+      "clip_016_error_at_29.1": "Confirmed (29.1 >= 28.0) - CORRECT",
+      "neutral_swing_at_minus_10": "Inside band (−10 < −18.8 is false; −10 is inside [−18.8, +5.0]) - no alarm CORRECT",
+      "slight_target_lean_at_8": "Possible (8 > 5.0) - CORRECT (needs second signal before firing)"
+    }
+  }
+}
