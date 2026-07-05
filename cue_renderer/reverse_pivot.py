@@ -17,7 +17,22 @@ import cv2
 from pathlib import Path
 from typing import Tuple, Optional
 
+from PIL import Image as PILImage, ImageDraw, ImageFont
+
 from .payload import ReversePivotPayload
+
+# ── CJK font (Noto Sans SC) ───────────────────────────────────────────────────
+_NOTO_SC_PATH = Path.home() / ".local/share/fonts/NotoSansSC-VF.ttf"
+_FONT_CACHE: dict[int, ImageFont.FreeTypeFont] = {}
+
+def _get_cjk_font(size: int = 28) -> ImageFont.FreeTypeFont | None:
+    if size in _FONT_CACHE:
+        return _FONT_CACHE[size]
+    if _NOTO_SC_PATH.exists():
+        f = ImageFont.truetype(str(_NOTO_SC_PATH), size=size)
+        _FONT_CACHE[size] = f
+        return f
+    return None
 
 # ── colour constants (BGR) ────────────────────────────────────────────────────
 _SKELETON_GREY  = (80, 80, 80)
@@ -206,22 +221,44 @@ def _draw_arc_arrow(canvas: np.ndarray,
 def _put_text_outlined(canvas: np.ndarray, text: str,
                        org: Tuple[int,int], scale: float = 0.65,
                        thickness: int = 2) -> None:
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(canvas, text, org, font, scale, _TEXT_OUTLINE, thickness+2, cv2.LINE_AA)
-    cv2.putText(canvas, text, org, font, scale, _TEXT_WHITE,   thickness,   cv2.LINE_AA)
+    """Render text with CJK support (Pillow+NotoSansSC) falling back to cv2."""
+    font_size = max(16, int(scale * 36))
+    pil_font = _get_cjk_font(font_size)
+    if pil_font is not None:
+        # Pillow path: supports CJK
+        img_pil = PILImage.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img_pil)
+        x, y = org
+        # Outline passes
+        for dx, dy in [(-1,-1),(-1,1),(1,-1),(1,1),(0,-2),(0,2),(-2,0),(2,0)]:
+            draw.text((x+dx, y-font_size+dy), text, font=pil_font, fill=(20,20,20))
+        draw.text((x, y-font_size), text, font=pil_font, fill=(255,255,255))
+        canvas[:] = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    else:
+        # Fallback: cv2 (no CJK)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(canvas, text, org, font, scale, _TEXT_OUTLINE, thickness+2, cv2.LINE_AA)
+        cv2.putText(canvas, text, org, font, scale, _TEXT_WHITE,   thickness,   cv2.LINE_AA)
 
 
 def _draw_caption(canvas: np.ndarray, text: str) -> None:
     h, w = canvas.shape[:2]
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    scale = 0.65
-    thickness = 2
-    (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
-    x = max(10, (w - tw) // 2)
-    y = h - 18
     # Background bar
-    cv2.rectangle(canvas, (0, h-42), (w, h), (0,0,0), -1)
-    _put_text_outlined(canvas, text, (x, y), scale, thickness)
+    cv2.rectangle(canvas, (0, h-50), (w, h), (0,0,0), -1)
+    # Estimate text width for centering via Pillow
+    font_size = 28
+    pil_font = _get_cjk_font(font_size)
+    if pil_font is not None:
+        dummy = PILImage.new("RGB", (1,1))
+        bbox = ImageDraw.Draw(dummy).textbbox((0,0), text, font=pil_font)
+        tw = bbox[2] - bbox[0]
+        x = max(10, (w - tw) // 2)
+        y = h - 12
+    else:
+        (tw, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+        x = max(10, (w - tw) // 2)
+        y = h - 18
+    _put_text_outlined(canvas, text, (x, y), scale=0.65, thickness=2)
 
 
 # ── main render entry ─────────────────────────────────────────────────────────

@@ -163,6 +163,48 @@
 
 ---
 
+## CUE-002 完成记录 — 2026-07-05
+
+**任务**: Cue Intelligence Engine 知识资产入档（纯文档/资产任务，无渲染代码）
+
+**里程碑**: 解构器 v0（人工模式）完成 19 样板全量解构并经 Jason 全量裁决；Cue Intelligence Engine 正式立项
+
+### 关卡A — 样板库入档
+- 19 张样板从 Windows 原始目录拷贝至 `docs/07_CUE_DESIGN/reference_samples/`（文件名原封保留）
+- 总大小 11MB，直接入 git（最大单张 1.3MB，全部 < GitHub 100MB 限制）
+- 生成 `SAMPLES_INDEX.md`：19 行，每行文件名/缩略图/针对错误/一句话读法
+- 读法来源：解构报告 v0.2（Jason 裁决段）+ VLM 辅助补全（_117/_125~128/_184~187/_189）
+- VLM 补全段标注「须经 Jason 后续复审」（铁律 CUE-B）
+
+### 关卡B — 解构报告入档确认
+- `INDICATOR_SAMPLE_DECODE_REPORT_v0.2.md` 确认存在于 `docs/07_CUE_DESIGN/`，纳入 git
+- 内容完整（§0 勘误/§1 修正条目/§2 IDL Schema/§3 法则/§4 对照结构/§5 评估器/§6 生成器题/§7 纪律）
+- 文件不做任何改写（Jason 全量裁决终版基线）
+
+### 关卡C — CUE_DESIGN_LANGUAGE.md v0.2
+- 原语表: P6→P12（P7正确形线/P8运动语义箭头字典/P9关节角度弧/P10部位淡色块/P11区域注意圈/P12形状词）
+- 法则: 6条→9条（法则7骨架可见性/法则8身体可见性/法则9动态优先+动效预算=1）
+- 错误分类学: 新增第4类「时序类」（δ句型，动画原生，_119 静态承载力不足实证）
+- 对照结构三形态明确：双人并排（仅教学）/ 单主体融合（产品主句型）/ 顺序对照（Next-Swing Loop 原生）
+- 双轨验收制度：专家轨（Jason）+ 素人轨（3秒测试）同时通过
+- 映射表新增第14行: 转换期启动顺序错误（δ时序类）
+- 全部修订处标注「源:样板解构 v0.2 / Jason 裁决 2026-07-05」
+
+### 关卡D — 纪律备案（GT_IRON_RULES.md 追加）
+- 铁律 CUE-A: VLM 解构样板可用 / 用户动作诊断仍禁
+- 铁律 CUE-B: 样板读法真值权归 Jason
+- 铁律 CUE-C: 样板引用文件名强绑定、禁相对编号（附编号错位事故为案例）
+
+### 关卡E — CUE-001 遗留工程债
+- 安装 Noto Sans SC 字体至 `~/.local/share/fonts/`（源: `/mnt/c/Windows/Fonts/NotoSansSC-VF.ttf`）
+- 验证 Pillow+NotoSansSC CJK 渲染: 9711 非零像素（Python 测试通过）
+- 更新 `cue_renderer/reverse_pivot.py`: `_put_text_outlined` + `_draw_caption` 改用 Pillow/NotoSansSC 路径，cv2 仅作无字体时降级
+- 实际渲染验证: `clip_016_left_top_cue.jpg` 底栏 2079 白色像素（CJK 字符正确写入）
+- 9/9 渲染验收重跑 PASS
+- SILENT 引导图与 v1 渲染代码冻结，不返工（下一版由生成器输出规格驱动）
+
+---
+
 ## CUE-001 完成记录 — 2026-07-05
 
 **任务**: Cue 设计语言 v0.1 落档 + 第一个视觉指示器(reverse pivot)实现
