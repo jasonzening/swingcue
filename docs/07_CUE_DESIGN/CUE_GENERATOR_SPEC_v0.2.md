@@ -1,8 +1,8 @@
 # CUE_GENERATOR_SPEC v0.2 — Cue 生成器规格
 
-**版本**: v0.2
+**版本**: v0.3
 **日期**: 2026-07-05
-**状态**: Jason 拍板稿
+**状态**: Jason 裁决修订稿（CUE-003 规格修订）
 **任务**: CUE-003
 
 ---
@@ -46,6 +46,29 @@ Generator 的唯一输出物是 **Cue Plan JSON**：一份描述「画什么、�
 - 法则9 动态优先：指示器默认动画，静态为降级形态
 - 动效预算=1：每 cue 仅一个运动元素（指令箭头），现状线与正确形线静止
 - 校验规则⑧：动画三镣铐（扫动时长/循环暂停/时序分步）
+
+### 1.4 Signaling Principle 元分析 — 局部高亮与背景压暗的边界
+
+> de Koning, B.B., Tabbers, H.K., Rikers, R.M.J.P., & Paas, F. (2009). Towards a framework for attention cueing in instructional animations: Guidelines for research and design. *Educational Psychology Review*, 21(2), 113–140.
+>
+> van Gog, T., Paas, F., & van Merriënboer, J.J.G. (2008). Effects of studying sequences of process-oriented and product-oriented worked examples on troubleshooting transfer efficiency. *Learning and Instruction*, 18(3), 211–222.
+>
+> Richter, J., Scheiter, K., & Eitel, A. (2016). Signaling text-picture relations in multimedia learning: A comprehensive meta-analysis. *Educational Research Review*, 17, 19–36.
+
+**要点**：
+
+- **Signaling Principle（信号原则）**：在多媒体材料中添加视觉信号（箭头、轮廓辉光、区域高亮）指引学习者注意到核心元素，可显著提高学习迁移效果（Richter et al. 2016 元分析，d ≈ 0.40–0.60）。
+- **局部辉光 vs. 全局背景压暗的差异**：de Koning 等人区分两类注意引导机制——
+  - **局部高亮**（local cueing）：在错误涉事部位叠加边界辉光 / 淡色块，不破坏背景关系，学习者仍能看到身体整体；
+  - **全局压暗**（global dimming）：背景整体压暗后，关系性错误（如髋与肩的相对倾斜）失去参照系，读者难以判断"相对于什么"出了问题——这正是高尔夫姿态纠错的主要语义需求。
+- **认知过载风险**：背景压暗作为一个独立视觉层（掩码计算 + 合成），本身增加渲染复杂度；若掩码边界失效（抠图错误）则引入噪声，反而干扰注意。
+- **结论（Jason 裁决 2026-07-05）**：局部辉光（P10b）作为默认聚焦手段；SAM2 全局背景压暗降级为 A/B 候选，见 §7。
+
+**引擎应用**：
+- P10b 部位轮廓辉光：错误涉事部位的局部 SAM2 掩码辉光，一图仅高亮一处
+- 法则 7 聚焦手段：移除「SAM2 背景压暗」，改为「P10b 局部辉光」
+
+---
 
 ### 1.3 Lottie — 双层架构
 
@@ -145,4 +168,34 @@ P3+P8 弧箭头（从 tilt_deg 扫向 band_center，锚:sho_mid） [layer: fg, A
 
 ---
 
-*CUE_GENERATOR_SPEC v0.2 — Jason 拍板 2026-07-05*
+---
+
+## 7. A/B 候选附录 — SAM2 全局背景压暗（降级候选）
+
+**定义**：使用 SAM2 实例分割模型对人体建立掩码，将掩码区域外的背景整体压暗（亮度 ×0.3–0.5），使主体自然突出。
+
+**技术路径**：
+```
+SAM2 mask → 人体二值掩码 → 背景 = frame * dim_factor
+              └→ 前景 = frame（原亮度或略提亮）
+```
+
+**降级理由（Jason 裁决 2026-07-05，依据 §1.4 Signaling Principle 元分析）**：
+
+| # | 降级理由 | 说明 |
+|---|---------|------|
+| 1 | **信号过载风险** | 背景压暗本身是一个视觉事件，与箭头/形线叠加后可能超出单帧信号预算（法则 4 一图一对比）；Ayres 2009 工作记忆容量约束要求同时动的轨道 ≤ 1 |
+| 2 | **关系性错误需背景参照** | 高尔夫姿态错误（髋与肩相对倾斜、早伸离臀线）本质是关系性错误；背景压暗切断了「身体与环境/重力」的视觉参照系，读者难以判断「相对于什么偏了」（de Koning 2009 局部 vs. 全局压暗差异） |
+| 3 | **掩码失效风险** | SAM2 在运动帧（模糊、遮挡、非标准机位）下掩码边界易失效；失效掩码 = 碎片化背景压暗，引入噪声而非信号（注意干扰而非注意引导） |
+
+**适用条件（若将来 A/B 验收时考虑启用）**：
+- 静态 setup 帧（address 帧，无运动模糊）
+- DTL 机位背景简洁（无大面积人体肤色背景元素）
+- SAM2 掩码经人工目视确认边界清晰
+- 同一 cue 图仅用压暗聚焦，不同时使用 P10b 辉光（不叠加两种聚焦机制）
+
+**结论**：默认渲染手段为 P10a 淡色块 + P10b 局部轮廓辉光（见 CUE_DESIGN_LANGUAGE P10a/P10b）。SAM2 背景压暗留作 A/B 测试备选，使用前需 Jason 专项授权。
+
+---
+
+*CUE_GENERATOR_SPEC v0.3 — v0.2 Jason 拍板 2026-07-05 / v0.3 Jason 裁决修订 2026-07-05（SAM2 降级 + Signaling Principle 元分析入库）*
