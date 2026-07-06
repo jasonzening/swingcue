@@ -34,7 +34,9 @@
 
 | 文件名 | 错误类型 | 版本 | 状态 | 推翻原因 / 备注 |
 |--------|---------|------|------|----------------|
-| *(待 Jason 拷入)* | — | — | — | — |
+| `20260705_fo-ok-1_MOCK_gateP_v1_static.jpg` | Reverse Pivot | CUE-005 Gate-P v1 | draft | MOCK 静态末帧：P2/P3 v0.6 几何（hip→sho 截断线段+白圈关节点；P3 r=0.6×P2线长）；fo-ok-1 fr97 画布；[MOCK] 角标 |
+| `20260705_retake_silhouette_gateP_v2_no_swing.jpg` | SILENT / no_swing | v2 | draft | SAM2 剪影重拍卡 v2（CUE-005）：暗底+红色发光轮廓；fo-ok-1 address帧 fr0；掩码45708px(5%)；替换原火柴棍人 |
+| `20260705_retake_silhouette_gateP_v2_truncated.jpg` | SILENT / truncated | v2 | draft | 同上（truncated分型）；文案：「请拍摄完整挥杆 / 勿提前停止录制」 |
 
 ---
 

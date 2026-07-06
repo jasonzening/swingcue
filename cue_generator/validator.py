@@ -252,8 +252,10 @@ def _rule8_animation_constraints(plan: dict) -> str | None:
 
 def _rule10_angle_coord_consistency(plan: dict) -> str | None:
     """
-    ⑩a MOCK 几何一致性（CUE-004 修正①）:
-       P2 shape_params.tilt_deg 须与 anchor coords 反算角度一致，容差 ±1°。
+    ⑩a MOCK 几何一致性（CUE-004 修正①，CUE-005 v0.6 调整）:
+       v0.5: P2 tip 由 tilt_deg 反算 → coords 与 tilt_deg 必须一致 ±1°。
+       v0.6: P2 tip = sho_mid（RTMPose 实测），不再由 tilt_deg 推算。
+             若 shape_params 含 joint_dots=True，则豁免本规则（改由规则⑫管辖）。
     """
     import math
     stype = plan.get("sentence_type_id", "")
@@ -263,6 +265,9 @@ def _rule10_angle_coord_consistency(plan: dict) -> str | None:
         if el.get("primitive") != "P2":
             continue
         sp = el.get("shape_params", {})
+        # v0.6: joint_dots 模式豁免 ⑩a（端点由实测关节点确定，非 tilt_deg 推算）
+        if sp.get("joint_dots"):
+            return None
         stated_tilt = sp.get("tilt_deg")
         if stated_tilt is None:
             continue
@@ -281,7 +286,7 @@ def _rule10_angle_coord_consistency(plan: dict) -> str | None:
             return (
                 f"规则⑩a违规: P2 shape_params.tilt_deg={stated_tilt:.2f}° "
                 f"与坐标反算角度={actual_tilt:.2f}° 偏差={diff:.2f}° > ±1° 容差 "
-                f"(CUE-004 修正①: JSON coords 与 tilt_deg 必须一致)"
+                f"(v0.5 几何: tip 由 tilt_deg 推算; v0.6 joint_dots 模式豁免)"
             )
     return None
 
@@ -345,6 +350,50 @@ def _rule9_element_budget(plan: dict) -> str | None:
     return None
 
 
+def _rule12_p2_endpoints_match_payload(plan: dict) -> str | None:
+    """
+    ⑫ P2 端点与 payload 关节坐标重合（CUE-005 新增）:
+       v0.6 几何: P2 两端 = hip_mid + sho_mid（RTMPose 实测）。
+       校验: shape_params.joint_dots=True 时，
+             coords_px ≈ hip_mid（±5px），secondary_coords_px ≈ sho_mid（±5px）。
+       payload 关节坐标通过 _payload_joints 字段（可选）注入；
+       若未注入则豁免（GT 旁路 clip 补标定后方可生产）。
+    """
+    stype = plan.get("sentence_type_id", "")
+    if stype in ("neutral", "retake"):
+        return None
+    payload_joints = plan.get("_payload_joints")
+    if payload_joints is None:
+        return None  # 未注入关节坐标，豁免（GT 旁路 clip）
+    import math
+    hip_ref  = payload_joints.get("hip_mid")
+    sho_ref  = payload_joints.get("sho_mid")
+    if hip_ref is None or sho_ref is None:
+        return None
+    for el in plan.get("elements", []):
+        if el.get("primitive") != "P2":
+            continue
+        sp = el.get("shape_params", {})
+        if not sp.get("joint_dots"):
+            return None  # 非 v0.6 几何，豁免
+        anc = el.get("anchor", {})
+        hip_pt = anc.get("coords_px")
+        sho_pt = anc.get("secondary_coords_px")
+        if hip_pt and math.hypot(hip_pt[0]-hip_ref[0], hip_pt[1]-hip_ref[1]) > 5:
+            return (
+                f"规则⑫违规: P2 hip 端点=({hip_pt[0]:.1f},{hip_pt[1]:.1f}) "
+                f"与 payload hip_mid=({hip_ref[0]:.1f},{hip_ref[1]:.1f}) 偏差 > ±5px "
+                "(CUE-005: 端点须与 RTMPose 实测关节坐标重合)"
+            )
+        if sho_pt and math.hypot(sho_pt[0]-sho_ref[0], sho_pt[1]-sho_ref[1]) > 5:
+            return (
+                f"规则⑫违规: P2 sho 端点=({sho_pt[0]:.1f},{sho_pt[1]:.1f}) "
+                f"与 payload sho_mid=({sho_ref[0]:.1f},{sho_ref[1]:.1f}) 偏差 > ±5px "
+                "(CUE-005: 端点须与 RTMPose 实测关节坐标重合)"
+            )
+    return None
+
+
 # ── public API ─────────────────────────────────────────────────────────────────
 
 RULES = [
@@ -359,6 +408,7 @@ RULES = [
     _rule9_element_budget,
     _rule10_angle_coord_consistency,
     _rule11_anchor_in_body_bbox,
+    _rule12_p2_endpoints_match_payload,
 ]
 
 

@@ -67,23 +67,30 @@ def _arrowhead(cx,cy,r, a_to_deg, tang_dir, hl=18, hw=11):
     ])
 
 
-# ── P2: static self-luminous line ─────────────────────────────────────────────
+# ── P2: static self-luminous line + joint dots (v0.6: hip→sho截断，_122语法) ──
 def _draw_p2(canvas: np.ndarray, el: dict) -> None:
     anc = [int(x) for x in el["anchor"]["coords_px"]]
     tip = [int(x) for x in el["anchor"]["secondary_coords_px"]]
     col = el["color"]
     bgr = _cv_bgr(col["stroke_hex"])
     sw  = col["stroke_width_px"]
+    sp  = el.get("shape_params", {})
 
     # glow halo
-    cv2.line(canvas, anc, tip, bgr, sw * 6, cv2.LINE_AA)
-    # overlay with lower alpha to simulate glow opacity
     glow = np.zeros_like(canvas)
     cv2.line(glow, anc, tip, bgr, sw * 6, cv2.LINE_AA)
     cv2.addWeighted(canvas, 1.0, glow, 0.35, 0, canvas)
 
-    # re-draw core bright line on top
+    # core bright line
     cv2.line(canvas, anc, tip, bgr, sw, cv2.LINE_AA)
+
+    # joint dots: 两端白圈关节点（_122 语法: 外白圈+内红芯）
+    if sp.get("joint_dots"):
+        r = int(sp.get("joint_dot_r", 8))
+        for pt in (tuple(anc), tuple(tip)):
+            cv2.circle(canvas, pt, r,     (255, 255, 255), -1,  cv2.LINE_AA)  # 白底
+            cv2.circle(canvas, pt, r - 3, bgr,             -1,  cv2.LINE_AA)  # 红芯
+            cv2.circle(canvas, pt, r,     (255, 255, 255),  2,  cv2.LINE_AA)  # 白外圈
 
 
 # ── P3: animated arc arrow (progress 0.0→1.0) ────────────────────────────────
@@ -221,12 +228,31 @@ def _ease_inout(t: float) -> float:
 _HEADER_H = 30   # px reserved at top for diagnostic label
 
 def _draw_header(canvas: np.ndarray, label: str) -> None:
-    """Draw semi-transparent header bar at top of frame (height=_HEADER_H)."""
+    """
+    Draw semi-transparent header bar at top of frame (height=_HEADER_H).
+    CJK fix (CUE-005): use Pillow+NotoSansSC instead of cv2.putText.
+    """
+    # background bar
     overlay = canvas.copy()
     cv2.rectangle(overlay, (0, 0), (canvas.shape[1], _HEADER_H), (20, 20, 60), -1)
     cv2.addWeighted(overlay, 0.75, canvas, 0.25, 0, canvas)
-    cv2.putText(canvas, label, (6, _HEADER_H - 8),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 255), 1, cv2.LINE_AA)
+
+    # Pillow CJK text (same path as caption)
+    fnt = _font(15)
+    if fnt is None:
+        # fallback: ASCII only
+        cv2.putText(canvas, label, (6, _HEADER_H - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 255), 1, cv2.LINE_AA)
+        return
+
+    h, w = canvas.shape[:2]
+    pil_img = PILImage.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
+    text_y = max(2, (_HEADER_H - draw.textbbox((0,0), label, font=fnt)[3]) // 2)
+    # subtle shadow
+    draw.text((7, text_y + 1), label, font=fnt, fill=(20, 20, 20))
+    draw.text((6, text_y), label, font=fnt, fill=(200, 200, 255))
+    canvas[:] = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
 # ── Main MP4 renderer ─────────────────────────────────────────────────────────

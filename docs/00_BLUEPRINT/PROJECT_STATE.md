@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-05 — CUE-004 关闭（Jason 终裁，合并单 6 项阻断修正全落实）
-**最新 commit**: `ba09341` — chore: PROJECT_STATE 同步 CUE-004 合并单 72bc96f
+**最后更新**: 2026-07-05 — CUE-005 关卡关闭（专家测试失败修正 + 专业级重拍卡）
+**最新 commit**: *(pending CUE-005 commit)*
 **分支**: master（已 push）
 
 ---
@@ -20,10 +20,12 @@
 
 ## 2. 当前进行中任务
 
-| 任务 | 状态 | 最后动作 |
-|------|------|---------|
-| CUE-001 3秒测试终审 | **等待 Jason** | clip_016_left_top_cue.jpg 在 Windows Desktop |
-| CUE-004 正式双轨验收 | **等待 Jason 自拍素材** | Jason 提供真实阳性素材后在真实画布执行专家+素人3秒测试 |
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| CUE-005 正式双轨验收 | **等待 Jason 目视** | fo-ok-1_MOCK_static_last.jpg + retake_silhouette_v2_*.jpg 等三张成品，Jason 3秒目视后裁决 |
+| CUE-001 3秒测试终审 | **等待 Jason** | clip_016_left_top_cue.jpg 在 Windows Desktop（已冻结） |
+| CUE-004/005 正式双轨验收 | **等待 Jason 自拍素材** | Jason 提供真实阳性素材后在真实画布执行专家+素人3秒测试 |
+| 样板20入库 | **等待 Jason 提供图片** | Jason 提供红色发光人体轮廓参考图后，copy 入 reference_samples/sample_020_silhouette_fence_ref.jpg |
 | 下一步方向选择 | **等待 Jason** | 见 §7 候选项 |
 
 ---
@@ -43,6 +45,7 @@
 | CUE-002 | 解构报告 v0.3 自包含基线入档，SAMPLES_INDEX v1.2，铁律 CUE-A/B/C/D/E | `92cddb1` | 2026-07-05 |
 | CUE-003 | Cue 生成器 v0.1 — Plan Schema + 校验器 11 条 + α句型 + 法则10极简至上 | `8ad9821` | 2026-07-05 |
 | CUE-004 | Lottie 编译器+渲染器 v2+三路由成品+SPEC v0.7; 合并单 6 项阻断修正（关闭） | `72bc96f` | 2026-07-05 |
+| CUE-005 | 专家测试失败修正+专业级重拍卡: P2/P3几何v0.6+白圈关节点+header CJK修复+SAM2剪影v2+Gate-P节+12条校验器+clip_016退役令（关闭） | *(pending)* | 2026-07-05 |
 
 ---
 
@@ -103,4 +106,4 @@
 
 ---
 
-*PROJECT_STATE.md — CUE-004 关卡关闭 2026-07-05 / 维护人: Hermes / 裁决人: Jason*
+*PROJECT_STATE.md — CUE-005 关卡关闭 2026-07-05 / 维护人: Hermes / 裁决人: Jason*

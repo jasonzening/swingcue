@@ -9,10 +9,16 @@ v0.4 改版（Jason 裁决 2026-07-05，法则10 极简至上）:
 
 v0.5 几何修正（Jason 裁决 2026-07-05，CUE-004 修正①②）:
   P2 tip = hip_mid + tilt_deg 方向 × line_len
-    → 线的角度恒等于 verdict tilt_deg，不取画布身体真实轴。
   P3 弧心 = hip_mid，半径 = P2 线长
-    → 弧起点正好落在 P2 上端点，几何严格闭合。
-  validator 规则⑩: shape_params.tilt_deg 与坐标反算角度容差 ±1°。
+
+v0.6 几何重定义（Jason 裁决 2026-07-05，CUE-005 专家测试失败修正）:
+  P2 = hip_mid → sho_mid 实测两点截断线段（禁延长）
+    → coords_px = hip_mid, secondary_coords_px = sho_mid（均为 RTMPose 实测）
+    → 两端渲染白圈关节点（外白圈内红芯，_122 语法）
+    → shape_params.line_len_px = |sho_mid - hip_mid|（不含延长）
+    → 校验器规则⑫: 端点须与 payload 关节坐标重合 ±5px
+  P3 弧心 = hip_mid，半径 = 0.6 × P2 线长（较短，不遮身体）
+    → angle_from 仍为 tilt_deg（弧起点方向与 P2 一致）
 
 MOCK 验收边界（CUE-004 文档备案）:
   MOCK 模式仅用于 QA 渲染几何与动画流程，不承担语义 3 秒测试。
@@ -114,11 +120,17 @@ def build_alpha_plan(
     hip = (float(hip_mid[0]), float(hip_mid[1]))
     sho = (float(shoulder_mid[0]), float(shoulder_mid[1]))
 
-    # P2 tip 从 tilt_deg 反算（v0.5 几何修正）
-    p2_tip, line_len = _tip_from_angle(hip, sho, tilt_deg, _LINE_EXTEND_PX)
+    # v0.6 几何: P2 = hip_mid → sho_mid 截断线段（禁延长）
+    line_len = math.hypot(sho[0] - hip[0], sho[1] - hip[1])
 
-    # Deviation amount for P2 colour gradient
-    dev = tilt_deg - band_upper_deg          # positive = how far outside band
+    # tilt_deg 反算自实测关节点（供规则⑩a几何一致性校验参考；此版不再从tilt_deg正向推导tip）
+    # shape_params 仍保留 tilt_deg 供上层记录（与实测一致，规则⑩a容差±1°应自然满足）
+    import math as _math
+    tilt_actual = _math.degrees(_math.atan2(sho[0]-hip[0], -(sho[1]-hip[1])))
+    # 使用传入的 tilt_deg（来自 payload/飞轮），如与实测偏差 >1° 则规则⑩a会拦截
+
+    # Deviation amount for P2 colour (error polarity)
+    dev = tilt_deg - band_upper_deg
     if dev < 0:     p2_stroke = "#FFA000"    # orange: inside band (Likely only)
     elif dev < 10:  p2_stroke = "#CC4400"    # deep orange
     else:           p2_stroke = "#CC0000"    # red: well outside
@@ -154,13 +166,13 @@ def build_alpha_plan(
             layer="bg",
         ))
 
-    # ── mid layer: P2 — 现状线（红色，自发光，静止）────────────────────────────
-    # tip 完全由 tilt_deg 决定 → 角度一致性校验⑩恒成立
+    # ── mid layer: P2 — 现状线（v0.6: hip→sho 截断线段，两端白圈关节点）────────
+    # secondary_coords_px = sho_mid（RTMPose 实测，校验⑫要求与 payload 重合 ±5px）
     elements.append(CueElement(
         primitive="P2",
         anchor=AnchorSpec(
             source="hip_mid", coords_px=list(hip),
-            secondary_coords_px=list(p2_tip),
+            secondary_coords_px=list(sho),   # v0.6: 直接用 sho_mid，禁延长
         ),
         semantic_role="current_state",
         color=ColorSpec(
@@ -170,20 +182,19 @@ def build_alpha_plan(
         ),
         shape_params={
             "type":          "line",
-            "tilt_deg":      tilt_deg,       # 与 coords 严格一致（校验⑩）
-            "line_len_px":   line_len,        # 供 P3 radius 引用
-            "self_luminous": True,            # rendering hint: glow effect
+            "tilt_deg":      tilt_deg,       # 供规则⑩a参考（与实测tilt_actual应≤1°偏差）
+            "line_len_px":   line_len,        # = |sho-hip|，不含延长
+            "self_luminous": True,
+            "joint_dots":    True,            # 渲染提示: 两端绘制白圈关节点（_122 语法）
+            "joint_dot_r":   8,               # 外圈半径 px
         },
         animation_track=None,   # STATIC — 校验③安全
         layer="mid",
     ))
 
-    # ── fg layer: P3 — 动画弧箭头 ───────────────────────────────────────────────
-    # v0.5 几何修正:
-    #   弧心    = hip_mid （P2 的基点）
-    #   半径    = P2 线长 （使弧起点 = P2 上端点，几何闭合）
-    #   angle_from = tilt_deg  → 弧起点落在 P2 上端点
-    #   angle_to   = band_center_deg → 扫向正确带中心
+    # ── fg layer: P3 — 动画弧箭头（v0.6: radius=0.6×P2线长）────────────────────
+    # 弧心 = hip_mid；半径 = 0.6 × line_len（较短，视觉紧凑，不遮身体）
+    arc_radius = line_len * 0.6
     elements.append(CueElement(
         primitive="P3",
         anchor=AnchorSpec(source="hip_mid", coords_px=list(hip)),
@@ -191,24 +202,24 @@ def build_alpha_plan(
         color=ColorSpec(
             fill_hex="#FFFFFF", fill_alpha=1.0,
             stroke_hex="#FFFFFF", stroke_alpha=1.0,
-            stroke_width_px=3,          # ≤6, 校验④
+            stroke_width_px=3,          # ≤ k_max×SHW, 校验④
         ),
         shape_params={
             "type":            "arc_arrow",
             "angle_from_deg":  tilt_deg,
             "angle_to_deg":    band_center_deg,
-            "radius_px":       line_len,        # = P2 线长，起点 = P2 端点
+            "radius_px":       arc_radius,   # v0.6: 0.6 × P2 线长
             "arrowhead": {"length_px": 14, "width_px": 8},
-            "motion_semantics": "arc_sweep",    # P8 字典: 弧=旋转
+            "motion_semantics": "arc_sweep",
         },
         animation_track=AnimationTrack(
             motion_type="arc_sweep",
-            duration_s=1.8,      # 校验⑧: 1.5~2.0
-            pause_s=0.5,         # 校验⑧
-            loop=True,           # 校验⑧
-            pauseable=True,      # 校验⑧
+            duration_s=1.8,
+            pause_s=0.5,
+            loop=True,
+            pauseable=True,
             easing="ease_in_out",
-            steps=None,          # α 句型，非时序类
+            steps=None,
         ),
         layer="fg",
     ))

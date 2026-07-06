@@ -251,18 +251,24 @@ SAM2 mask → 人体二值掩码 → 背景 = frame * dim_factor
 实现: validator._rule10_angle_coord_consistency
 ```
 
-### 8.3 P2/P3 几何规范（v0.5，CUE-004 修正②）
+### 8.3 P2/P3 几何规范（v0.6，CUE-005 专家测试失败修正）
+
+**clip_016 退役令（CUE-005）**: clip_016 仅限判断验证，禁止用于 cue 渲染/预览/验收。
+clip_016 成品已移入 output/cue004/_retired/ 留证。正式 MOCK 画布改用 fo-ok-1。
 
 ```
-P2 tip = hip_mid + line_len × (sin(tilt_deg), -cos(tilt_deg))
-  line_len = |shoulder_mid - hip_mid| + EXTEND_PX (200px)
-  → tip 坐标由 tilt_deg 精确反算，与 shape_params.tilt_deg 误差 < 0.001°
+P2 = hip_mid → sho_mid 实测两点截断线段（禁延长）
+  coords_px           = hip_mid  (RTMPose 实测)
+  secondary_coords_px = sho_mid  (RTMPose 实测)
+  line_len_px         = |sho_mid - hip_mid| (不含延长)
+  joint_dots = True   → 两端渲染白圈关节点（外白圈+内红芯，_122 语法）
+  joint_dot_r = 8     → 外圈半径 px
 
 P3 arc:
-  center  = hip_mid                 (P2 基点)
-  radius  = line_len (= P2 线长)    (起点 = P2 上端点，几何闭合)
-  angle_from = tilt_deg             (弧起于 P2 端点)
-  angle_to   = band_center_deg      (扫向正确带中心 -6.8°)
+  center  = hip_mid                       (P2 基点)
+  radius  = 0.6 × line_len_px             (较短，视觉紧凑，不遮身体)
+  angle_from = tilt_deg                   (弧起于 P2 侧倾方向)
+  angle_to   = band_center_deg            (扫向正确带中心 -6.8°)
 ```
 
 ### 8.4 校验器规则⑪ — 锚点在人体 bbox 内（合并单③）
@@ -275,6 +281,18 @@ _body_bbox_px 由调用方注入（来自 RTMPose 检测器输出，canvas 坐�
 实现: validator._rule11_anchor_in_body_bbox
 ```
 
+### 8.5 校验器规则⑫ — P2 端点与 payload 关节坐标重合（CUE-005 新增）
+
+```
+规则⑫: v0.6 几何（joint_dots=True）时，
+  P2 coords_px ≈ payload hip_mid (±5px)
+  P2 secondary_coords_px ≈ payload sho_mid (±5px)
+payload 关节坐标通过 _payload_joints 字段注入（可选）；
+若未注入则豁免（GT 旁路 clip 补标定后方可生产）。
+目的: 防止端点从 tilt_deg 反算（坐标不得从结论反算，纪律§8）
+实现: validator._rule12_p2_endpoints_match_payload
+```
+
 ---
 
-*CUE_GENERATOR_SPEC v0.7 — v0.2 Jason 拍板 2026-07-05 / v0.3 SAM2降级 + Signaling Principle / v0.4 α句型basic层改版 + 校验⑨ + fault_view / v0.5 CUE-004关卡C 动效预算归因修正(Ayres→法则4+Treisman 1988) + 校验④归一化标注(k=0.15待拍板) / v0.6 CUE-004修正①②③: MOCK语义定死 + P2/P3几何重定义 + 校验⑩ + 溢出防护 / v0.7 合并单: 校验④ k_max=0.06 定版(address SHW唯一定义) + 校验⑪新增(锚点bbox) + truncated文案修正*
+*CUE_GENERATOR_SPEC v0.8 — v0.2 Jason 拍板 2026-07-05 / v0.3 SAM2降级 + Signaling Principle / v0.4 α句型basic层改版 + 校验⑨ + fault_view / v0.5 CUE-004关卡C 动效预算归因修正(Ayres→法则4+Treisman 1988) + 校验④归一化标注(k=0.15待拍板) / v0.6 CUE-004修正①②③: MOCK语义定死 + P2/P3几何重定义 + 校验⑩ + 溢出防护 / v0.7 合并单: 校验④ k_max=0.06 定版(address SHW唯一定义) + 校验⑪新增(锚点bbox) + truncated文案修正 / v0.8 CUE-005: P2/P3几何v0.6(截断线段+关节点+0.6×radius) + 校验⑫(端点重合) + clip_016退役令 + MOCK画布改fo-ok-1*

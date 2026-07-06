@@ -270,4 +270,37 @@ Reverse Pivot 文案模板（拍板稿）：
 
 ---
 
-*CUE_DESIGN_LANGUAGE v0.4 — v0.1 Jason 拍板确认 2026-07-05 / v0.2 同步样板解构 v0.2 Jason 裁决 2026-07-05 / v0.3 Jason 裁决修订 2026-07-05（P10 拆分 + SAM2 背景压暗降级 + Signaling Principle 元分析入库）/ v0.4 Jason 裁决修订 2026-07-05（法则10极简至上 + α句型basic层改版 + 校验器⑨ + fault_view）*
+## 11. Gate-P — 出厂对标检查（CUE-005 新增）
+
+每次生成用户可见视觉产物（MP4 预览、静态截图、重拍卡）后，
+执行出厂对标检查（Gate-P），把成品与 2–3 张商业级参照并排自查：
+
+### 11.1 对标参照库
+
+商业级对标来自 `reference_samples/` 已解构样板中的最高质量样例：
+
+- **指示器类对标**: `sample_020_silhouette_fence_ref.jpg`（发光剪影美学参照）
+- **动画线条对标**: `sample_020_silhouette_fence_ref.jpg`（清晰、简洁、高对比）
+- **重拍卡对标**: 参照同类产品取景框引导风格（CoachNow / Hudl Technique 风格）
+
+### 11.2 检查清单（并排自查，逐项打勾）
+
+```
+□ 文字无乱码（特别是CJK字符）
+□ 配色极性正确（红=错误, 绿=正确, 白=指令）
+□ 元素数 ≤ 2（basic层）
+□ 线条清晰、不模糊
+□ header/badge 无"?"问号（CJK修复验证）
+□ 与参照对比：视觉密度是否对齐商业级
+□ 剪影/轮廓边缘是否清晰（SAM2掩码质量）
+```
+
+### 11.3 截图存档规范
+
+Gate-P 对标截图存入 `docs/07_CUE_DESIGN/design_iterations/`，
+命名格式: `YYYYMMDD_<clip_id>_gateP_vN.jpg`。
+允许多个版本并排（v1/v2）用于迭代记录。
+
+---
+
+*CUE_DESIGN_LANGUAGE v0.5 — v0.4 Jason 裁决修订 2026-07-05（法则10极简至上 + α句型basic层改版 + 校验器⑨ + fault_view）/ v0.5 CUE-005 专家测试失败修正（P2/P3几何v0.6 + Gate-P出厂对标检查节）*

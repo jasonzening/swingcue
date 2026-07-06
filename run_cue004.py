@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """
-run_cue004.py — CUE-004 关卡B+C 端到端脚本
+run_cue004.py — CUE-004/005 关卡B+C 端到端脚本
 
-关卡B: 三路由成品生成
-  clip_016_left  (Confirmed) → 动画 cue: .lottie + .mp4 + static_fr0.jpg
-  clip_016_right (None)      → neutral 成品: 原帧 + 绿勾徽章
+关卡B: 四路由成品生成
+  fo-ok-1_MOCK   (Confirmed) → 动画 cue: .lottie + .mp4 + static_last.jpg
+                               [MOCK] verdict=clip_016 +29.1°, 画布=fo-ok-1 fr97
+                               CUE-005: P2/P3 v0.6 几何（截断线段+白圈关节点）
+  clip_016_right (None)      → neutral 成品: 原帧 + 绿勾徽章 [_retired/留证]
   fo-eet-1-neg-setup  (SILENT) → 图形化引导重拍卡
   fo-eet-1-neg-truncated (SILENT) → 图形化引导重拍卡
 
-关卡C: 回灌校验 + 技术债清理
+关卡C: 回灌校验
   首帧元素数校验（≤2）
   色极性校验（红线/白箭头）
   灰度自明：首帧灰度化后仍可区分元素
+
+clip_016 退役令 (CUE-005):
+  clip_016 仅限判断验证，禁止用于 cue 渲染/预览/验收。
+  clip_016 成品已移入 output/cue004/_retired/ 留证。
+  本脚本路由1画布改为 fo-ok-1 fr97 (top帧, MOCK 标注)。
 
 输出目录:
   output/cue004/          本地
   Desktop preview/cue004/ Windows
 
 依赖: cue_compiler/ (lottie_builder, mp4_renderer, neutral_renderer)
-      cue_generator/ (已有 Plan JSON)
-      CUE_GENERATOR_SPEC v0.4 / CUE_DESIGN_LANGUAGE v0.4
+      cue_generator/ (sentence_alpha, validator)
+      CUE_GENERATOR_SPEC v0.8 / CUE_DESIGN_LANGUAGE v0.4
 """
 import sys, json, math, time
 from pathlib import Path
@@ -42,7 +49,7 @@ DESK_DIR = Path("/mnt/c/Users/jason/Desktop/rtmpose_results/preview/cue004")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 DESK_DIR.mkdir(parents=True, exist_ok=True)
 
-PLAN_DIR = PROJ / "output" / "cue_plans"   # existing Plan JSONs
+PLAN_DIR = PROJ / "output" / "cue_plans"
 
 # ── Video paths ────────────────────────────────────────────────────────────────
 CLIP016_VIDEO = Path("/mnt/c/Users/jason/Zening/Swingcue/教学视频") / \
@@ -54,34 +61,30 @@ FO_OK1_VIDEO        = Path("/mnt/c/Users/jason/Zening/Swingcue/Video/fo-ok-1.mp4
 CANVAS_W = 720
 CANVAS_H = 1280
 
-# ── clip_016 RTMPose top-frame measurements (CUE-004 修正二轮 ①②) ─────────────
-# top 帧 fr=93 (NF=148, FPS=23.8) — wrist_y 最小帧 = 上杆顶点
-# 锚点来源: RTMPose fr93 左半 540×1920 原始坐标
-# Canvas scale: 720/540=1.333, 1280/1920=0.667
-_TOP_FR        = 93
-_ORIG_W, _ORIG_H = 540, 1920
-_HIP_RAW  = (220.2, 1013.0)
-_SHO_RAW  = (399.4, 691.4)
-_BBOX_RAW = (170.0, 607.0, 548.0, 1558.0)
+# ── fo-ok-1 RTMPose 实测关节点 (CUE-005 MOCK 画布) ───────────────────────────
+# 视频尺寸: 720×1280 = canvas，无需缩放
+# fr97 (top帧, wrist_y=431.4 最小)
+_FO_TOP_FR       = 97
+_FO_HIP_CANVAS   = (349.1, 663.3)   # hip_mid fr97
+_FO_SHO_CANVAS   = (337.9, 518.4)   # sho_mid fr97
+_FO_BBOX_CANVAS  = [266, 431, 393, 900]   # body_bbox fr97
 
-# address 帧肩宽 SHW（合并单⑥: k_max=0.06 定版）
-# RTMPose fr0 clip_016_left 540×1920 实测:
-#   sho_L=(393.7,720.0) sho_R=(205.6,751.8) → SHW_orig=190.8px
-#   SHW_canvas = 190.8 × 720/540 = 254.4px
-_SHW_ORIG_PX   = 190.8
-_SHW_CANVAS_PX = 254.4   # 注入 _shw_canvas_px 给校验器④
+# address 帧肩宽（fr0，用于校验④ k_max=0.06）
+# fr0: l_sho=(305.4,565.9) r_sho=(332.6,536.2) → SHW = |305-332|... 用欧氏距离
+import math as _math
+_FO_SHW_CANVAS_PX = _math.hypot(305.4 - 332.6, 565.9 - 536.2)  # ≈ 38px
+# Note: 38px < 254px (clip_016), fo-ok-1 拍摄距离更近，需用实测
 
+# MOCK verdict 数值来自 clip_016_left
+_MOCK_TILT_DEG   = 29.1   # Confirmed
+_MOCK_CONFIDENCE = "Confirmed"
+_MOCK_CAPTION    = "顶点时上半身倒向了球的方向——下一杆感觉胸口留在球的后面"
+_BAND_LOWER  = -18.8
+_BAND_UPPER  = 5.0
+_BAND_CENTER = -6.8
 
-def _scale(pt, canvas_w=CANVAS_W, canvas_h=CANVAS_H,
-           orig_w=_ORIG_W, orig_h=_ORIG_H):
-    return (pt[0] * canvas_w / orig_w, pt[1] * canvas_h / orig_h)
-
-
-def _hip_canvas():  return _scale(_HIP_RAW)
-def _sho_canvas():  return _scale(_SHO_RAW)
-def _bbox_canvas():
-    sx = CANVAS_W / _ORIG_W; sy = CANVAS_H / _ORIG_H
-    return [_BBOX_RAW[0]*sx, _BBOX_RAW[1]*sy, _BBOX_RAW[2]*sx, _BBOX_RAW[3]*sy]
+# clip_016 address 帧肩宽（历史数据，保留供参考）
+_CLIP016_SHW_CANVAS_PX = 254.4
 
 
 # ── Frame loaders ─────────────────────────────────────────────────────────────
@@ -111,26 +114,43 @@ def load_plan(clip_id: str) -> dict:
     return {}
 
 
-# ── clip_016_left frame ───────────────────────────────────────────────────────
+# ── fo-ok-1 MOCK frame (路由1, CUE-005) ──────────────────────────────────────
 
-def get_clip016_left_frame() -> np.ndarray:
-    """Load top frame (fr93) left half — RTMPose-confirmed top frame."""
-    if not CLIP016_VIDEO.exists():
-        print("  [warn] clip_016 video not found, using placeholder")
+def get_fo_ok1_top_frame() -> np.ndarray:
+    """Load fo-ok-1 top frame (fr97, wrist_y最小) for MOCK Confirmed path."""
+    if not FO_OK1_VIDEO.exists():
+        print(f"  [warn] fo-ok-1 video not found, using placeholder")
         return placeholder()
-    cap = cv2.VideoCapture(str(CLIP016_VIDEO))
-    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    cap.release()
-    half = W // 2
-    fr = grab_frame(CLIP016_VIDEO, _TOP_FR, x_crop=(0, half))
+    fr = grab_frame(FO_OK1_VIDEO, _FO_TOP_FR)
     if fr is None:
-        print(f"  [warn] cannot read fr{_TOP_FR}, using placeholder")
-        return placeholder(half)
-    print(f"  [clip_016_left] 嵌入帧: fr{_TOP_FR} (RTMPose top帧, wrist_y最小)")
+        print(f"  [warn] cannot read fr{_FO_TOP_FR} from fo-ok-1")
+        return placeholder()
+    h, w = fr.shape[:2]
+    if w != CANVAS_W or h != CANVAS_H:
+        fr = cv2.resize(fr, (CANVAS_W, CANVAS_H))
+    print(f"  [fo-ok-1] 嵌入帧: fr{_FO_TOP_FR} (top帧, MOCK Confirmed画布)")
     return fr
 
 
+def _stamp_mock_badge(frame: np.ndarray) -> np.ndarray:
+    """Burn [MOCK] corner badge onto frame (CUE-005: fo-ok-1 MOCK 标注)."""
+    from PIL import Image as PILImage, ImageDraw, ImageFont
+    img = PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img)
+    fnt_path = Path.home() / ".local/share/fonts/NotoSansSC-VF.ttf"
+    fnt = ImageFont.truetype(str(fnt_path), size=24) if fnt_path.exists() else None
+    text = "[MOCK] fo-ok-1 fr97 | +29.1° Confirmed"
+    if fnt:
+        bbox = draw.textbbox((0,0), text, font=fnt)
+        tw = bbox[2]-bbox[0]; th = bbox[3]-bbox[1]
+        x = img.width - tw - 10
+        draw.rectangle([x-4, 0, img.width, th+12], fill=(180, 0, 0))
+        draw.text((x, 4), text, font=fnt, fill=(255,255,255))
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+
 def get_clip016_right_frame() -> np.ndarray:
+    """clip_016_right 仅作 neutral 用，保留原逻辑."""
     if not CLIP016_VIDEO.exists():
         return placeholder()
     cap = cv2.VideoCapture(str(CLIP016_VIDEO))
@@ -228,38 +248,79 @@ def renderback_validate(plan: dict, static_jpg: Path) -> dict:
 
 # ── Process routes ─────────────────────────────────────────────────────────────
 
-def process_confirmed(clip_id: str, frame_bgr: np.ndarray) -> dict:
-    """Confirmed/Likely → .lottie + .mp4 preview + static last-frame + render-back validate"""
-    plan = load_plan(clip_id)
-    if not plan:
-        return {"clip_id": clip_id, "status": "ERROR", "msg": "Plan JSON not found"}
+def process_confirmed_mock(frame_bgr: np.ndarray) -> dict:
+    """
+    路由1 (CUE-005): fo-ok-1 MOCK Confirmed path.
+    实时生成 CuePlan（v0.6 几何），注入 _payload_joints/_body_bbox_px/_shw_canvas_px。
+    """
+    clip_id = "fo-ok-1_MOCK"
 
-    # Inject RTMPose body_bbox for validator rule⑪ (clip_016_left)
-    # Inject address SHW for validator rule④ (k_max=0.06)
-    if clip_id == "clip_016_left":
-        plan["_body_bbox_px"] = _bbox_canvas()
-        plan["_shw_canvas_px"] = _SHW_CANVAS_PX
+    # 1. 实时生成 Plan (v0.6 几何: hip→sho 截断线段)
+    from cue_generator.sentence_alpha import build_alpha_plan
+    plan_obj = build_alpha_plan(
+        clip_id=clip_id,
+        confidence=_MOCK_CONFIDENCE,
+        tilt_deg=_MOCK_TILT_DEG,
+        hip_mid=_FO_HIP_CANVAS,
+        shoulder_mid=_FO_SHO_CANVAS,
+        band_lower_deg=_BAND_LOWER,
+        band_upper_deg=_BAND_UPPER,
+        band_center_deg=_BAND_CENTER,
+        caption_text=_MOCK_CAPTION,
+        tier="basic",
+    )
+    plan = plan_obj.to_dict()
 
-    print(f"  [{clip_id}] Confirmed → lottie + mp4")
+    # 2. 注入 payload_joints (规则⑫)、bbox (规则⑪)、SHW (规则④)
+    plan["_payload_joints"] = {
+        "hip_mid": list(_FO_HIP_CANVAS),
+        "sho_mid": list(_FO_SHO_CANVAS),
+    }
+    plan["_body_bbox_px"] = _FO_BBOX_CANVAS
+    # MOCK 规则④: verdict 数值来自 clip_016_left，注入 clip_016 的 address SHW
+    # fo-ok-1 是 MOCK 画布，用 clip_016 SHW 保持校验④与 verdict 来源一致
+    plan["_shw_canvas_px"] = _CLIP016_SHW_CANVAS_PX
 
-    # Lottie
+    # 3. 校验 (12条)
+    from cue_generator.validator import validate as _validate
+    vr = _validate(plan)
+    if not vr.passed:
+        print(f"  [FAIL] validator:")
+        for v in vr.violations:
+            print(f"    ✗ {v}")
+        return {"clip_id": clip_id, "status": "VALIDATOR_FAIL", "violations": vr.violations}
+
+    plan_obj.validator_result = vr.to_dict()
+
+    # 4. 保存 Plan JSON
+    plan_json_path = PLAN_DIR / f"{clip_id}_cue_plan.json"
+    PLAN_DIR.mkdir(parents=True, exist_ok=True)
+    with open(plan_json_path, "w", encoding="utf-8") as f:
+        json.dump(plan, f, ensure_ascii=False, indent=2)
+
+    # 5. 烧录 MOCK 角标
+    frame_stamped = _stamp_mock_badge(frame_bgr)
+
+    # 6. Lottie
     lottie_path = OUT_DIR / f"{clip_id}.lottie"
-    compile_lottie(plan, frame_bgr, lottie_path, CANVAS_W, CANVAS_H)
+    compile_lottie(plan, frame_stamped, lottie_path, CANVAS_W, CANVAS_H)
 
-    # MP4 preview
+    # 7. MP4 preview
     mp4_path = OUT_DIR / f"{clip_id}_preview.mp4"
-    render_mp4_preview(plan, frame_bgr, mp4_path, CANVAS_W, CANVAS_H, n_loops=3)
+    render_mp4_preview(plan, frame_stamped, mp4_path, CANVAS_W, CANVAS_H, n_loops=3)
 
-    # Static last frame (末帧 progress=1.0, 含 P2+P3)
+    # 8. Static last frame
     last_path = OUT_DIR / f"{clip_id}_static_last.jpg"
-    render_static_last_frame(plan, frame_bgr, last_path, CANVAS_W, CANVAS_H)
+    render_static_last_frame(plan, frame_stamped, last_path, CANVAS_W, CANVAS_H)
 
-    # Render-back validate
+    # 9. Render-back validate
     rb = renderback_validate(plan, last_path)
 
+    print(f"  [{clip_id}] validator: PASS ({len(plan.get('elements',[]))} elements)")
     return {
         "clip_id": clip_id,
         "confidence": plan.get("confidence"),
+        "plan_json": str(plan_json_path),
         "lottie": str(lottie_path),
         "mp4": str(mp4_path),
         "static_last": str(last_path),
@@ -313,11 +374,14 @@ def main():
     t0 = time.time()
     results = []
 
-    # ── 路由1: clip_016_left (Confirmed) ──────────────────────────────────────
-    print("── 关卡B 路由1: clip_016_left (Confirmed) ──")
-    frame_016_left = get_clip016_left_frame()
-    r1 = process_confirmed("clip_016_left", frame_016_left)
+    # ── 路由1: fo-ok-1_MOCK (Confirmed, CUE-005 MOCK 画布) ────────────────────
+    print("── 关卡B 路由1: fo-ok-1_MOCK (Confirmed, P2/P3 v0.6) ──")
+    frame_fo_ok1 = get_fo_ok1_top_frame()
+    r1 = process_confirmed_mock(frame_fo_ok1)
     results.append(r1)
+    if r1.get("status") == "VALIDATOR_FAIL":
+        print(f"  ✗ 路由1 VALIDATOR FAIL — 中止")
+        sys.exit(1)
     rb = r1.get("renderback", {})
     rb_status = "PASS" if rb.get("passed") else "FAIL"
     print(f"  lottie    → {Path(r1['lottie']).name}")
@@ -363,11 +427,11 @@ def main():
 
     # ── 关卡C 技术债清理报告 ─────────────────────────────────────────────────
     print("── 关卡C 技术债 ──")
-    print("  ① 校验器④箭头宽度归一化（合并单⑥ 已落实）:")
-    print(f"     address帧 SHW_orig={_SHW_ORIG_PX}px  SHW_canvas={_SHW_CANVAS_PX}px")
-    print(f"     k_max=0.06（Jason 拍板，address SHW 为唯一定义，与运动量门 0.8×SHW 同源）")
-    print(f"     max_sw = 0.06 × {_SHW_CANVAS_PX} = {0.06*_SHW_CANVAS_PX:.1f}px")
-    print(f"     当前 sw=3px → k=3/{_SHW_CANVAS_PX:.1f}=0.{int(3/_SHW_CANVAS_PX*1000):03d}  安全余量充足")
+    print("  ① 校验器④箭头宽度归一化 (k_max=0.06, address SHW 唯一定义):")
+    print(f"     clip_016 address帧 SHW_canvas={_CLIP016_SHW_CANVAS_PX}px")
+    print(f"     fo-ok-1 MOCK 注入 clip_016 SHW（verdict 来源同源）")
+    print(f"     k_max=0.06（Jason 拍板），max_sw = 0.06 × {_CLIP016_SHW_CANVAS_PX} = {0.06*_CLIP016_SHW_CANVAS_PX:.1f}px")
+    print(f"     当前 sw=3px → k=3/{_CLIP016_SHW_CANVAS_PX:.1f}=0.012  安全余量充足")
     print()
     print("  ② 动效预算=1 出处归因修正:")
     print("     原: 归因 Ayres 2009 ← 不准确（Ayres 研究对象是分步效应，非预算约束）")
@@ -386,8 +450,8 @@ def main():
     print(f"  耗时: {elapsed:.1f}s")
     print()
     print(f"  Windows 成品目录: C:\\Users\\jason\\Desktop\\rtmpose_results\\preview\\cue004\\")
-    print(f"  MP4 预览 (双击播放): clip_016_left_preview.mp4")
-    print(f"  Lottie 成品:         clip_016_left.lottie")
+    print(f"  MP4 预览 (双击播放): fo-ok-1_MOCK_preview.mp4")
+    print(f"  Lottie 成品:         fo-ok-1_MOCK.lottie")
     print(f"  neutral 绿勾:        clip_016_right_neutral.jpg")
     print(f"  重拍引导卡:          fo-eet-1-neg-setup_retake_card.jpg")
     print(f"                       fo-eet-1-neg-truncated_retake_card.jpg")

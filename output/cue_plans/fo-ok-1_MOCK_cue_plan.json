@@ -1,5 +1,5 @@
 {
-  "clip_id": "fo-ok-1_MOCK_clip016_verdict",
+  "clip_id": "fo-ok-1_MOCK",
   "fault_id": "reverse_pivot",
   "confidence": "Confirmed",
   "sentence_type_id": "alpha_angle",
@@ -10,12 +10,12 @@
       "anchor": {
         "source": "hip_mid",
         "coords_px": [
-          337.5,
-          689.9
+          349.1,
+          663.3
         ],
         "secondary_coords_px": [
-          502.8673848879545,
-          392.79344899133685
+          337.9,
+          518.4
         ]
       },
       "semantic_role": "current_state",
@@ -29,8 +29,10 @@
       "shape_params": {
         "type": "line",
         "tilt_deg": 29.1,
-        "line_len_px": 340.0274615923605,
-        "self_luminous": true
+        "line_len_px": 145.33220565311734,
+        "self_luminous": true,
+        "joint_dots": true,
+        "joint_dot_r": 8
       },
       "animation_track": null,
       "layer": "mid"
@@ -40,8 +42,8 @@
       "anchor": {
         "source": "hip_mid",
         "coords_px": [
-          337.5,
-          689.9
+          349.1,
+          663.3
         ],
         "secondary_coords_px": null
       },
@@ -57,7 +59,7 @@
         "type": "arc_arrow",
         "angle_from_deg": 29.1,
         "angle_to_deg": -6.8,
-        "radius_px": 340.0274615923605,
+        "radius_px": 87.19932339187041,
         "arrowhead": {
           "length_px": 14,
           "width_px": 8
@@ -88,9 +90,26 @@
   "coupling_reason": null,
   "static_downgrade_note": "静态降级: 弧箭头定格在 band_center 端点，加虚线圆弧辅助表达扫向方向",
   "schema_version": "cue_plan_v0.2",
-  "timestamp_utc": "2026-07-06T02:16:50.734148",
+  "timestamp_utc": "2026-07-06T05:21:31.563031",
   "validator_result": {
-    "passed": true,
+    "passed": false,
     "violations": []
-  }
+  },
+  "_payload_joints": {
+    "hip_mid": [
+      349.1,
+      663.3
+    ],
+    "sho_mid": [
+      337.9,
+      518.4
+    ]
+  },
+  "_body_bbox_px": [
+    266,
+    431,
+    393,
+    900
+  ],
+  "_shw_canvas_px": 254.4
 }
