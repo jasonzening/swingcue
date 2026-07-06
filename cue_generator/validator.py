@@ -235,6 +235,30 @@ def _rule8_animation_constraints(plan: dict) -> str | None:
     return None
 
 
+def _rule9_element_budget(plan: dict) -> str | None:
+    """
+    ⑨ 元素预算（法则10 极简至上）: basic 层 Plan 中 P1–P12 原语元素数 > 2 直接拒绝。
+    fault_view=full_body 时豁免（进阶视图）。
+    依据: Jason 裁决 2026-07-05，CUE_DESIGN_LANGUAGE 法则10
+    """
+    stype = plan.get("sentence_type_id", "")
+    if stype in ("neutral", "retake"):
+        return None  # 中性/重拍路径豁免
+    fault_view = plan.get("fault_view", "single")
+    if fault_view == "full_body":
+        return None  # 进阶视图豁免
+    elements = plan.get("elements", [])
+    # 只计 P1–P12 原语（排除 caption_badge，caption_badge 不在 elements 列表里）
+    prim_elements = [el for el in elements if el.get("primitive", "").startswith("P")]
+    if len(prim_elements) > 2:
+        primitives = [el.get("primitive") for el in prim_elements]
+        return (
+            f"规则⑨违规: basic 层元素数={len(prim_elements)} > 2 (原语: {primitives}); "
+            f"法则10极简至上 — 删除多余元素或切换 fault_view=full_body"
+        )
+    return None
+
+
 # ── public API ─────────────────────────────────────────────────────────────────
 
 RULES = [
@@ -246,12 +270,13 @@ RULES = [
     _rule6_p11_not_alone,
     _rule7_text_badge_only,
     _rule8_animation_constraints,
+    _rule9_element_budget,
 ]
 
 
 def validate(plan: dict) -> ValidationResult:
     """
-    Run all 8 rules against the Cue Plan dict.
+    Run all 9 rules against the Cue Plan dict.
     Returns ValidationResult(passed, violations).
     """
     violations = []

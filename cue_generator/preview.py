@@ -141,6 +141,8 @@ def render_preview(plan: CuePlan, frame_bgr: np.ndarray, out_path: Path) -> Path
     """
     Render engineering preview image from CuePlan.
     Draws all elements with semantic-role annotation tags.
+    v0.4: P2 red line + P3 arc arrow only (basic layer).
+          P3 anchor = sho_extended (red line tip), not sho_mid.
     Returns the saved file path.
     """
     out_path = Path(out_path)
@@ -216,8 +218,9 @@ def render_preview(plan: CuePlan, frame_bgr: np.ndarray, out_path: Path) -> Path
     # ── engineering header ────────────────────────────────────────────────────
     fnt_hdr = _font(16)
     if fnt_hdr:
-        hdr = (f"[PLAN PREVIEW] {plan.clip_id}  conf={plan.confidence}  "
-               f"fault={plan.fault_id}  type={plan.sentence_type_id}")
+        hdr = (f"[PLAN PREVIEW v0.4] {plan.clip_id}  conf={plan.confidence}  "
+               f"fault={plan.fault_id}  type={plan.sentence_type_id}  "
+               f"elements={len(plan.elements)}")
         draw2.rectangle([0, 0, w, 24], fill=(30,30,80))
         draw2.text((4, 4), hdr, font=fnt_hdr, fill=(220,220,255))
         # validator status

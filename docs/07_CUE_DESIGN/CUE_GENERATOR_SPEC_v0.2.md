@@ -1,8 +1,8 @@
 # CUE_GENERATOR_SPEC v0.2 — Cue 生成器规格
 
-**版本**: v0.3
+**版本**: v0.4
 **日期**: 2026-07-05
-**状态**: Jason 裁决修订稿（CUE-003 规格修订）
+**状态**: Jason 裁决修订稿（CUE-003 规格修订二）
 **任务**: CUE-003
 
 ---
@@ -115,22 +115,32 @@ CuePlan
 
 ## 4. 句型模板（已实现）
 
-### 句型 α — 角度类（Reverse Pivot 首例）
+### 句型 α — 角度类（Reverse Pivot 首例）— v0.4 改版
 
 **适用**：目标是「把某角度调入正确带」。
 
-**元素组合**：
+**basic 层（默认，校验⑨ ≤ 2元素）**：
 ```
-P1 正确区（绿色楔，band_lower→band_upper，锚:hip_mid）    [layer: bg]
-P7 正确形线（中心线，band_center 角度，锚:hip_mid）        [layer: bg]
-P2 现状线（自发光红线，tilt_deg 角度，锚:hip_mid→sho_mid）[layer: mid, STATIC]
-P3+P8 弧箭头（从 tilt_deg 扫向 band_center，锚:sho_mid） [layer: fg, ANIMATED]
+P2 现状线（红色，自发光，静止，锚:hip_mid→sho_mid）      [layer: mid, STATIC]
+P3 弧箭头（白色，起点=红线端点，扫向band_center方向）     [layer: fg, ANIMATED]
+```
+
+**v0.4 变更（Jason 裁决 2026-07-05）**：
+- P1 绿楔从 α 句型中**整体删除**（信号过载 + 违反法则3「禁用缺失式cue」）
+- P7 绿色正确形线**降为 intermediate 层**，basic 默认 `enabled=false`，须 Jason 专项授权开启
+- basic 层 Plan 仅 2 个元素（P2 + P3），触发校验⑨自动验证
+
+**intermediate 层（非默认，需授权）**：
+```
+P2 现状线（同 basic）                                     [layer: mid, STATIC]
+P7 正确形线（绿色 dashed，band_center 角度，锚:hip_mid）   [layer: bg, STATIC]
+P3 弧箭头（同 basic）                                     [layer: fg, ANIMATED]
 ```
 
 **文案徽章**：底部单行，外部焦点语言，≤ 30字。
 
 **置信门**：
-- Confirmed / Likely → 完整 Plan（全部元素 + 文案）
+- Confirmed / Likely → 完整 Plan（basic 元素 + 文案）
 - Possible / None → NeutralPlan（无纠错元素）
 - SILENT → RetakePlan（零诊断元素）
 
@@ -151,9 +161,23 @@ P3+P8 弧箭头（从 tilt_deg 扫向 band_center，锚:sho_mid） [layer: fg, A
 | ⑦ | 文字仅命名/裁决徽章：caption_badge.text 不含角度数字、百分比、置信分值 | — |
 | ⑧ | 动画三镣铐：有 animation_track 的元素须满足 1.5≤dur≤2.0，pause=0.5，loop=true，pauseable=true；δ句型须有 steps | _119（素人读法失败，时序类不分步） |
 
+| ⑨ | 元素预算：basic 层 Plan 中 P1–P12 原语元素数 > 2（caption_badge 除外）直接拒绝 | — （法则10 极简至上，Jason 裁决 2026-07-05） |
+
 详见 `cue_generator/validator.py` 实现。
 
 ---
+
+## 5.1 Schema 新增字段 — fault_view
+
+`fault_view` 字段声明 cue 视图层级，控制元素预算上限与渲染模式。
+
+| 值 | 说明 | 元素预算 | 校验⑨ | 本任务 |
+|----|------|---------|--------|--------|
+| `single` | 单一问题，默认路径 | ≤ 2 原语 | 启用 | ✅ 唯一实现 |
+| `linked_pair` | 两个运动学因果耦合问题；须声明 `coupling_reason` 字段描述因果关系（如 `"臀部侧滑导致肩面代偿过平"`） | 每问题 ≤ 2 原语 | 启用 | ❌ 待立项 |
+| `full_body` | 全身多问题叠加，进阶视图 | 无硬性上限 | 豁免 | ❌ 远期 |
+
+**默认值**: `single`。本任务 CUE-003 只实现 `single`，其余两个路径代码层面暂不实现。
 
 ## 6. 范围界定（本任务 CUE-003）
 
@@ -198,4 +222,4 @@ SAM2 mask → 人体二值掩码 → 背景 = frame * dim_factor
 
 ---
 
-*CUE_GENERATOR_SPEC v0.3 — v0.2 Jason 拍板 2026-07-05 / v0.3 Jason 裁决修订 2026-07-05（SAM2 降级 + Signaling Principle 元分析入库）*
+*CUE_GENERATOR_SPEC v0.4 — v0.2 Jason 拍板 2026-07-05 / v0.3 Jason 裁决修订 2026-07-05（SAM2 降级 + Signaling Principle 元分析入库）/ v0.4 Jason 裁决修订 2026-07-05（α句型basic层改版 + 校验⑨ + fault_view）*

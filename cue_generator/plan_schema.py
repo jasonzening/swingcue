@@ -65,8 +65,10 @@ class CuePlan:
     contrast_structure: str     # single_subject|side_by_side|sequential
     elements: list[CueElement]
     caption_badge: CaptionBadge
+    fault_view: str = "single"  # single|linked_pair|full_body (法则10; 本任务仅实现 single)
+    coupling_reason: str | None = None  # linked_pair 时必填，描述运动学因果关系
     static_downgrade_note: str | None = None
-    schema_version: str = "cue_plan_v0.1"
+    schema_version: str = "cue_plan_v0.2"
     timestamp_utc: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
     validator_result: dict = field(default_factory=lambda: {"passed": False, "violations": []})
 

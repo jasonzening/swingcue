@@ -2,6 +2,11 @@
 cue_generator/sentence_alpha.py
 角度类（α）句型 Cue Plan 构造器 — Reverse Pivot 首例实现。
 
+v0.4 改版（Jason 裁决 2026-07-05，法则10 极简至上）:
+  basic 层: 仅 P2 红色现状线（静止）+ P3 动画弧箭头，共2元素。
+  P1 绿楔整体删除（信号过载 + 违反法则3）。
+  P7 绿色正确形线降为 intermediate 层，basic 默认 enabled=False。
+
 职责: 从 verdict payload 坐标生成 CuePlan dataclass。
 无渲染代码，无测量逻辑，纯几何参数组装。
 """
@@ -15,7 +20,6 @@ from .plan_schema import (
 _BAND_CENTER_DEG = -6.8
 
 # Arrow geometry
-_WEDGE_RADIUS_PX  = 180
 _ARROW_RADIUS_PX  = 160
 _LINE_EXTEND_PX   = 200   # how far beyond shoulder_mid to extend the current-state line
 
@@ -40,9 +44,13 @@ def build_alpha_plan(
     band_upper_deg: float,
     band_center_deg: float = _BAND_CENTER_DEG,
     caption_text: str = "顶点时上半身倒向了球的方向——下一杆感觉胸口留在球的后面",
+    tier: str = "basic",          # "basic" | "intermediate" (须 Jason 专项授权)
 ) -> CuePlan:
     """
     Build α-sentence CuePlan for angle-class faults (Reverse Pivot).
+
+    v0.4 basic 层: 仅 P2 + P3，共2元素，校验⑨ ≤ 2 通过。
+    intermediate 层: P2 + P7 + P3，共3元素，校验⑨豁免需手动设 fault_view。
 
     Coordinate convention (face-on, image frame):
       - tilt_deg > 0 → shoulder tilted toward target (screen-right = LEFT in face-on)
@@ -87,59 +95,36 @@ def build_alpha_plan(
 
     elements: list[CueElement] = []
 
-    # ── bg layer ────────────────────────────────────────────────────────────────
+    # ── intermediate 层可选: P7 正确形线（basic 默认跳过）──────────────────────
+    if tier == "intermediate":
+        _WEDGE_RADIUS_PX = 180
+        tilt_rad_center = math.radians(band_center_deg)
+        p7_tip = (
+            hip[0] + _WEDGE_RADIUS_PX * math.sin(tilt_rad_center),
+            hip[1] - _WEDGE_RADIUS_PX * math.cos(tilt_rad_center),
+        )
+        elements.append(CueElement(
+            primitive="P7",
+            anchor=AnchorSpec(
+                source="hip_mid", coords_px=list(hip),
+                secondary_coords_px=list(p7_tip),
+            ),
+            semantic_role="correct_shape",
+            color=ColorSpec(
+                fill_hex="#00CC00", fill_alpha=0.0,
+                stroke_hex="#00CC00", stroke_alpha=0.70,
+                stroke_width_px=2,
+            ),
+            shape_params={
+                "type": "line",
+                "dash": [6, 4],
+                "band_center_deg": band_center_deg,
+            },
+            animation_track=None,
+            layer="bg",
+        ))
 
-    # P1 — 正确区 (green wedge, band_lower→band_upper)
-    elements.append(CueElement(
-        primitive="P1",
-        anchor=AnchorSpec(source="hip_mid", coords_px=list(hip)),
-        semantic_role="correct_zone",
-        color=ColorSpec(
-            fill_hex="#00B400", fill_alpha=0.20,
-            stroke_hex="#00B400", stroke_alpha=0.60,
-            stroke_width_px=2,
-        ),
-        shape_params={
-            "type": "wedge",
-            "angle_from_deg": band_lower_deg,
-            "angle_to_deg":   band_upper_deg,
-            "radius_px":      _WEDGE_RADIUS_PX,
-            "direction":      "from_anchor_vertical",
-        },
-        animation_track=None,
-        layer="bg",
-    ))
-
-    # P7 — 正确形线 (dashed green line at band_center)
-    tilt_rad_center = math.radians(band_center_deg)
-    p7_tip = (
-        hip[0] + _WEDGE_RADIUS_PX * math.sin(tilt_rad_center),
-        hip[1] - _WEDGE_RADIUS_PX * math.cos(tilt_rad_center),
-    )
-    elements.append(CueElement(
-        primitive="P7",
-        anchor=AnchorSpec(
-            source="hip_mid", coords_px=list(hip),
-            secondary_coords_px=list(p7_tip),
-        ),
-        semantic_role="correct_shape",
-        color=ColorSpec(
-            fill_hex="#00CC00", fill_alpha=0.0,
-            stroke_hex="#00CC00", stroke_alpha=0.70,
-            stroke_width_px=2,
-        ),
-        shape_params={
-            "type": "line",
-            "dash": [6, 4],
-            "band_center_deg": band_center_deg,
-        },
-        animation_track=None,
-        layer="bg",
-    ))
-
-    # ── mid layer ───────────────────────────────────────────────────────────────
-
-    # P2 — 现状线 (current-state line, static, colour by deviation)
+    # ── mid layer: P2 — 现状线（红色，自发光，静止）────────────────────────────
     elements.append(CueElement(
         primitive="P2",
         anchor=AnchorSpec(
@@ -157,16 +142,15 @@ def build_alpha_plan(
             "tilt_deg":   tilt_deg,
             "self_luminous": True,   # rendering hint: glow effect
         },
-        animation_track=None,   # STATIC —校验③安全
+        animation_track=None,   # STATIC — 校验③安全
         layer="mid",
     ))
 
-    # ── fg layer ────────────────────────────────────────────────────────────────
-
-    # P3+P8 — 弧箭头 ANIMATED (sweeps from tilt_deg toward band_center_deg)
+    # ── fg layer: P3 — 动画弧箭头（起点=红线端点，扫向 band_center）───────────
+    # P3 anchor: 红线端点（sho_extended），而非 sho_mid，保证箭头从红线末端出发
     elements.append(CueElement(
         primitive="P3",
-        anchor=AnchorSpec(source="shoulder_mid", coords_px=list(sho)),
+        anchor=AnchorSpec(source="sho_extended", coords_px=list(sho_extended)),
         semantic_role="direction_instruction",
         color=ColorSpec(
             fill_hex="#FFFFFF", fill_alpha=1.0,
@@ -203,6 +187,7 @@ def build_alpha_plan(
         contrast_structure="single_subject",
         elements=elements,
         caption_badge=caption,
+        fault_view="single",
         static_downgrade_note=(
             "静态降级: 弧箭头定格在 band_center 端点，"
             "加虚线圆弧辅助表达扫向方向"

@@ -13,9 +13,11 @@
     "color_hex": "#FFFFFF",
     "outline_hex": "#141414"
   },
+  "fault_view": "single",
+  "coupling_reason": null,
   "static_downgrade_note": null,
-  "schema_version": "cue_plan_v0.1",
-  "timestamp_utc": "2026-07-06T00:25:46.027697",
+  "schema_version": "cue_plan_v0.2",
+  "timestamp_utc": "2026-07-06T00:57:13.538957",
   "validator_result": {
     "passed": true,
     "violations": []
