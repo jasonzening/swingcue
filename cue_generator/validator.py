@@ -237,11 +237,8 @@ def _rule8_animation_constraints(plan: dict) -> str | None:
 
 def _rule10_angle_coord_consistency(plan: dict) -> str | None:
     """
-    ⑩ MOCK 几何一致性（CUE-004 修正①）:
+    ⑩a MOCK 几何一致性（CUE-004 修正①）:
        P2 shape_params.tilt_deg 须与 anchor coords 反算角度一致，容差 ±1°。
-       反算公式（face-on image frame, Y-down, tilt=0=vertical=up）:
-         tilt_actual = atan2(tip_x - hip_x, -(tip_y - hip_y))  单位 deg
-       目的: 防止 MOCK 模式 verdict 数值与坐标不一致，确保渲染忠实传达诊断意图。
     """
     import math
     stype = plan.get("sentence_type_id", "")
@@ -253,7 +250,7 @@ def _rule10_angle_coord_consistency(plan: dict) -> str | None:
         sp = el.get("shape_params", {})
         stated_tilt = sp.get("tilt_deg")
         if stated_tilt is None:
-            continue  # 无声明角度则豁免
+            continue
         anc = el.get("anchor", {})
         hip = anc.get("coords_px")
         tip = anc.get("secondary_coords_px")
@@ -267,9 +264,44 @@ def _rule10_angle_coord_consistency(plan: dict) -> str | None:
         diff = abs(actual_tilt - stated_tilt)
         if diff > 1.0:
             return (
-                f"规则⑩违规: P2 shape_params.tilt_deg={stated_tilt:.2f}° "
+                f"规则⑩a违规: P2 shape_params.tilt_deg={stated_tilt:.2f}° "
                 f"与坐标反算角度={actual_tilt:.2f}° 偏差={diff:.2f}° > ±1° 容差 "
                 f"(CUE-004 修正①: JSON coords 与 tilt_deg 必须一致)"
+            )
+    return None
+
+
+def _rule10b_anchor_in_body_bbox(plan: dict) -> str | None:
+    """
+    ⑩b 锚点在人体 bbox 内（CUE-004 修正二轮②）:
+       P2/P3 anchor.coords_px 须在 _body_bbox_px [x1,y1,x2,y2] 范围内。
+       _body_bbox_px 由调用方注入（run_cue004/run_cue_generator 从 RTMPose 结果计算）。
+       若 _body_bbox_px 不存在则豁免（MOCK/placeholder 路径）。
+    """
+    stype = plan.get("sentence_type_id", "")
+    if stype in ("neutral", "retake"):
+        return None
+    bbox = plan.get("_body_bbox_px")
+    if bbox is None:
+        return None   # 无 bbox 信息则豁免
+    x1, y1, x2, y2 = bbox
+    # 允许 10% 宽高的容差（锚点可落在关节点附近，略超体表）
+    dx = (x2 - x1) * 0.10
+    dy = (y2 - y1) * 0.10
+    for el in plan.get("elements", []):
+        prim = el.get("primitive", "")
+        if prim not in ("P2", "P3"):
+            continue
+        anc = el.get("anchor", {})
+        pt  = anc.get("coords_px")
+        if pt is None:
+            continue
+        px, py = pt[0], pt[1]
+        if not (x1 - dx <= px <= x2 + dx and y1 - dy <= py <= y2 + dy):
+            return (
+                f"规则⑩b违规: {prim} anchor.coords_px=({px:.1f},{py:.1f}) "
+                f"超出人体 bbox [({x1:.0f},{y1:.0f})→({x2:.0f},{y2:.0f})] ±10% 容差 "
+                f"(CUE-004 修正二轮②: 锚点须在人体 bbox 内)"
             )
     return None
 
@@ -311,12 +343,13 @@ RULES = [
     _rule8_animation_constraints,
     _rule9_element_budget,
     _rule10_angle_coord_consistency,
+    _rule10b_anchor_in_body_bbox,
 ]
 
 
 def validate(plan: dict) -> ValidationResult:
     """
-    Run all 10 rules against the Cue Plan dict.
+    Run all 11 rules against the Cue Plan dict.
     Returns ValidationResult(passed, violations).
     """
     violations = []

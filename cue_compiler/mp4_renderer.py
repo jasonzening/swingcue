@@ -312,9 +312,9 @@ def render_mp4_preview(
     return out_mp4
 
 
-# ── Static first-frame export (for static_downgrade verification) ─────────────
+# ── Static last-frame export (CUE-004 修正二轮③) ─────────────────────────────
 
-def render_static_first_frame(
+def render_static_last_frame(
     plan: dict,
     frame_bgr: "np.ndarray",
     out_jpg: Path,
@@ -322,9 +322,11 @@ def render_static_first_frame(
     canvas_h: int = 1280,
 ) -> Path:
     """
-    Export the first frame of the animation (progress=0 for P3).
-    Used to verify static_downgrade_note: arc should be at start position.
-    Includes P2 (static) + arrowhead stub at a_from position.
+    Export the last frame of the animation (progress=1.0 for P3).
+    CUE-004 修正二轮③: 静态降级 = 动画末帧 (P3 完全展开 + 箭头头部)
+    + 虚线弧辅助线表达「扫完」语义。
+
+    校验要求: 图中必须同时含 P2 (红线) 和 P3 (白弧/箭头)。
     """
     out_jpg = Path(out_jpg)
     bg = cv2.resize(frame_bgr, (canvas_w, canvas_h))
@@ -339,16 +341,25 @@ def render_static_first_frame(
         p3 = next((e for e in elements if e["primitive"] == "P3"), None)
         if p2:
             _draw_p2(canvas, p2)
-        # first frame: draw minimal arc stub (5% progress) to show position
         if p3:
-            _draw_p3(canvas, p3, 0.05)
+            # 末帧: progress=1.0 (完全展开)
+            _draw_p3(canvas, p3, 1.0)
+            # 加虚线圆弧辅助线 (浅色，指示已扫过的轨迹)
+            sp = p3["shape_params"]
+            cx, cy = p3["anchor"]["coords_px"]
+            r      = sp.get("radius_px", 160)
+            a_from = sp.get("angle_from_deg", 29.1)
+            a_to   = sp.get("angle_to_deg", -6.8)
+            pts = _arc_pts(cx, cy, r, a_from, a_to, n=64)
+            for i in range(0, len(pts)-1, 2):  # draw every other segment = dashed
+                cv2.line(canvas, pts[i], pts[i+1], (180, 180, 180), 1, cv2.LINE_AA)
 
     caption = plan.get("caption_badge", {}).get("text", "")
     if caption and stype == "alpha_angle":
         canvas = _draw_caption(canvas, caption, header_reserve_px=_HEADER_H)
 
     # header
-    _draw_header(canvas, f"{plan.get('clip_id','?')} STATIC DOWNGRADE fr0")
+    _draw_header(canvas, f"{plan.get('clip_id','?')} STATIC LAST (末帧降级)")
 
     out_jpg.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out_jpg), canvas, [cv2.IMWRITE_JPEG_QUALITY, 90])

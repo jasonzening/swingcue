@@ -90,18 +90,33 @@ def render_silent_card(
     canvas_w: int = 720,
     canvas_h: int = 1280,
     clip_id: str = "",
+    silent_type: str = "no_swing",   # "no_swing" | "truncated"
 ) -> Path:
     """
-    SILENT 路由: 图形化引导重拍卡。
+    SILENT 路由: 图形化引导重拍卡。CUE-004 修正二轮⑤: 按病因分型。
+    silent_type:
+      "no_swing"  — 检测到挥杆振幅不足 / 无完整挥杆（neg-setup 型）
+      "truncated" — 检测到截断型，上杆顶点前视频已结束（neg-truncated 型）
     替换 CUE-001 黑屏问号图。
-    包含:
-      - 深灰背景（非纯黑）
-      - 相机取景框线框示意（圆角矩形）
-      - 简化人形站位示意（头 + 躯干 + 腿）
-      - 引导文案（一句话，中文）
     """
     out_jpg = Path(out_jpg)
     out_jpg.parent.mkdir(parents=True, exist_ok=True)
+
+    # ── 病因分型文案 ────────────────────────────────────────────────────────────
+    if silent_type == "truncated":
+        title_text = "录制太短，重新来一次"
+        instructions = [
+            "拍到起杆、上杆、击球全过程",
+            "视频至少包含完整挥杆一次",
+        ]
+        vf_color = (80, 160, 255)   # 蓝色取景框（信息提示）
+    else:   # no_swing (default)
+        title_text = "请重新录制"
+        instructions = [
+            "正面站立，完整挥杆",
+            "确保全身在取景框内",
+        ]
+        vf_color = (80, 180, 255)   # 原蓝色
 
     # Deep grey background
     bg = np.full((canvas_h, canvas_w, 3), (35, 35, 40), dtype=np.uint8)
@@ -196,19 +211,14 @@ def render_silent_card(
                   (vf_x1-55, canvas_h//2+8)], fill=arrow_color)
 
     # ── Title ─────────────────────────────────────────────────────────────────
-    title = "请重新录制"
     if fnt_title:
-        tb = draw.textbbox((0,0), title, font=fnt_title)
+        tb = draw.textbbox((0,0), title_text, font=fnt_title)
         tw = tb[2]-tb[0]
         tx = (canvas_w - tw) // 2
         ty = vf_y1 + 22
-        draw.text((tx, ty), title, font=fnt_title, fill=(255, 220, 80))
+        draw.text((tx, ty), title_text, font=fnt_title, fill=(255, 220, 80))
 
     # ── Instruction text ──────────────────────────────────────────────────────
-    instructions = [
-        "正面站立，完整挥杆",
-        "确保全身在取景框内",
-    ]
     if fnt_body:
         iy = vf_y1 + 80
         for line in instructions:

@@ -34,7 +34,7 @@ from cue_compiler import (
     compile_lottie, render_mp4_preview,
     render_neutral_frame, render_silent_card,
 )
-from cue_compiler.mp4_renderer import render_static_first_frame
+from cue_compiler.mp4_renderer import render_static_last_frame
 
 # ── I/O dirs ──────────────────────────────────────────────────────────────────
 OUT_DIR  = PROJ / "output" / "cue004"
@@ -53,6 +53,28 @@ FO_OK1_VIDEO        = Path("/mnt/c/Users/jason/Zening/Swingcue/Video/fo-ok-1.mp4
 
 CANVAS_W = 720
 CANVAS_H = 1280
+
+# ── clip_016 RTMPose top-frame measurements (CUE-004 修正二轮 ①②) ─────────────
+# top 帧 fr=93 (NF=148, FPS=23.8) — wrist_y 最小帧 = 上杆顶点
+# 锚点来源: RTMPose fr93 左半 540×1920 原始坐标
+# Canvas scale: 720/540=1.333, 1280/1920=0.667
+_TOP_FR        = 93
+_ORIG_W, _ORIG_H = 540, 1920
+_HIP_RAW  = (220.2, 1013.0)
+_SHO_RAW  = (399.4, 691.4)
+_BBOX_RAW = (170.0, 607.0, 548.0, 1558.0)
+
+
+def _scale(pt, canvas_w=CANVAS_W, canvas_h=CANVAS_H,
+           orig_w=_ORIG_W, orig_h=_ORIG_H):
+    return (pt[0] * canvas_w / orig_w, pt[1] * canvas_h / orig_h)
+
+
+def _hip_canvas():  return _scale(_HIP_RAW)
+def _sho_canvas():  return _scale(_SHO_RAW)
+def _bbox_canvas():
+    sx = CANVAS_W / _ORIG_W; sy = CANVAS_H / _ORIG_H
+    return [_BBOX_RAW[0]*sx, _BBOX_RAW[1]*sy, _BBOX_RAW[2]*sx, _BBOX_RAW[3]*sy]
 
 
 # ── Frame loaders ─────────────────────────────────────────────────────────────
@@ -85,17 +107,20 @@ def load_plan(clip_id: str) -> dict:
 # ── clip_016_left frame ───────────────────────────────────────────────────────
 
 def get_clip016_left_frame() -> np.ndarray:
+    """Load top frame (fr93) left half — RTMPose-confirmed top frame."""
     if not CLIP016_VIDEO.exists():
         print("  [warn] clip_016 video not found, using placeholder")
         return placeholder()
     cap = cv2.VideoCapture(str(CLIP016_VIDEO))
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    NF = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
     half = W // 2
-    est_fr = int(NF * 0.55)
-    fr = grab_frame(CLIP016_VIDEO, est_fr, x_crop=(0, half))
-    return fr if fr is not None else placeholder(half)
+    fr = grab_frame(CLIP016_VIDEO, _TOP_FR, x_crop=(0, half))
+    if fr is None:
+        print(f"  [warn] cannot read fr{_TOP_FR}, using placeholder")
+        return placeholder(half)
+    print(f"  [clip_016_left] 嵌入帧: fr{_TOP_FR} (RTMPose top帧, wrist_y最小)")
+    return fr
 
 
 def get_clip016_right_frame() -> np.ndarray:
@@ -115,11 +140,12 @@ def get_clip016_right_frame() -> np.ndarray:
 
 def renderback_validate(plan: dict, static_jpg: Path) -> dict:
     """
-    回灌校验：读取 static_fr0.jpg，验证：
+    回灌校验：读取 static_last.jpg（末帧），验证：
     1. 元素数: Plan elements ≤ 2（与 Plan JSON 一致）
-    2. 色极性: 画面中红色像素 > 阈值（P2）且白色区域存在（P3）
-    3. 灰度自明: 灰度图中两元素在位置/形状上可区分
-    返回 dict: {passed: bool, checks: [...]}
+    2. 色极性: 画面中红色像素 > 阈值（P2 红线必须存在）
+    3. 色极性: 白色区域存在（P3 弧箭头完全展开后必须可见）
+    4. 灰度自明: 灰度图中两元素在位置/形状上可区分
+    CUE-004 修正二轮③: 校验图为末帧，须同时含 P2/P3 元素（threshold 相应调整）
     """
     checks = []
 
@@ -196,10 +222,14 @@ def renderback_validate(plan: dict, static_jpg: Path) -> dict:
 # ── Process routes ─────────────────────────────────────────────────────────────
 
 def process_confirmed(clip_id: str, frame_bgr: np.ndarray) -> dict:
-    """Confirmed/Likely → .lottie + .mp4 preview + static fr0 + render-back validate"""
+    """Confirmed/Likely → .lottie + .mp4 preview + static last-frame + render-back validate"""
     plan = load_plan(clip_id)
     if not plan:
         return {"clip_id": clip_id, "status": "ERROR", "msg": "Plan JSON not found"}
+
+    # Inject RTMPose body_bbox for validator rule⑩b (clip_016_left)
+    if clip_id == "clip_016_left":
+        plan["_body_bbox_px"] = _bbox_canvas()
 
     print(f"  [{clip_id}] Confirmed → lottie + mp4")
 
@@ -211,19 +241,19 @@ def process_confirmed(clip_id: str, frame_bgr: np.ndarray) -> dict:
     mp4_path = OUT_DIR / f"{clip_id}_preview.mp4"
     render_mp4_preview(plan, frame_bgr, mp4_path, CANVAS_W, CANVAS_H, n_loops=3)
 
-    # Static first frame
-    fr0_path = OUT_DIR / f"{clip_id}_static_fr0.jpg"
-    render_static_first_frame(plan, frame_bgr, fr0_path, CANVAS_W, CANVAS_H)
+    # Static last frame (末帧 progress=1.0, 含 P2+P3)
+    last_path = OUT_DIR / f"{clip_id}_static_last.jpg"
+    render_static_last_frame(plan, frame_bgr, last_path, CANVAS_W, CANVAS_H)
 
     # Render-back validate
-    rb = renderback_validate(plan, fr0_path)
+    rb = renderback_validate(plan, last_path)
 
     return {
         "clip_id": clip_id,
         "confidence": plan.get("confidence"),
         "lottie": str(lottie_path),
         "mp4": str(mp4_path),
-        "static_fr0": str(fr0_path),
+        "static_last": str(last_path),
         "renderback": rb,
     }
 
@@ -246,12 +276,14 @@ def process_neutral(clip_id: str, frame_bgr: np.ndarray) -> dict:
     }
 
 
-def process_silent(clip_id: str, neg_video: Path) -> dict:
-    """SILENT → graphical retake guidance card (replaces CUE-001 black-screen)"""
-    print(f"  [{clip_id}] SILENT → retake guidance card")
+def process_silent(clip_id: str, neg_video: Path,
+                   silent_type: str = "no_swing") -> dict:
+    """SILENT → graphical retake guidance card (分型: no_swing / truncated)"""
+    print(f"  [{clip_id}] SILENT({silent_type}) → retake guidance card")
 
     out_jpg = OUT_DIR / f"{clip_id}_retake_card.jpg"
-    render_silent_card(out_jpg, CANVAS_W, CANVAS_H, clip_id=clip_id)
+    render_silent_card(out_jpg, CANVAS_W, CANVAS_H,
+                       clip_id=clip_id, silent_type=silent_type)
 
     return {
         "clip_id": clip_id,
@@ -281,7 +313,7 @@ def main():
     rb_status = "PASS" if rb.get("passed") else "FAIL"
     print(f"  lottie    → {Path(r1['lottie']).name}")
     print(f"  mp4       → {Path(r1['mp4']).name}")
-    print(f"  static_fr0→ {Path(r1['static_fr0']).name}")
+    print(f"  static_last→ {Path(r1['static_last']).name}")
     print(f"  renderback→ {rb_status}")
     for ch in rb.get("checks", []):
         mark = "✓" if ch["pass"] else "✗"
@@ -298,14 +330,14 @@ def main():
 
     # ── 路由3: neg-setup (SILENT) ─────────────────────────────────────────────
     print("── 关卡B 路由3: fo-eet-1-neg-setup (SILENT) ──")
-    r3 = process_silent("fo-eet-1-neg-setup", NEG_SETUP_VIDEO)
+    r3 = process_silent("fo-eet-1-neg-setup", NEG_SETUP_VIDEO, silent_type="no_swing")
     results.append(r3)
     print(f"  retake card → {Path(r3['retake_card']).name}")
     print()
 
     # ── 路由4: neg-truncated (SILENT) ────────────────────────────────────────
     print("── 关卡B 路由4: fo-eet-1-neg-truncated (SILENT) ──")
-    r4 = process_silent("fo-eet-1-neg-truncated", NEG_TRUNC_VIDEO)
+    r4 = process_silent("fo-eet-1-neg-truncated", NEG_TRUNC_VIDEO, silent_type="truncated")
     results.append(r4)
     print(f"  retake card → {Path(r4['retake_card']).name}")
     print()
