@@ -64,6 +64,13 @@ _HIP_RAW  = (220.2, 1013.0)
 _SHO_RAW  = (399.4, 691.4)
 _BBOX_RAW = (170.0, 607.0, 548.0, 1558.0)
 
+# address 帧肩宽 SHW（合并单⑥: k_max=0.06 定版）
+# RTMPose fr0 clip_016_left 540×1920 实测:
+#   sho_L=(393.7,720.0) sho_R=(205.6,751.8) → SHW_orig=190.8px
+#   SHW_canvas = 190.8 × 720/540 = 254.4px
+_SHW_ORIG_PX   = 190.8
+_SHW_CANVAS_PX = 254.4   # 注入 _shw_canvas_px 给校验器④
+
 
 def _scale(pt, canvas_w=CANVAS_W, canvas_h=CANVAS_H,
            orig_w=_ORIG_W, orig_h=_ORIG_H):
@@ -227,9 +234,11 @@ def process_confirmed(clip_id: str, frame_bgr: np.ndarray) -> dict:
     if not plan:
         return {"clip_id": clip_id, "status": "ERROR", "msg": "Plan JSON not found"}
 
-    # Inject RTMPose body_bbox for validator rule⑩b (clip_016_left)
+    # Inject RTMPose body_bbox for validator rule⑪ (clip_016_left)
+    # Inject address SHW for validator rule④ (k_max=0.06)
     if clip_id == "clip_016_left":
         plan["_body_bbox_px"] = _bbox_canvas()
+        plan["_shw_canvas_px"] = _SHW_CANVAS_PX
 
     print(f"  [{clip_id}] Confirmed → lottie + mp4")
 
@@ -354,13 +363,11 @@ def main():
 
     # ── 关卡C 技术债清理报告 ─────────────────────────────────────────────────
     print("── 关卡C 技术债 ──")
-    print("  ① 校验器④箭头宽度阈值归一化分析:")
-    print("     样本肩宽: fo-ok-1 fr76=40.3px; fo-ok-2 fr65=50.2px")
-    print("     均值肩宽: ~45px (720px wide 竖屏面向机位)")
-    print("     当前 sw=3px → k=3/45=0.067")
-    print("     旧绝对阈值 ≤6px 等效 k_max=6/40=0.15 (最窄肩宽处)")
-    print("     建议报 Jason 拍板: k_max=0.15 (sw≤k×shw)")
-    print("     → 已在 validator.py _rule4 注释中标注，待 Jason 拍板后改代码")
+    print("  ① 校验器④箭头宽度归一化（合并单⑥ 已落实）:")
+    print(f"     address帧 SHW_orig={_SHW_ORIG_PX}px  SHW_canvas={_SHW_CANVAS_PX}px")
+    print(f"     k_max=0.06（Jason 拍板，address SHW 为唯一定义，与运动量门 0.8×SHW 同源）")
+    print(f"     max_sw = 0.06 × {_SHW_CANVAS_PX} = {0.06*_SHW_CANVAS_PX:.1f}px")
+    print(f"     当前 sw=3px → k=3/{_SHW_CANVAS_PX:.1f}=0.{int(3/_SHW_CANVAS_PX*1000):03d}  安全余量充足")
     print()
     print("  ② 动效预算=1 出处归因修正:")
     print("     原: 归因 Ayres 2009 ← 不准确（Ayres 研究对象是分步效应，非预算约束）")

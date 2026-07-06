@@ -163,7 +163,7 @@ P3 弧箭头（同 basic）                                     [layer: fg, ANIM
 | ① | 色极性=指令极性：绿=正确/目标，红=错误/现状，白/亮=指令箭头 | _188（原作者正确侧用红） |
 | ② | 现状+指令成对：有 current_state 必有 direction_instruction，反之亦然 | _190（纯指令无现状） |
 | ③ | 动效预算=1：animation_track 非 null 的元素最多 1 个 | — |
-| ④ | 箭头细窄不遮身体：stroke_width_px ≤ 6（绝对值临时阈值）；箭头路径与人体 bbox 中心区重叠比 ≤ 0.25 | _187（大箭头遮躯干）、_190（箭头遮挡超标）；**⚠ 待 Jason 拍板：归一化改为 sw ≤ k×shw，k_max=0.15（样本反推：720px竖屏面向机位，shw≈40-50px，sw=3px→k=0.07 远低于上限），代码层待确认后更新** |
+| ④ | 箭头细窄不遮身体：stroke_width_px ≤ k_max × SHW_canvas；k_max=**0.06**（Jason 拍板 2026-07-05，address 帧肩宽为唯一定义，与运动量门 0.8×SHW 同源）；_shw_canvas_px 须由调用方注入，否则回退绝对阈值 ≤ 15px；箭头路径与人体 bbox 中心区重叠比 ≤ 0.25 | _187（大箭头遮躯干）、_190（箭头遮挡超标）；clip_016_left 实测 SHW_canvas=254.4px → max_sw=15.3px，当前 sw=3px 安全 |
 | ⑤ | 灰度自明：所有元素须在灰度图中通过位置/形状仍可区分（不依赖颜色作唯一信息） | _188（色彩失误图） |
 | ⑥ | P11 不得单独成图：P11 注意圈必须与至少一个其他原语共存 | _117（仅圈无结论） |
 | ⑦ | 文字仅命名/裁决徽章：caption_badge.text 不含角度数字、百分比、置信分值 | — |
@@ -265,6 +265,16 @@ P3 arc:
   angle_to   = band_center_deg      (扫向正确带中心 -6.8°)
 ```
 
+### 8.4 校验器规则⑪ — 锚点在人体 bbox 内（合并单③）
+
+```
+规则⑪: P2/P3 anchor.coords_px 须在 _body_bbox_px [x1,y1,x2,y2] 范围内，±10% 容差
+_body_bbox_px 由调用方注入（来自 RTMPose 检测器输出，canvas 坐标）。
+若 _body_bbox_px 未注入则豁免（MOCK/placeholder 路径）。
+目的: 阻断锚点落在草地/背景的情形（v0.2 旧版比例估算缺陷的机器防线）
+实现: validator._rule11_anchor_in_body_bbox
+```
+
 ---
 
-*CUE_GENERATOR_SPEC v0.6 — v0.2 Jason 拍板 2026-07-05 / v0.3 SAM2降级 + Signaling Principle / v0.4 α句型basic层改版 + 校验⑨ + fault_view / v0.5 CUE-004关卡C 动效预算归因修正(Ayres→法则4+Treisman 1988) + 校验④归一化标注(k=0.15待拍板) / v0.6 CUE-004修正①②③: MOCK语义定死 + P2/P3几何重定义 + 校验⑩ + 溢出防护*
+*CUE_GENERATOR_SPEC v0.7 — v0.2 Jason 拍板 2026-07-05 / v0.3 SAM2降级 + Signaling Principle / v0.4 α句型basic层改版 + 校验⑨ + fault_view / v0.5 CUE-004关卡C 动效预算归因修正(Ayres→法则4+Treisman 1988) + 校验④归一化标注(k=0.15待拍板) / v0.6 CUE-004修正①②③: MOCK语义定死 + P2/P3几何重定义 + 校验⑩ + 溢出防护 / v0.7 合并单: 校验④ k_max=0.06 定版(address SHW唯一定义) + 校验⑪新增(锚点bbox) + truncated文案修正*

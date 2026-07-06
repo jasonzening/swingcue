@@ -104,10 +104,10 @@ def render_silent_card(
 
     # ── 病因分型文案 ────────────────────────────────────────────────────────────
     if silent_type == "truncated":
-        title_text = "录制太短，重新来一次"
+        title_text = "请拍摄完整挥杆"
         instructions = [
+            "勿提前停止录制",
             "拍到起杆、上杆、击球全过程",
-            "视频至少包含完整挥杆一次",
         ]
         vf_color = (80, 160, 255)   # 蓝色取景框（信息提示）
     else:   # no_swing (default)

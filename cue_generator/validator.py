@@ -107,21 +107,36 @@ def _rule3_animation_budget(plan: dict) -> str | None:
 
 def _rule4_arrow_width_and_overlap(plan: dict) -> str | None:
     """
-    ④ 箭头细窄不遮身体：stroke_width_px ≤ 6；
+    ④ 箭头细窄不遮身体：stroke_width_px ≤ k_max × SHW_canvas（address帧肩宽）
+       k_max = 0.06（Jason 拍板 2026-07-05，address SHW 为唯一定义，与运动量门同源）
+       若 _shw_canvas_px 未注入，回退绝对阈值 ≤ 15px（对应约 250px 典型肩宽）
        箭头路径与人体 bbox 中心区重叠比 ≤ 0.25
     反例: _187 (Image_20260705144253_187_1.jpg) 大箭头遮躯干
           _190 (Image_20260705144256_190_1.jpg) 箭头遮挡超标
     """
+    K_MAX = 0.06  # Jason 拍板: address-frame SHW 归一化系数
     ARROW_PRIMITIVES = {"P3", "P8"}
     body_bbox = plan.get("_body_bbox_px")  # [x1,y1,x2,y2] 如有
+    shw = plan.get("_shw_canvas_px")       # address帧肩宽（canvas坐标）
+
     for el in plan.get("elements", []):
         if el.get("primitive") not in ARROW_PRIMITIVES:
             continue
         color = el.get("color", {})
         sw = color.get("stroke_width_px", 0)
-        if sw > 6:
-            return (f"规则④违规: {el.get('primitive')} stroke_width_px={sw} > 6 "
-                    f"(参考反例 _187/_190)")
+
+        if shw is not None and shw > 0:
+            max_sw = K_MAX * shw
+            if sw > max_sw:
+                return (f"规则④违规: {el.get('primitive')} stroke_width_px={sw:.1f} > "
+                        f"k_max×SHW={K_MAX}×{shw:.1f}={max_sw:.1f}px "
+                        f"(参考反例 _187/_190)")
+        else:
+            # 回退绝对阈值（未注入 SHW 时）
+            if sw > 15:
+                return (f"规则④违规: {el.get('primitive')} stroke_width_px={sw} > 15 "
+                        f"(SHW 未注入，回退绝对阈值; 参考反例 _187/_190)")
+
         # overlap check (if body_bbox provided)
         if body_bbox and el.get("shape_params", {}).get("overlap_ratio") is not None:
             ratio = el["shape_params"]["overlap_ratio"]
@@ -271,9 +286,9 @@ def _rule10_angle_coord_consistency(plan: dict) -> str | None:
     return None
 
 
-def _rule10b_anchor_in_body_bbox(plan: dict) -> str | None:
+def _rule11_anchor_in_body_bbox(plan: dict) -> str | None:
     """
-    ⑩b 锚点在人体 bbox 内（CUE-004 修正二轮②）:
+    ⑪ 锚点在人体 bbox 内（CUE-004 合并单修正 2026-07-05）:
        P2/P3 anchor.coords_px 须在 _body_bbox_px [x1,y1,x2,y2] 范围内。
        _body_bbox_px 由调用方注入（run_cue004/run_cue_generator 从 RTMPose 结果计算）。
        若 _body_bbox_px 不存在则豁免（MOCK/placeholder 路径）。
@@ -299,9 +314,9 @@ def _rule10b_anchor_in_body_bbox(plan: dict) -> str | None:
         px, py = pt[0], pt[1]
         if not (x1 - dx <= px <= x2 + dx and y1 - dy <= py <= y2 + dy):
             return (
-                f"规则⑩b违规: {prim} anchor.coords_px=({px:.1f},{py:.1f}) "
+                f"规则⑪违规: {prim} anchor.coords_px=({px:.1f},{py:.1f}) "
                 f"超出人体 bbox [({x1:.0f},{y1:.0f})→({x2:.0f},{y2:.0f})] ±10% 容差 "
-                f"(CUE-004 修正二轮②: 锚点须在人体 bbox 内)"
+                f"(CUE-004 合并单③: 锚点须在人体 bbox 内)"
             )
     return None
 
@@ -343,7 +358,7 @@ RULES = [
     _rule8_animation_constraints,
     _rule9_element_budget,
     _rule10_angle_coord_consistency,
-    _rule10b_anchor_in_body_bbox,
+    _rule11_anchor_in_body_bbox,
 ]
 
 

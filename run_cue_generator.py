@@ -86,6 +86,9 @@ _CLIP016_HIP_MID_RAW = (220.2, 1013.0)
 _CLIP016_SHO_MID_RAW = (399.4, 691.4)
 _CLIP016_BODY_BBOX   = (170, 607, 548, 1558)  # x1,y1,x2,y2 in orig coords
 _CLIP016_TILT_DEG    = 29.1  # GT from flywheel baseline (actual=29.14°)
+# address帧肩宽 (合并单⑥, k_max=0.06 定版)
+# RTMPose fr0 clip_016_left 实测: SHW_orig=190.8px → SHW_canvas=254.4px
+_CLIP016_SHW_CANVAS  = 254.4
 
 
 def _scale_pt(pt, orig_w, orig_h, canvas_w, canvas_h):
@@ -144,7 +147,8 @@ def make_clip016_geometry(side: str, tilt_gt: float, canvas_w=720, canvas_h=1280
         bbox = None
 
     return dict(frame_bgr=frame_bgr, hip_mid=hip_mid, shoulder_mid=sho_mid,
-                body_bbox=bbox)
+                body_bbox=bbox,
+                shw_canvas_px=_CLIP016_SHW_CANVAS if side == "left" else None)
 
 
 # ── negative clips: placeholder geometry ─────────────────────────────────────
@@ -181,10 +185,13 @@ def process_clip(clip_id: str, confidence: str, tilt_deg: float,
         band_upper_deg=+5.0,
     )
 
-    # Attach body_bbox to plan dict for validator rule⑩b
+    # Attach body_bbox to plan dict for validator rule⑪
+    # Attach address SHW for validator rule④ (k_max=0.06 定版)
     plan_dict = plan.to_dict()
     if geom.get("body_bbox"):
         plan_dict["_body_bbox_px"] = list(geom["body_bbox"])
+    if geom.get("shw_canvas_px"):
+        plan_dict["_shw_canvas_px"] = geom["shw_canvas_px"]
 
     # Validate
     vr = validate(plan_dict)
