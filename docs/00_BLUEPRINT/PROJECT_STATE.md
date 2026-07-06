@@ -118,7 +118,7 @@
 | 关卡 | 目标 | 状态 |
 |------|------|------|
 | GHOST-001 T1 | MimicMotion 可行性验证（fo-ok-1 自我重建，72fr） | ✅ 完成 2026-07-06，commit a010f95 |
-| GHOST-002 T1 | SMPL 单帧贴合精度验证（HMR2.0 address 帧） | 🔄 进行中 |
+| GHOST-002 T1 | SMPL 单帧贴合精度验证（HMR2.0 address 帧） | ⛔ 等待 Jason 目视验收 — **SMPL research-only**: 非商业研究许可，不进产品；产品化切 SAM 3D Body(MHR)/Anny(Apache 2.0) |
 | GHOST-002 T2 | SMPL 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1 验收 |
 | GHOST-003   | 修正动作驱动（飞轮基线正确姿态驱动用户 SMPL） | ⏳ 待 T2 验收 |
 

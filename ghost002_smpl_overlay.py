@@ -1,6 +1,11 @@
 """
 ghost002_smpl_overlay.py  — GHOST-002 T1 SMPL 单帧贴合验证
 
+授权标记 (RESEARCH-ONLY):
+  本脚本使用的 SMPL 模型文件走非商业研究许可，仅用于本次单帧贴合方向验证。
+  标记 research-only，不进产品、不写入任何商用管线。
+  产品化底座已定为 SAM 3D Body(MHR,商用友好) / Anny(Apache 2.0)，方向验证通过后切换。
+
 范围严格锁定：单帧 address 帧 + 真实姿态 + 贴合渲染
 不做动作修正 / 不做整段视频 / 不做时序 / 不碰球杆
 
@@ -48,29 +53,35 @@ print("Step 2: Loading RTMPose keypoints...")
 kp_data = json.loads(KP_CACHE.read_text())
 frames = kp_data['frames'] if 'frames' in kp_data else kp_data
 
-# get address frame keypoints
-addr_kps = None
-for fr in frames:
-    if fr['frame_idx'] == ADDR_FR:
-        addr_kps = np.array(fr['keypoints'])  # (17, 3) or (17, 2)
-        addr_scores = np.array(fr.get('scores', fr['keypoints'])[:, 2] if addr_kps.shape[1] == 3 else np.ones(17))
-        break
+# COCO17 joint name order
+COCO17 = [
+    'nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear',
+    'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
+    'left_wrist', 'right_wrist',
+    'left_hip', 'right_hip',
+    'left_knee', 'right_knee',
+    'left_ankle', 'right_ankle',
+]
 
-if addr_kps is None:
-    # fallback: first frame
-    fr = frames[0]
-    addr_kps = np.array(fr['keypoints'])
-    print(f"  [warn] frame {ADDR_FR} not found, using frame 0")
+def parse_frame_kps(fr):
+    """Convert named-dict keypoints to (17,2) xy and (17,) score arrays."""
+    kp_dict = fr['persons'][0]['keypoints']   # actual cache format
+    xy = np.zeros((17, 2), dtype=np.float32)
+    sc = np.zeros(17, dtype=np.float32)
+    for i, name in enumerate(COCO17):
+        if name in kp_dict:
+            xy[i, 0] = kp_dict[name]['x']
+            xy[i, 1] = kp_dict[name]['y']
+            sc[i]    = kp_dict[name].get('score', 1.0)
+    return xy, sc
 
-# RTMPose COCO17 keypoints: xy in pixel coords
-if addr_kps.shape[1] == 3:
-    kp_xy = addr_kps[:, :2]   # (17, 2)
-    kp_sc = addr_kps[:, 2]
-else:
-    kp_xy = addr_kps[:, :2]
-    kp_sc = np.ones(17)
+# get address frame keypoints — cache uses key 'frame' (int)
+addr_kps_fr = next((fr for fr in frames if fr['frame'] == ADDR_FR), frames[0])
+if addr_kps_fr['frame'] != ADDR_FR:
+    print(f"  [warn] frame {ADDR_FR} not found, using frame {addr_kps_fr['frame']}")
 
-print(f"  keypoints shape: {addr_kps.shape}, score range: [{kp_sc.min():.2f}, {kp_sc.max():.2f}]")
+kp_xy, kp_sc = parse_frame_kps(addr_kps_fr)
+print(f"  keypoints: (17,2) xy + scores, score range: [{kp_sc.min():.2f}, {kp_sc.max():.2f}]")
 
 # ── 3. Compute bounding box from keypoints (replaces detectron2) ───────────────
 print("Step 3: Computing bounding box from RTMPose keypoints...")
