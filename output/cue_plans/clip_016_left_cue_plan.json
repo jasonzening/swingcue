@@ -1,0 +1,153 @@
+{
+  "clip_id": "clip_016_left",
+  "fault_id": "reverse_pivot",
+  "confidence": "Confirmed",
+  "sentence_type_id": "alpha_angle",
+  "contrast_structure": "single_subject",
+  "elements": [
+    {
+      "primitive": "P1",
+      "anchor": {
+        "source": "hip_mid",
+        "coords_px": [
+          270.0,
+          1152.0
+        ],
+        "secondary_coords_px": null
+      },
+      "semantic_role": "correct_zone",
+      "color": {
+        "fill_hex": "#00B400",
+        "fill_alpha": 0.2,
+        "stroke_hex": "#00B400",
+        "stroke_alpha": 0.6,
+        "stroke_width_px": 2
+      },
+      "shape_params": {
+        "type": "wedge",
+        "angle_from_deg": -18.8,
+        "angle_to_deg": 5.0,
+        "radius_px": 180,
+        "direction": "from_anchor_vertical"
+      },
+      "animation_track": null,
+      "layer": "bg"
+    },
+    {
+      "primitive": "P7",
+      "anchor": {
+        "source": "hip_mid",
+        "coords_px": [
+          270.0,
+          1152.0
+        ],
+        "secondary_coords_px": [
+          248.68728570482983,
+          973.2662085408233
+        ]
+      },
+      "semantic_role": "correct_shape",
+      "color": {
+        "fill_hex": "#00CC00",
+        "fill_alpha": 0.0,
+        "stroke_hex": "#00CC00",
+        "stroke_alpha": 0.7,
+        "stroke_width_px": 2
+      },
+      "shape_params": {
+        "type": "line",
+        "dash": [
+          6,
+          4
+        ],
+        "band_center_deg": -6.8
+      },
+      "animation_track": null,
+      "layer": "bg"
+    },
+    {
+      "primitive": "P2",
+      "anchor": {
+        "source": "hip_mid",
+        "coords_px": [
+          270.0,
+          1152.0
+        ],
+        "secondary_coords_px": [
+          571.9277973759322,
+          607.057146199537
+        ]
+      },
+      "semantic_role": "current_state",
+      "color": {
+        "fill_hex": "#CC0000",
+        "fill_alpha": 0.0,
+        "stroke_hex": "#CC0000",
+        "stroke_alpha": 1.0,
+        "stroke_width_px": 3
+      },
+      "shape_params": {
+        "type": "line",
+        "tilt_deg": 29.1,
+        "self_luminous": true
+      },
+      "animation_track": null,
+      "layer": "mid"
+    },
+    {
+      "primitive": "P3",
+      "anchor": {
+        "source": "shoulder_mid",
+        "coords_px": [
+          475.0,
+          782.0
+        ],
+        "secondary_coords_px": null
+      },
+      "semantic_role": "direction_instruction",
+      "color": {
+        "fill_hex": "#FFFFFF",
+        "fill_alpha": 1.0,
+        "stroke_hex": "#FFFFFF",
+        "stroke_alpha": 1.0,
+        "stroke_width_px": 3
+      },
+      "shape_params": {
+        "type": "arc_arrow",
+        "angle_from_deg": 29.1,
+        "angle_to_deg": -6.8,
+        "radius_px": 160,
+        "arrowhead": {
+          "length_px": 14,
+          "width_px": 8
+        },
+        "motion_semantics": "arc_sweep"
+      },
+      "animation_track": {
+        "motion_type": "arc_sweep",
+        "duration_s": 1.8,
+        "pause_s": 0.5,
+        "loop": true,
+        "pauseable": true,
+        "easing": "ease_in_out",
+        "steps": null
+      },
+      "layer": "fg"
+    }
+  ],
+  "caption_badge": {
+    "text": "顶点时上半身倒向了球的方向——下一杆感觉胸口留在球的后面",
+    "position": "bottom_center",
+    "font": "NotoSansSC",
+    "size_px": 28,
+    "color_hex": "#FFFFFF",
+    "outline_hex": "#141414"
+  },
+  "static_downgrade_note": "静态降级: 弧箭头定格在 band_center 端点，加虚线圆弧辅助表达扫向方向",
+  "schema_version": "cue_plan_v0.1",
+  "timestamp_utc": "2026-07-06T00:25:45.918512",
+  "validator_result": {
+    "passed": true,
+    "violations": []
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "clip_id": "fo-eet-1-neg-truncated",
+  "fault_id": "reverse_pivot",
+  "confidence": "SILENT",
+  "sentence_type_id": "retake",
+  "contrast_structure": "single_subject",
+  "elements": [],
+  "caption_badge": {
+    "text": "画面质量不足，请重新录制：正面站立，完整挥杆，确保全身入镜",
+    "position": "bottom_center",
+    "font": "NotoSansSC",
+    "size_px": 28,
+    "color_hex": "#FFFFFF",
+    "outline_hex": "#141414"
+  },
+  "static_downgrade_note": null,
+  "schema_version": "cue_plan_v0.1",
+  "timestamp_utc": "2026-07-06T00:25:46.064583",
+  "validator_result": {
+    "passed": true,
+    "violations": []
+  }
+}

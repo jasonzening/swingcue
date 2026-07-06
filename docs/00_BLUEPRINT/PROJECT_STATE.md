@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-05 — PROJECT_STATE 勘误（3秒测试/top_conf 状态修正）
-**最新 commit**: `4a21feb` — fix(PROJECT_STATE): 勘误 — 渲染器v2待立项 + top_conf 0.50已定版
+**最后更新**: 2026-07-05 — CUE-003 关卡C 完成，停关卡等 Jason 审 Plan
+**最新 commit**: *(本次 commit)*
 **分支**: master（已 push）
 
 ---
@@ -22,7 +22,8 @@
 
 | 任务 | 状态 | 最后动作 |
 |------|------|---------|
-| 渲染器 v2 | **待立项** | v1 冻结（3秒测试失败）；下一版由生成器输出规格驱动 |
+| 渲染器 v2 | **待立项** | v1 冻结；等 Jason 审 CUE-003 Plan JSON 后立项 |
+| CUE-003 Plan JSON Jason 审阅 | **等待 Jason** | clip_016_left_cue_plan.json + preview.jpg 在 Windows Desktop/cue_plans/ |
 
 ---
 
@@ -39,7 +40,7 @@
 | 关卡3 | 9/9 不误报验证 PASS（gate3 v3） | `351d4db` | 2026-07-05 |
 | CUE-001 A | CUE_DESIGN_LANGUAGE v0.1 六法则/六原语/三句型 | `9c0a82d` | 2026-07-05 |
 | CUE-001 B | VISUAL_INDICATOR_V1 渲染器，9/9 PASS（3秒测试终审待定） | `c38df76` | 2026-07-05 |
-| CUE-002 | Cue Intelligence Engine 知识资产入档（19样板+解构器v0+设计语言v0.2+纪律备案+v0.3自包含基线） | `92cddb1` | 2026-07-05 |
+| CUE-003 | Cue 生成器 v0.1 — Plan Schema + 校验器 + α句型 + 关卡C Plan JSON + 工程预览图 | *(本次)* | 2026-07-05 |
 
 ---
 

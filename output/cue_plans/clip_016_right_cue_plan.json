@@ -1,0 +1,23 @@
+{
+  "clip_id": "clip_016_right",
+  "fault_id": "reverse_pivot",
+  "confidence": "None",
+  "sentence_type_id": "neutral",
+  "contrast_structure": "single_subject",
+  "elements": [],
+  "caption_badge": {
+    "text": "此项未发现问题",
+    "position": "bottom_center",
+    "font": "NotoSansSC",
+    "size_px": 28,
+    "color_hex": "#FFFFFF",
+    "outline_hex": "#141414"
+  },
+  "static_downgrade_note": null,
+  "schema_version": "cue_plan_v0.1",
+  "timestamp_utc": "2026-07-06T00:25:45.989194",
+  "validator_result": {
+    "passed": true,
+    "violations": []
+  }
+}
