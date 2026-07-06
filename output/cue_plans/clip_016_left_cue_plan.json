@@ -14,8 +14,8 @@
           1152.0
         ],
         "secondary_coords_px": [
-          571.9277973759322,
-          607.057146199537
+          572.9846425329197,
+          607.6440363827418
         ]
       },
       "semantic_role": "current_state",
@@ -29,6 +29,7 @@
       "shape_params": {
         "type": "line",
         "tilt_deg": 29.1,
+        "line_len_px": 622.9952718411873,
         "self_luminous": true
       },
       "animation_track": null,
@@ -37,10 +38,10 @@
     {
       "primitive": "P3",
       "anchor": {
-        "source": "sho_extended",
+        "source": "hip_mid",
         "coords_px": [
-          571.9277973759322,
-          607.057146199537
+          270.0,
+          1152.0
         ],
         "secondary_coords_px": null
       },
@@ -56,7 +57,7 @@
         "type": "arc_arrow",
         "angle_from_deg": 29.1,
         "angle_to_deg": -6.8,
-        "radius_px": 160,
+        "radius_px": 622.9952718411873,
         "arrowhead": {
           "length_px": 14,
           "width_px": 8
@@ -87,7 +88,7 @@
   "coupling_reason": null,
   "static_downgrade_note": "静态降级: 弧箭头定格在 band_center 端点，加虚线圆弧辅助表达扫向方向",
   "schema_version": "cue_plan_v0.2",
-  "timestamp_utc": "2026-07-06T00:57:13.424858",
+  "timestamp_utc": "2026-07-06T01:30:42.767563",
   "validator_result": {
     "passed": true,
     "violations": []

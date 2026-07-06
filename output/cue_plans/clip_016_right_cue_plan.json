@@ -17,7 +17,7 @@
   "coupling_reason": null,
   "static_downgrade_note": null,
   "schema_version": "cue_plan_v0.2",
-  "timestamp_utc": "2026-07-06T00:57:13.504233",
+  "timestamp_utc": "2026-07-06T01:30:42.848804",
   "validator_result": {
     "passed": true,
     "violations": []

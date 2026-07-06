@@ -202,32 +202,74 @@ def render_preview(plan: CuePlan, frame_bgr: np.ndarray, out_path: Path) -> Path
     img = PILImage.alpha_composite(img, overlay).convert("RGB")
     draw2 = ImageDraw.Draw(img)
 
-    # ── caption badge ─────────────────────────────────────────────────────────
+    # ── caption badge — 自动换行 + 缩字号防溢出（CUE-004 修正③）──────────────
     badge = plan.caption_badge
     if badge.text and fnt_cap:
-        bbox = draw2.textbbox((0,0), badge.text, font=fnt_cap)
-        tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
-        bx = max(8, (w - tw)//2)
-        by = h - th - 16
-        draw2.rectangle([0, by - 8, w, h], fill=(0,0,0,200))
-        # outline
-        for dx, dy in [(-1,-1),(-1,1),(1,-1),(1,1)]:
-            draw2.text((bx+dx, by+dy), badge.text, font=fnt_cap, fill=(20,20,20))
-        draw2.text((bx, by), badge.text, font=fnt_cap, fill=(255,255,255))
+        max_text_w = w - 24
+        font_size = 26
+        min_font_size = 18
+        fnt_used = fnt_cap
+        lines_cap = [badge.text]
 
-    # ── engineering header ────────────────────────────────────────────────────
-    fnt_hdr = _font(16)
+        # try progressively smaller fonts until text fits
+        while font_size >= min_font_size:
+            fnt_try = _font(font_size)
+            if fnt_try is None:
+                break
+            # wrap
+            lines_try = []
+            current = ""
+            for ch in badge.text:
+                trial = current + ch
+                bb = draw2.textbbox((0,0), trial, font=fnt_try)
+                if bb[2] - bb[0] > max_text_w and current:
+                    lines_try.append(current)
+                    current = ch
+                else:
+                    current = trial
+            if current:
+                lines_try.append(current)
+            fnt_used = fnt_try
+            lines_cap = lines_try
+            # accept if all lines fit
+            if all(draw2.textbbox((0,0), ln, font=fnt_try)[2] - draw2.textbbox((0,0), ln, font=fnt_try)[0] <= max_text_w for ln in lines_try):
+                break
+            font_size -= 2
+
+        line_h = draw2.textbbox((0,0), "测Ag", font=fnt_used)[3] + 6
+        total_text_h = line_h * len(lines_cap)
+        strip_top = h - total_text_h - 20
+        # never overlap header (保护 header_h=26px)
+        strip_top = max(strip_top, 30)
+
+        draw2.rectangle([0, strip_top - 8, w, h], fill=(0,0,0,200))
+        for i, line in enumerate(lines_cap):
+            bb = draw2.textbbox((0,0), line, font=fnt_used)
+            tw = bb[2] - bb[0]
+            bx = max(8, (w - tw) // 2)
+            by = strip_top + i * line_h
+            for dx, dy in [(-1,-1),(-1,1),(1,-1),(1,1)]:
+                draw2.text((bx+dx, by+dy), line, font=fnt_used, fill=(20,20,20))
+            draw2.text((bx, by), line, font=fnt_used, fill=(255,255,255))
+
+    # ── engineering header — 防叠压（CUE-004 修正③）────────────────────────────
+    fnt_hdr = _font(15)
     if fnt_hdr:
-        hdr = (f"[PLAN PREVIEW v0.4] {plan.clip_id}  conf={plan.confidence}  "
-               f"fault={plan.fault_id}  type={plan.sentence_type_id}  "
-               f"elements={len(plan.elements)}")
-        draw2.rectangle([0, 0, w, 24], fill=(30,30,80))
-        draw2.text((4, 4), hdr, font=fnt_hdr, fill=(220,220,255))
-        # validator status
+        # 第1行: clip / conf / fault
+        hdr1 = (f"[PLAN v0.5] {plan.clip_id}  conf={plan.confidence}  "
+                f"fault={plan.fault_id}  type={plan.sentence_type_id}  "
+                f"elements={len(plan.elements)}")
+        draw2.rectangle([0, 0, w, 26], fill=(30,30,80))
+        draw2.text((4, 4), hdr1, font=fnt_hdr, fill=(220,220,255))
+        # validator status in top-right corner (小字不超框)
         vr = plan.validator_result
-        vstatus = "✓ VALID" if vr.get("passed") else f"✗ {len(vr.get('violations',[]))} VIOLATIONS"
+        vstatus = "VALID" if vr.get("passed") else f"FAIL x{len(vr.get('violations',[]))}"
         vcol = (80,220,80) if vr.get("passed") else (255,80,80)
-        draw2.text((w - 160, 4), vstatus, font=fnt_hdr, fill=vcol)
+        fnt_vs = _font(13)
+        if fnt_vs:
+            bb = draw2.textbbox((0,0), vstatus, font=fnt_vs)
+            vx = w - (bb[2]-bb[0]) - 6
+            draw2.text((vx, 6), vstatus, font=fnt_vs, fill=vcol)
 
     # Save
     arr = np.array(img)

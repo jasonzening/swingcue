@@ -9,6 +9,11 @@ Lottie 动画 → MP4 预览（供 Jason 在 Windows 直接双击查看）
   总帧数 = 69fr，单次循环，MP4 写入 3 次循环（约 6.9s）供预览
 
 MP4 编码: MPEG-4 (mp4v) via OpenCV，Jason Windows 双击可直接播放。
+
+v0.5 修正（CUE-004 修正②③）:
+  P3 arc center = hip_mid; radius = P2 线长 (shape_params.radius_px)
+  caption 自动换行 + 缩字号防底部溢出
+  header 标注行高保护，防与 P2/P3 叠压
 """
 from __future__ import annotations
 import math
@@ -83,6 +88,10 @@ def _draw_p2(canvas: np.ndarray, el: dict) -> None:
 
 # ── P3: animated arc arrow (progress 0.0→1.0) ────────────────────────────────
 def _draw_p3(canvas: np.ndarray, el: dict, progress: float) -> None:
+    """
+    v0.5: arc center = hip_mid (anchor.coords_px)
+          radius = shape_params.radius_px (= P2 线长，起点 = P2 上端点)
+    """
     if progress <= 0:
         return
     sp  = el["shape_params"]
@@ -90,9 +99,10 @@ def _draw_p3(canvas: np.ndarray, el: dict, progress: float) -> None:
     bgr = _cv_bgr(col["stroke_hex"])
     sw  = col["stroke_width_px"]
 
-    cx,cy  = el["anchor"]["coords_px"]
-    r      = sp.get("radius_px", 160)
-    a_from = sp.get("angle_from_deg", 29.1)
+    # v0.5: anchor = hip_mid (已在 sentence_alpha 改为 hip_mid)
+    cx, cy = el["anchor"]["coords_px"]
+    r      = sp.get("radius_px", 160)        # = P2 线长
+    a_from = sp.get("angle_from_deg", 29.1)  # = tilt_deg → 弧起点 = P2 端点
     a_to   = sp.get("angle_to_deg", -6.8)
     tang_dir = 1 if a_to < a_from else -1
 
@@ -112,26 +122,88 @@ def _draw_p3(canvas: np.ndarray, el: dict, progress: float) -> None:
         cv2.addWeighted(overlay, ah_alpha, canvas, 1-ah_alpha, 0, canvas)
 
 
-# ── caption badge ─────────────────────────────────────────────────────────────
-def _draw_caption(img_bgr: np.ndarray, text: str) -> np.ndarray:
+# ── caption badge — 自动换行 + 缩字号防溢出（CUE-004 修正③）──────────────────
+def _wrap_text(text: str, draw: ImageDraw.ImageDraw, fnt, max_w: int) -> list[str]:
+    """Split text into lines that fit within max_w pixels."""
+    if not text:
+        return []
+    # Try as single line first
+    bbox = draw.textbbox((0,0), text, font=fnt)
+    if bbox[2] - bbox[0] <= max_w:
+        return [text]
+    # Split on Chinese punctuation / space boundaries
+    # Simple approach: scan chars and break when width exceeded
+    lines = []
+    current = ""
+    for ch in text:
+        trial = current + ch
+        bbox = draw.textbbox((0,0), trial, font=fnt)
+        if bbox[2] - bbox[0] > max_w and current:
+            lines.append(current)
+            current = ch
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _draw_caption(img_bgr: np.ndarray, text: str,
+                  header_reserve_px: int = 30) -> np.ndarray:
+    """
+    Draw caption badge at bottom of frame.
+    v0.5 修正:
+      - 自动换行: 按像素宽度逐字折行
+      - 缩字号: 从34px降到最小22px直到单行宽度合适
+      - header_reserve_px: 顶部保护区高度（防 header 叠压）
+    """
     if not text:
         return img_bgr
     h, w = img_bgr.shape[:2]
     img = PILImage.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(img)
-    fnt = _font(34)
-    if fnt is None:
+
+    max_text_w = w - 24   # 左右各留12px margin
+    font_size = 34
+    min_font_size = 20
+
+    fnt = None
+    lines = []
+    while font_size >= min_font_size:
+        fnt = _font(font_size)
+        if fnt is None:
+            break
+        lines = _wrap_text(text, draw, fnt, max_text_w)
+        # check total height fits above bottom, below header
+        line_h = draw.textbbox((0,0), "测Ag", font=fnt)[3] + 4
+        total_h = line_h * len(lines) + 20
+        available_h = h - header_reserve_px - 10
+        if total_h <= available_h * 0.3:  # cap at bottom 30% of frame
+            break
+        font_size -= 2
+
+    if fnt is None or not lines:
         return img_bgr
-    bbox = draw.textbbox((0,0), text, font=fnt)
-    tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
-    by = h - th - 20
-    bx = max(8, (w - tw)//2)
+
+    line_h = draw.textbbox((0,0), "测Ag", font=fnt)[3] + 6
+    total_text_h = line_h * len(lines)
+    strip_top = h - total_text_h - 24
+    # safety: never overlap header
+    strip_top = max(strip_top, header_reserve_px + 4)
+
     # background strip
-    draw.rectangle([0, by-10, w, h], fill=(0,0,0,200))
-    # outline
-    for dx,dy in [(-1,-1),(-1,1),(1,-1),(1,1),(0,-2),(0,2),(-2,0),(2,0)]:
-        draw.text((bx+dx, by+dy), text, font=fnt, fill=(20,20,20))
-    draw.text((bx, by), text, font=fnt, fill=(255,255,255))
+    draw.rectangle([0, strip_top - 8, w, h], fill=(0, 0, 0, 210))
+
+    for i, line in enumerate(lines):
+        bbox = draw.textbbox((0,0), line, font=fnt)
+        tw = bbox[2] - bbox[0]
+        bx = max(8, (w - tw) // 2)
+        by = strip_top + i * line_h
+        # outline
+        for dx,dy in [(-1,-1),(-1,1),(1,-1),(1,1),(0,-2),(0,2),(-2,0),(2,0)]:
+            draw.text((bx+dx, by+dy), line, font=fnt, fill=(20,20,20))
+        draw.text((bx, by), line, font=fnt, fill=(255,255,255))
+
     return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
 
@@ -143,6 +215,18 @@ def _ease_inout(t: float) -> float:
     else:
         p = -2 * t + 2
         return 1 - (p * p * p) / 2
+
+
+# ── Header bar — 防叠压（CUE-004 修正③）────────────────────────────────────────
+_HEADER_H = 30   # px reserved at top for diagnostic label
+
+def _draw_header(canvas: np.ndarray, label: str) -> None:
+    """Draw semi-transparent header bar at top of frame (height=_HEADER_H)."""
+    overlay = canvas.copy()
+    cv2.rectangle(overlay, (0, 0), (canvas.shape[1], _HEADER_H), (20, 20, 60), -1)
+    cv2.addWeighted(overlay, 0.75, canvas, 0.25, 0, canvas)
+    cv2.putText(canvas, label, (6, _HEADER_H - 8),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 255), 1, cv2.LINE_AA)
 
 
 # ── Main MP4 renderer ─────────────────────────────────────────────────────────
@@ -190,6 +274,9 @@ def render_mp4_preview(
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     vw = cv2.VideoWriter(str(out_mp4), fourcc, FPS_OUT, (canvas_w, canvas_h))
 
+    header_label = (f"{plan.get('clip_id','?')}  conf={conf}  "
+                    f"fault={plan.get('fault_id','?')}")
+
     total_frames = LOOP_FR * n_loops
 
     for f in range(total_frames):
@@ -211,9 +298,13 @@ def render_mp4_preview(
                     progress = 1.0
                 _draw_p3(canvas, p3, progress)
 
+        # Header bar (防叠压，始终在最上层渲染)
+        _draw_header(canvas, header_label)
+
         # Caption on every frame
         if caption and stype == "alpha_angle":
-            canvas = _draw_caption(canvas, caption)
+            canvas = _draw_caption(canvas, caption,
+                                   header_reserve_px=_HEADER_H)
 
         vw.write(canvas)
 
@@ -254,11 +345,10 @@ def render_static_first_frame(
 
     caption = plan.get("caption_badge", {}).get("text", "")
     if caption and stype == "alpha_angle":
-        canvas = _draw_caption(canvas, caption)
+        canvas = _draw_caption(canvas, caption, header_reserve_px=_HEADER_H)
 
-    # stamp "STATIC DOWNGRADE FRAME 0" label
-    cv2.putText(canvas, "STATIC DOWNGRADE - fr0", (10, 50),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,200,0), 2, cv2.LINE_AA)
+    # header
+    _draw_header(canvas, f"{plan.get('clip_id','?')} STATIC DOWNGRADE fr0")
 
     out_jpg.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out_jpg), canvas, [cv2.IMWRITE_JPEG_QUALITY, 90])

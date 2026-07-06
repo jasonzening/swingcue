@@ -235,6 +235,45 @@ def _rule8_animation_constraints(plan: dict) -> str | None:
     return None
 
 
+def _rule10_angle_coord_consistency(plan: dict) -> str | None:
+    """
+    ⑩ MOCK 几何一致性（CUE-004 修正①）:
+       P2 shape_params.tilt_deg 须与 anchor coords 反算角度一致，容差 ±1°。
+       反算公式（face-on image frame, Y-down, tilt=0=vertical=up）:
+         tilt_actual = atan2(tip_x - hip_x, -(tip_y - hip_y))  单位 deg
+       目的: 防止 MOCK 模式 verdict 数值与坐标不一致，确保渲染忠实传达诊断意图。
+    """
+    import math
+    stype = plan.get("sentence_type_id", "")
+    if stype in ("neutral", "retake"):
+        return None
+    for el in plan.get("elements", []):
+        if el.get("primitive") != "P2":
+            continue
+        sp = el.get("shape_params", {})
+        stated_tilt = sp.get("tilt_deg")
+        if stated_tilt is None:
+            continue  # 无声明角度则豁免
+        anc = el.get("anchor", {})
+        hip = anc.get("coords_px")
+        tip = anc.get("secondary_coords_px")
+        if hip is None or tip is None:
+            continue
+        dx = tip[0] - hip[0]
+        dy = tip[1] - hip[1]
+        if math.hypot(dx, dy) < 1:
+            continue
+        actual_tilt = math.degrees(math.atan2(dx, -dy))
+        diff = abs(actual_tilt - stated_tilt)
+        if diff > 1.0:
+            return (
+                f"规则⑩违规: P2 shape_params.tilt_deg={stated_tilt:.2f}° "
+                f"与坐标反算角度={actual_tilt:.2f}° 偏差={diff:.2f}° > ±1° 容差 "
+                f"(CUE-004 修正①: JSON coords 与 tilt_deg 必须一致)"
+            )
+    return None
+
+
 def _rule9_element_budget(plan: dict) -> str | None:
     """
     ⑨ 元素预算（法则10 极简至上）: basic 层 Plan 中 P1–P12 原语元素数 > 2 直接拒绝。
@@ -271,12 +310,13 @@ RULES = [
     _rule7_text_badge_only,
     _rule8_animation_constraints,
     _rule9_element_budget,
+    _rule10_angle_coord_consistency,
 ]
 
 
 def validate(plan: dict) -> ValidationResult:
     """
-    Run all 9 rules against the Cue Plan dict.
+    Run all 10 rules against the Cue Plan dict.
     Returns ValidationResult(passed, violations).
     """
     violations = []

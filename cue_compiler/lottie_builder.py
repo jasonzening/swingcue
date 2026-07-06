@@ -178,6 +178,11 @@ def _build_p3_layer(plan: dict, ind: int) -> dict:
     P3 — white animated arc arrow.
     Animation: trim path 0%→100% over ANIM_DUR_FR frames, hold PAUSE_DUR_FR, loop.
     Lottie trim path (ty='tm') on the arc polyline drives the sweep-grow effect.
+
+    v0.5 几何修正（CUE-004 修正②）:
+      arc center = hip_mid (P3 anchor.coords_px)
+      radius     = P2 线长 (shape_params.radius_px，由 sentence_alpha 写入)
+      起点 angle_from = tilt_deg → 弧起点正好落在 P2 上端点
     """
     el = next(e for e in plan["elements"] if e["primitive"] == "P3")
     sp  = el["shape_params"]
@@ -185,10 +190,10 @@ def _build_p3_layer(plan: dict, ind: int) -> dict:
     stroke_rgb = _rgb(col["stroke_hex"])
     sw  = col["stroke_width_px"]
 
-    # arc center = anchor (sho_extended in v0.4)
+    # arc center = hip_mid (v0.5: P3 anchor 已改为 hip_mid)
     anc      = el["anchor"]["coords_px"]
     cx, cy   = anc[0], anc[1]
-    r        = sp.get("radius_px", 160)
+    r        = sp.get("radius_px", 160)   # = P2 线长，由 sentence_alpha 写入
     a_from   = sp.get("angle_from_deg", 29.1)
     a_to     = sp.get("angle_to_deg", -6.8)
     tang_dir = 1 if a_to < a_from else -1   # CW or CCW sweep

@@ -230,4 +230,41 @@ SAM2 mask → 人体二值掩码 → 背景 = frame * dim_factor
 
 ---
 
-*CUE_GENERATOR_SPEC v0.5 — v0.2 Jason 拍板 2026-07-05 / v0.3 SAM2降级 + Signaling Principle / v0.4 α句型basic层改版 + 校验⑨ + fault_view / v0.5 CUE-004关卡C 动效预算归因修正(Ayres→法则4+Treisman 1988) + 校验④归一化标注(k=0.15待拍板)*
+## 8. MOCK 模式验收边界（CUE-004 修正① 备案）
+
+### 8.1 MOCK 的用途与限制
+
+| 维度 | MOCK 模式 | 正式验收 |
+|------|-----------|---------|
+| **目的** | QA 渲染管线几何与动画流程 | 语义 3 秒测试（专家+素人） |
+| **画布来源** | 任意已标定的标准帧（如 fo-ok-1 fr76） | 同一球员真实阳性素材（自拍错误示范） |
+| **verdict 数值** | clip_016 实测值（tilt=29.1°）注入 | 该球员本次挥杆真实诊断结果 |
+| **承担语义测试** | **否** — 画布人物与 tilt 数值不对应 | **是** — 数值即该帧真实偏差 |
+| **角度一致性校验⑩** | 必须通过（JSON coords 与 tilt_deg 误差 <1°） | 必须通过 |
+
+### 8.2 校验器规则⑩ — 角度一致性（CUE-004 修正①）
+
+```
+规则⑩: P2 shape_params.tilt_deg 须与 anchor coords 反算角度一致，容差 ±1°
+反算公式: tilt_actual = atan2(tip_x - hip_x, -(tip_y - hip_y))   [deg]
+目的: 防止 MOCK 填数与坐标脱钩，保证 Lottie 动画角度忠实表达诊断
+实现: validator._rule10_angle_coord_consistency
+```
+
+### 8.3 P2/P3 几何规范（v0.5，CUE-004 修正②）
+
+```
+P2 tip = hip_mid + line_len × (sin(tilt_deg), -cos(tilt_deg))
+  line_len = |shoulder_mid - hip_mid| + EXTEND_PX (200px)
+  → tip 坐标由 tilt_deg 精确反算，与 shape_params.tilt_deg 误差 < 0.001°
+
+P3 arc:
+  center  = hip_mid                 (P2 基点)
+  radius  = line_len (= P2 线长)    (起点 = P2 上端点，几何闭合)
+  angle_from = tilt_deg             (弧起于 P2 端点)
+  angle_to   = band_center_deg      (扫向正确带中心 -6.8°)
+```
+
+---
+
+*CUE_GENERATOR_SPEC v0.6 — v0.2 Jason 拍板 2026-07-05 / v0.3 SAM2降级 + Signaling Principle / v0.4 α句型basic层改版 + 校验⑨ + fault_view / v0.5 CUE-004关卡C 动效预算归因修正(Ayres→法则4+Treisman 1988) + 校验④归一化标注(k=0.15待拍板) / v0.6 CUE-004修正①②③: MOCK语义定死 + P2/P3几何重定义 + 校验⑩ + 溢出防护*
