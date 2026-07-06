@@ -5,7 +5,7 @@
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
 **最后更新**: 2026-07-05 — CUE-002 正式关闭
-**最新 commit**: *(本次 commit)*
+**最新 commit**: `92cddb1` — docs(CUE-002-收尾): 解构报告v0.3入档 + v0.2纪律案例 + SAMPLES_INDEX v1.2 + 铁律CUE-E
 **分支**: master（已 push）
 
 ---
@@ -40,7 +40,7 @@
 | 关卡3 | 9/9 不误报验证 PASS（gate3 v3） | `351d4db` | 2026-07-05 |
 | CUE-001 A | CUE_DESIGN_LANGUAGE v0.1 六法则/六原语/三句型 | `9c0a82d` | 2026-07-05 |
 | CUE-001 B | VISUAL_INDICATOR_V1 渲染器，9/9 PASS（3秒测试终审待定） | `c38df76` | 2026-07-05 |
-| CUE-002 | Cue Intelligence Engine 知识资产入档（19样板+解构器v0+设计语言v0.2+纪律备案+v0.3自包含基线） | `*(本次)*` | 2026-07-05 |
+| CUE-002 | Cue Intelligence Engine 知识资产入档（19样板+解构器v0+设计语言v0.2+纪律备案+v0.3自包含基线） | `92cddb1` | 2026-07-05 |
 
 ---
 
