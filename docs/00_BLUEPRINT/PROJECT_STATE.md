@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-05 — CUE-003 关卡C 完成，停关卡等 Jason 审 Plan
-**最新 commit**: `81bdf52` — feat(CUE-003): Cue 生成器 v0.1 首个Plan JSON 4/4 PASS
+**最后更新**: 2026-07-05 — CUE-003 规格修订（Jason 裁决）SPEC v0.3 + CDL v0.3 push `e0810f4`
+**最新 commit**: `e0810f4` — docs(CUE-003-修订): SPEC v0.3 + CDL v0.3 SAM2降级 + P10拆分 + Signaling Principle元分析
 **分支**: master（已 push）
 
 ---
