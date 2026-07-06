@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-05 — CUE-003 修订二（Jason 极简裁决）4/4 PASS，新预览图出炉，停关卡等 Jason 复审
-**最新 commit**: `8ad9821` — feat(CUE-003-修订二): 法则10极简至上 + α句型basic层(2元素) + 校验⑨ + fault_view + 新预览图
+**最后更新**: 2026-07-05 — CUE-004 关卡B MOCK样张出炉，停关卡等 Jason 双轨验收
+**最新 commit**: `4e50f59` — feat(CUE-004-关卡B): MOCK验收样张 — fo-ok-1 fr76画布 + clip_016 verdict驱动
 **分支**: master（已 push）
 
 ---
