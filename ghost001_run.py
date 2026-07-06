@@ -182,18 +182,30 @@ _video_frames = video_frames[0, 1:]  # drop ref frame; shape (T-1, C, H, W)
 T = _video_frames.shape[0]
 H_out = _video_frames.shape[2]
 W_out = _video_frames.shape[3]
-print(f"Generated {T} frames at {H_out}x{W_out}")
+print(f"Generated {T} frames  tensor shape (T,C,H,W) = {tuple(_video_frames.shape)}")
+print(f"Output resolution: W={W_out} x H={H_out}  ({'portrait' if H_out > W_out else 'landscape'})")
 
-# ── save generated.mp4 ────────────────────────────────────────────────────────
-gen_path = OUT / 'generated.mp4'
-save_to_mp4(_video_frames, str(gen_path), fps=args.fps)
-print(f"Generated → {gen_path}")
-
-# convert generated frames to BGR list for cv2 ops
+# ── STEP 1: 落盘帧序列 PNG（防编码失败重跑推理）─────────────────────────────
+# 任何后续编码/拼图失败都不需要重跑推理，直接从 frames/ 恢复
+FRAMES_DIR = OUT / 'frames'
+FRAMES_DIR.mkdir(exist_ok=True)
+print(f"\nSaving {T} frames to {FRAMES_DIR} ...")
 gen_bgr = []
 for i in range(T):
-    fr = _video_frames[i].permute(1, 2, 0).numpy()          # H W C, RGB uint8
-    gen_bgr.append(cv2.cvtColor(fr, cv2.COLOR_RGB2BGR))
+    fr_np = _video_frames[i].permute(1, 2, 0).numpy()   # H W C, RGB uint8
+    fr_bgr = cv2.cvtColor(fr_np, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(str(FRAMES_DIR / f'frame_{i:04d}.png'), fr_bgr)
+    gen_bgr.append(fr_bgr)
+print(f"Frames saved → {FRAMES_DIR}")
+
+# ── STEP 2: 编码 generated.mp4 ────────────────────────────────────────────────
+gen_path = OUT / 'generated.mp4'
+fourcc_gen = cv2.VideoWriter_fourcc(*'mp4v')
+vw_gen = cv2.VideoWriter(str(gen_path), fourcc_gen, float(args.fps), (W_out, H_out))
+for fr_bgr in gen_bgr:
+    vw_gen.write(fr_bgr)
+vw_gen.release()
+print(f"Generated → {gen_path}")
 
 # ── read original drive frames ─────────────────────────────────────────────────
 cap = cv2.VideoCapture(str(drive_video_path))
