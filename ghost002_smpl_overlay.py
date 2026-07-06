@@ -156,7 +156,13 @@ for batch in dataloader:
 print("Step 5: Rendering SMPL overlay...")
 renderer = Renderer(model_cfg, faces=model.smpl.faces)
 
-img_size_hw = torch.tensor([[H_img, W_img]], dtype=torch.float32)
+# render_rgba_multiple 的 render_res 期待 [W, H] (与 pyrender viewport_width/height 一致)
+# 原来写法 [[H_img, W_img]] = [[1280,720]] → viewport横置 → 输出 (720,1280,4)
+# → resize强行拉伸成竖版 → 纵向2x拉伸 BUG
+# 修正: [W_img, H_img] = [720, 1280] → viewport_width=720 viewport_height=1280 ✓
+img_size_wh = torch.tensor([[W_img, H_img]], dtype=torch.float32)
+fl_scalar = scaled_fl.item() if hasattr(scaled_fl, 'item') else float(scaled_fl)
+print(f"  render_res: W={W_img} H={H_img}  scaled_fl={fl_scalar:.1f}  yfov={2*np.arctan(H_img/2/fl_scalar):.4f}rad")
 
 # render_rgba_multiple returns RGBA [0,1] float32 (H, W, 4)
 RED_COLOR = (0.85, 0.12, 0.08)   # vivid red
@@ -168,7 +174,7 @@ misc_args = dict(
 cam_view = renderer.render_rgba_multiple(
     all_verts,
     cam_t=all_cam_t,
-    render_res=img_size_hw[0],
+    render_res=img_size_wh[0],
     **misc_args
 )
 print(f"  cam_view shape: {cam_view.shape}  alpha range: [{cam_view[:,:,3].min():.2f}, {cam_view[:,:,3].max():.2f}]")
