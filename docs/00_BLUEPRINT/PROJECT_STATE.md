@@ -99,18 +99,34 @@
 
 ### GHOST 线（Ghost 克隆管线，2026-07-05 立项）
 
-产品新增 ghost 形态：用用户自身外形克隆人像，执行参考动作。
+产品新增 ghost 形态：**抽象 3D 人体叠加** — 红色半透明 SMPL 人形精确贴合叠加在真实视频之上，同步做出正确动作。
 原则"身体为因，球杆为果"已入档 CUE_DESIGN_LANGUAGE §12。
 
-| GHOST 关卡 | 目标 | 状态 |
-|-----------|------|------|
-| GHOST-001 T1 | 外形克隆保真度验证（自我重建，真实动作驱动，fo-ok-1） | **✅ 完成 2026-07-06** |
-| GHOST-001 T2 | 修正动作驱动（用飞轮基线正确动作驱动用户外形） | 待 T1 验收裁决 |
+**方向变更 2026-07-06**: MimicMotion/SVD 生成路线 **冻结**（T1 已完成可行性验证）。
+主路线改为 **SMPL 3D 人体叠加渲染**，无生成式模型依赖。
 
-**T1 实测数据**: 推理 11:56 + VAE CPU decode 约 25min，总 ~37min；peak VRAM 10.07GB（CPU offload 生效）；输出 72fr W576×H1024（竖版正确）；帧序列落盘 frames/ 防重跑。
+#### GHOST 授权三级关卡（产品化前必须关闭）
 
-**技术约束**: RTX 4060 Ti 8GB VRAM；MimicMotion 官方 72 帧需 16GB；
-需评估 tile/CPU-offload/帧数缩减 等降显存方案。
+| 关卡 | 内容 | 状态 |
+|------|------|------|
+| ① T1 研发验证 | 研究许可覆盖，合法免费 | ✅ 覆盖中 |
+| ② 产品化首选 | 确认 SMPL-Body CC-BY 4.0 覆盖"我方对外输出为渲染结果而非分发模型文件"——若成立，署名即可零授权费 | ⏳ 产品化前确认 |
+| ③ 备用路径 | 仅当②不适用（需分发含 SMPL 参数的制品）才向 sales@meshcapade.com 询价企业授权 | ⏳ 仅当②不适用时 |
+
+#### GHOST 技术关卡
+
+| 关卡 | 目标 | 状态 |
+|------|------|------|
+| GHOST-001 T1 | MimicMotion 可行性验证（fo-ok-1 自我重建，72fr） | ✅ 完成 2026-07-06，commit a010f95 |
+| GHOST-002 T1 | SMPL 单帧贴合精度验证（HMR2.0 address 帧） | 🔄 进行中 |
+| GHOST-002 T2 | SMPL 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1 验收 |
+| GHOST-003   | 修正动作驱动（飞轮基线正确姿态驱动用户 SMPL） | ⏳ 待 T2 验收 |
+
+**GHOST-001 T1 实测**: 推理 11:56 + VAE CPU decode ~25min，总 ~37min；peak VRAM 10.07GB（CPU offload 生效）；72fr W576×H1024 竖版正确；帧序列 frames/ 落盘防重跑。MimicMotion 路线冻结于此。
+
+**相位命名规范 (铁律)**: 一律使用 B 层 8 相位体系：
+`address / takeaway / backswing / top / transition / downswing / impact / follow_through`
+禁止自造 P1/P2/P3/P4/finish 等替代命名。ghost001_prep.py/run.py 已修正 (commit 待补)。
 
 ### CUE 线候选（GHOST 线外）
 

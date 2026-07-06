@@ -13,20 +13,20 @@ VIDEO  = pathlib.Path('/mnt/c/Users/jason/Zening/Swingcue/Video/fo-ok-1.mp4')
 OUT    = ROOT / 'output/ghost001'
 OUT.mkdir(parents=True, exist_ok=True)
 
-# ── Phase boundaries (from B-layer wrist analysis) ────────────────────────────
-P1_FR   = 0    # address
-P2_FR   = 97   # top of backswing (RTMPose wrist_y min)
-# P3 (impact): first wrist-y local min after top returning down
-# fo-ok-1 112 frames, wrist stays elevated post-top, impact ~fr104-106
-P3_FR   = 104  # approximate impact (wrist descending back near hip)
-P4_FR   = 107  # finish (last stable frame before video ends)
+# ── Phase boundaries (from B-layer 8-phase system) ────────────────────────────
+# B层正式相位: address/takeaway/backswing/top/transition/downswing/impact/follow_through
+# fo-ok-1: 112 frames, 30fps
+ADDR_FR     = 0    # address
+TOP_FR      = 97   # top (RTMPose wrist_y min, Jason目视确认 fr185→normalized fr97)
+IMPACT_FR   = 104  # impact (approximate, wrist returning near hip)
+FOLLOW_FR   = 107  # follow_through (last stable frame)
 
-DRIVE_START = P1_FR
-DRIVE_END   = P4_FR   # inclusive
+DRIVE_START = ADDR_FR
+DRIVE_END   = FOLLOW_FR   # inclusive
 TARGET_FRAMES = 72
 
 total_span = DRIVE_END - DRIVE_START + 1  # 108 frames
-print(f"Drive span: fr{DRIVE_START}→fr{DRIVE_END} = {total_span} frames")
+print(f"Drive span: fr{DRIVE_START}(address)→fr{DRIVE_END}(follow_through) = {total_span} frames")
 
 # downsample to TARGET_FRAMES
 indices = [int(DRIVE_START + i * (total_span - 1) / (TARGET_FRAMES - 1))
@@ -34,8 +34,8 @@ indices = [int(DRIVE_START + i * (total_span - 1) / (TARGET_FRAMES - 1))
 indices = sorted(set(indices))
 print(f"After downsample: {len(indices)} frames, step~={total_span/TARGET_FRAMES:.2f}")
 
-# Map original frame indices to phase labels for logging
-phase_map = {P1_FR: 'P1_address', P2_FR: 'P2_top', P3_FR: 'P3_impact', P4_FR: 'P4_finish'}
+# Map original frame indices to B-layer phase labels
+phase_map = {ADDR_FR: 'address', TOP_FR: 'top', IMPACT_FR: 'impact', FOLLOW_FR: 'follow_through'}
 
 cap = cv2.VideoCapture(str(VIDEO))
 orig_fps = cap.get(cv2.CAP_PROP_FPS)

@@ -53,14 +53,15 @@ parser.add_argument('--cpu-offload', action='store_true', default=True,
                     help='Enable model CPU offload (needed for 8GB VRAM)')
 args = parser.parse_args()
 
-# ── phase map (downsampled indices from ghost001_prep.py) ─────────────────────
+# ── phase map (B-layer 8-phase system, from ghost001_prep.py) ────────────────
+# B层正式相位: address/takeaway/backswing/top/transition/downswing/impact/follow_through
 PHASE_DS_IDX = {
-    'P1_address': 0,
-    'P2_top':     65,
-    'P3_impact':  69,
-    'P4_finish':  71,
+    'address':        0,
+    'top':            65,
+    'impact':         69,
+    'follow_through': 71,
 }
-COMPARE_PHASES = ['P1_address', 'P3_impact', 'P4_finish']
+COMPARE_PHASES = ['address', 'impact', 'follow_through']  # three compare frames
 
 # ── imports ────────────────────────────────────────────────────────────────────
 import torch
