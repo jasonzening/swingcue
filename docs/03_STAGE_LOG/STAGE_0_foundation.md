@@ -243,3 +243,66 @@
 
 **输出位置**: `C:\Users\jason\Desktop\rtmpose_results\preview\cue_renders\reverse_pivot\`
 **等待**: Jason 3秒测试终审 (clip_016_left_top_cue.jpg)
+
+---
+
+## CUE-004 完成记录 — 2026-07-05（合并单终裁，关卡关闭）
+
+**任务**: Lottie 编译器 + 渲染器 v2 + 三路由成品 + 合并单 6 项阻断修正
+
+**里程碑**: CUE-001 渲染器 v1 替代完成；clip_016_left Cue 全链路 end-to-end PASS；SPEC v0.7 校验 11 条锁定
+
+### 关卡B — 三路由成品
+
+| 路由 | clip | verdict | 输出 |
+|------|------|---------|------|
+| Confirmed | clip_016_left | tilt=+29.1° | .lottie + .mp4(fr93 top帧背景,3循环~6.9s) + static_last.jpg(末帧P2+P3+虚线弧) |
+| None | clip_016_right | tilt=-6.8° | neutral_green_badge.jpg |
+| SILENT | fo-eet-1-neg-setup | 无挥杆型 | 取景框引导卡「请重新录制」 |
+| SILENT | fo-eet-1-neg-truncated | 截断型 | 取景框引导卡「请拍摄完整挥杆/勿提前停止录制」 |
+
+### 关卡C — 回灌校验
+
+```
+✓ 元素预算 ≤ 2      elements=2
+✓ 色极性 P2 红像素  red_px=42445
+✓ 色极性 P3 白像素  white_px=13888
+✓ 灰度自明          gray_bright_px=174736
+```
+
+### 合并单终裁 — k_max=0.06 交叉验证数据存档
+
+**Jason 拍板 2026-07-05，不再讨论。**
+
+k_max 定义: stroke_width_px ≤ k_max × SHW_canvas，其中 SHW = address 帧肩宽（全项目唯一定义，与运动量门 0.8×SHW 同源，SPEC 显式写明）。
+
+**驳回 k_max=0.15 原因**: 定标误用 top 帧投影肩宽（40-50px）。top 帧上杆姿态肩部旋转投影变形，不代表解剖学肩宽，不可作归一化基准。
+
+**交叉验证数据点（RTMPose-x 实测，2026-07-05）**:
+
+| clip | 帧 | sho_L(原始px) | sho_R(原始px) | SHW_orig | SHW_canvas(720px) | 机位 |
+|------|----|-------------|-------------|---------|------------------|------|
+| clip_016_left | fr0(address) | (393.7, 720.0) | (205.6, 751.8) | 190.8px | 254.4px | 正面 540×1920 |
+
+k_max=0.06 → max_sw = 0.06 × 254.4 = **15.3px**；当前 sw=3px → k=0.012，安全余量 5.1×
+
+**注**: k_max 后续修订须重新实测 address 帧肩宽，禁止沿用 top 帧投影值。
+
+### 纪律入档（见 GT_IRON_RULES §8/§9）
+
+- §8 坐标不得从结论反算（机器防线: rule⑪ `_rule11_anchor_in_body_bbox`; GT 旁路补标定原则）
+- §9 归一化基准须与项目统一定义一致（SHW = address 帧，不得用 top 帧投影值）
+- 技术债保留意见: clip_016 wrist_y top 帧代理（fr93）非 B 层 SwingPhaseEngine 正式输出，工程近似，非 GT 定版
+
+### 验收
+
+```
+run_cue_generator.py: 4/4 PASS (validator 11条全通过)
+run_cue004.py:        4路由 PASS, exit 0, 5.3s; renderback PASS
+run_cue_mock_fo_ok1.py: PASS
+SPEC: v0.7 (校验④ k_max=0.06 + 校验⑪锚点bbox)
+```
+
+**commit**: `72bc96f` (fix) → `ba09341` (PROJECT_STATE) — master pushed
+
+**关卡状态**: ✅ CUE-004 正式关闭（Jason 终裁 2026-07-05）
