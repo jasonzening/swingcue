@@ -5,7 +5,7 @@
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
 **最后更新**: 2026-07-05 — PROJECT_STATE 勘误（3秒测试/top_conf 状态修正）
-**最新 commit**: *(本次 commit)*
+**最新 commit**: `4a21feb` — fix(PROJECT_STATE): 勘误 — 渲染器v2待立项 + top_conf 0.50已定版
 **分支**: master（已 push）
 
 ---
