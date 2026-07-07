@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-07 — GHOST-003 T1.7 ⛔ 等待 Jason 裁决放行线
-**最新 commit**: `9e5c6d8` — feat(GHOST-003-T1.7): IoU-based shape fit, upper IoU 0.9385
+**最后更新**: 2026-07-07 — GHOST-003 T1.7 关闭；T2 整段序列放行
+**最新 commit**: `76c47ca` — docs: PROJECT_STATE T1.7 commit号补充（更新中）
 **分支**: master（已 push）
 
 ---
@@ -127,11 +127,17 @@
 | GHOST-003 T1 | SAM 3D Body (MHR) 单帧精确贴合探针 | ✅ 完成 2026-07-06，commit 8f2b2ad |
 | GHOST-003 T1.5 | 体型拟合优化层（rembg+3带宽度对齐） | ✅ 完成 2026-07-06，commit 351a81a，shoulder 6.2%, hip 2.8% |
 | GHOST-003 T1.6 | 上半身精调层（纯红渲染+5带迭代cx纠偏） | ✅ 完成 2026-07-07，commit 48706ec，shoulder 1.2% hip 1.0% |
-| GHOST-003 T1.7 | IoU-based shape fitting（上半身 IoU 最大化） | ⛔ 等 Jason 裁决放行线 — 2026-07-07 |
-| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1.6 验收通过放行 |
+|| GHOST-003 T1.7 | IoU-based shape fitting（上半身 IoU 最大化） | ✅ 完成 2026-07-07，commit 9e5c6d8，upper IoU 0.9385 ≥ 放行线 0.92 ✓ |
+|| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | **⛔ 进行中** — fo-ok-1 NF=112，等待 Jason 目视最差帧裁决 |
 | GHOST-004   | 修正动作驱动（基线正确姿态驱动用户 MHR） | ⏳ 待 T2 验收 |
 
 **逐点契合铁律（GHOST 线 2026-07-06 立）**: address 帧红人须在头/颈/肩/肘/腕/髋/膝/踝逐点契合真人；address 不契合不得进入动作修正阶段。
+
+**GHOST-003 分级契合放行判据（Jason 裁决 2026-07-07，永久有效）**:
+- **主指标**: 上半身 IoU（head→hip+60 区域；green=human / red=mesh / yellow=overlap）
+- **放行线**: 上半身 IoU ≥ 0.92。引擎每帧自算，低于 0.92 触发重优化或标记待查
+- **下肢（膝/踝/脚）**: 达标即止，不作通过条件；引擎不得为压下肢 miss 牺牲上半身 IoU
+- T1.7 实测 0.9385 ≥ 0.92 → address 契合正式通过，T2 放行
 
 **GHOST 线分级契合铁律（2026-07-07 Jason 裁决，永久有效）**:
 - **上半身（肩/躯干/髋）**: edge miss 目标 ≤3%。诊断发生区 + 动作归因区，不容妥协
@@ -148,6 +154,15 @@
 - 局部: shoulder=0.9622 / hip=0.9702 / lower=0.6650 (达标即止)
 - Edge miss 参考: shoulder 2.7% / hip 1.4%
 - 总耗时 16.6s  VRAM 3610MB
+- **Jason 裁决**: 上半身 IoU ≥ 0.92 为放行线；0.9385 ≥ 0.92 ✓ → T1.7 正式关闭，T2 放行
+
+**GHOST-003 T2 任务规格（Jason 裁决 2026-07-07）**:
+- 对 fo-ok-1 整段序列（NF=112）逐帧跑 mesh 拟合
+- 每帧以最大化上半身 IoU 为目标；低于 0.92 的帧单独标记（帧号 + IoU）
+- 停关卡报告: mean / min（最差帧+帧号）/ P5 分位；禁止只报均值
+- 最差 3 帧的 silhouette_compare + 关键帧（address/top/impact）的 mhr_overlay
+- cx 纠偏沿用 T1.7 逻辑；头部中心偏移继续保持 ≤5px
+- Jason 目视最差帧后裁决 T2 是否通过
 
 **相位命名规范 (铁律)**: 一律使用 B 层 8 相位体系：
 `address / takeaway / backswing / top / transition / downswing / impact / follow_through`
