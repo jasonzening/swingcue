@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-07 — GHOST-003 T2.4 完成，⛔ 等 Jason 验收 playback_t24.mp4
-**最新 commit**: `33abb29` — feat(GHOST-003-T2.4): 闪动帧探针+fr084-095跨段插值平滑
+**最后更新**: 2026-07-07 — GHOST-003 T2.6 完成，⛔ 等 Jason 验收 playback_t26.mp4 + 025x
+**最新 commit**: `205506a` — feat(GHOST-003-T2.6): z锁定(消除尺度呼吸5.21%)+全轴SG平滑+慢放025x
 **分支**: master（已 push）
 
 ---
@@ -216,6 +216,16 @@ P5      0.8242    0.8296      0.8322
 - T2.2 invalid fr087/fr094 已在段内, 自动覆盖
 - 输出: playback_t24.mp4 (112帧@30fps); cx_comparison_t24.jpg
 - ⛔ 等 Jason 验收: playback_t24.mp4 downswing→impact 段还闪不闪
+
+**T2.5 数据 (cam_t x/y SG平滑, commit 76928fa)**:
+- SG平滑 cam_t x/y 修正量<0.011 (约1.5px) — 闪动源确认为 verts 推理不稳, 非 cam_t
+- 效果有限, 与 T2.3 接近
+
+**T2.6 数据 (z锁定+全轴SG+慢放, commit 205506a)**:
+- cam_t[2] z 锁定 fr000 z=5.0085; 消除尺度呼吸 5.21%
+- 全三轴 cam_t + focal SG 平滑 (window=9)
+- 0.25x 慢放版: playback_t26_025x.mp4
+- ⛔ 等 Jason 验收: follow-through 站定后大小是否恒定 + 慢放质量
 
 **最后更新**: 2026-07-07 — GHOST-003 T2 数据产出，⛔ 等 Jason 目视最差帧裁决
 
