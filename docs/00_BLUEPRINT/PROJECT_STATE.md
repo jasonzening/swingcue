@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-07 — GHOST-003 T1.7 关闭；T2 整段序列放行
-**最新 commit**: `76c47ca` — docs: PROJECT_STATE T1.7 commit号补充（更新中）
+**最后更新**: 2026-07-07 — GHOST-003 T2 数据产出，⛔ 等 Jason 目视最差帧裁决
+**最新 commit**: `4d4e667` — feat(GHOST-003-T2): 整段序列脚本（更新中）
 **分支**: master（已 push）
 
 ---
@@ -128,7 +128,7 @@
 | GHOST-003 T1.5 | 体型拟合优化层（rembg+3带宽度对齐） | ✅ 完成 2026-07-06，commit 351a81a，shoulder 6.2%, hip 2.8% |
 | GHOST-003 T1.6 | 上半身精调层（纯红渲染+5带迭代cx纠偏） | ✅ 完成 2026-07-07，commit 48706ec，shoulder 1.2% hip 1.0% |
 || GHOST-003 T1.7 | IoU-based shape fitting（上半身 IoU 最大化） | ✅ 完成 2026-07-07，commit 9e5c6d8，upper IoU 0.9385 ≥ 放行线 0.92 ✓ |
-|| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | **⛔ 进行中** — fo-ok-1 NF=112，等待 Jason 目视最差帧裁决 |
+|| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ⛔ 等 Jason 目视最差帧裁决 — mean=0.897, min=0.372(fr087), P5=0.824 |
 | GHOST-004   | 修正动作驱动（基线正确姿态驱动用户 MHR） | ⏳ 待 T2 验收 |
 
 **逐点契合铁律（GHOST 线 2026-07-06 立）**: address 帧红人须在头/颈/肩/肘/腕/髋/膝/踝逐点契合真人；address 不契合不得进入动作修正阶段。
@@ -156,13 +156,21 @@
 - 总耗时 16.6s  VRAM 3610MB
 - **Jason 裁决**: 上半身 IoU ≥ 0.92 为放行线；0.9385 ≥ 0.92 ✓ → T1.7 正式关闭，T2 放行
 
-**GHOST-003 T2 任务规格（Jason 裁决 2026-07-07）**:
-- 对 fo-ok-1 整段序列（NF=112）逐帧跑 mesh 拟合
-- 每帧以最大化上半身 IoU 为目标；低于 0.92 的帧单独标记（帧号 + IoU）
-- 停关卡报告: mean / min（最差帧+帧号）/ P5 分位；禁止只报均值
-- 最差 3 帧的 silhouette_compare + 关键帧（address/top/impact）的 mhr_overlay
-- cx 纠偏沿用 T1.7 逻辑；头部中心偏移继续保持 ≤5px
-- Jason 目视最差帧后裁决 T2 是否通过
+**GHOST-003 T2 实测（2026-07-07）**:
+- Clip: fo-ok-1  NF=112  有效帧=112  总耗时 163s  peak VRAM 3611MB
+- 放行线: IoU ≥ 0.92
+- mean IoU: 0.8966
+- min  IoU: 0.3722 (fr087) ← 最差帧
+- P5   IoU: 0.8242
+- 低于放行线 (< 0.92) 帧: 56/112（fr054~fr111 动态段为主）
+- 静态 address 段 (fr0~fr053): IoU ≈ 0.93~0.94 全通过
+- 动态段主要失效区: fr062/064/072/087/094/103/104（arm swing/occlusion）
+- 最差3帧: fr087 IoU=0.372 / fr103 IoU=0.734 / fr064 IoU=0.763
+- 关键帧: address_fr000 / top_fr097 (IoU=0.861) / impact_fr088 (IoU=0.912)
+- Windows 交付: C:\Users\jason\Desktop\rtmpose_results\preview\ghost003_t2\
+- ⛔ 等 Jason 目视最差帧裁决 T2 是否通过
+
+**最后更新**: 2026-07-07 — GHOST-003 T2 数据产出，⛔ 等 Jason 目视最差帧裁决
 
 **相位命名规范 (铁律)**: 一律使用 B 层 8 相位体系：
 `address / takeaway / backswing / top / transition / downswing / impact / follow_through`
