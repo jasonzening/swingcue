@@ -99,28 +99,36 @@
 
 ### GHOST 线（Ghost 克隆管线，2026-07-05 立项）
 
-产品新增 ghost 形态：**抽象 3D 人体叠加** — 红色半透明 SMPL 人形精确贴合叠加在真实视频之上，同步做出正确动作。
+产品新增 ghost 形态：**抽象 3D 人体叠加** — 红色半透明 MHR 人形精确贴合叠加在真实视频之上，同步做出正确动作。
 原则"身体为因，球杆为果"已入档 CUE_DESIGN_LANGUAGE §12。
 
-**方向变更 2026-07-06**: MimicMotion/SVD 生成路线 **冻结**（T1 已完成可行性验证）。
-主路线改为 **SMPL 3D 人体叠加渲染**，无生成式模型依赖。
+**方向变更 2026-07-06**: MimicMotion/SVD 生成路线冻结。SMPL/HMR2.0 = research-only 方向探针，退役不进产品。
 
-#### GHOST 授权三级关卡（产品化前必须关闭）
+**产品底座锁定（Jason 裁决 2026-07-06）**:
+- **主轨**: SAM 3D Body (MHR topology) — SAM License，PRODUCT_CANDIDATE_CUSTOM_LICENSE
+- **备轨**: Anny native topology (Apache 2.0) — PRODUCT_CLEAN_PERMISSIVE，永不下 smplx NC 包
+- **红线**: SMPL / SMPL-X + Multi-HMR-Anny checkpoint → 仅研究对照，绝不进产品
+- **red line**: Ultralytics YOLO (AGPL) 不得混入检测链
+
+#### GHOST 授权关卡（上线前必须关闭）
 
 | 关卡 | 内容 | 状态 |
 |------|------|------|
-| ① T1 研发验证 | 研究许可覆盖，合法免费 | ✅ 覆盖中 |
-| ② 产品化首选 | 确认 SMPL-Body CC-BY 4.0 覆盖"我方对外输出为渲染结果而非分发模型文件"——若成立，署名即可零授权费 | ⏳ 产品化前确认 |
-| ③ 备用路径 | 仅当②不适用（需分发含 SMPL 参数的制品）才向 sales@meshcapade.com 询价企业授权 | ⏳ 仅当②不适用时 |
+| T0 核验 | 原始 LICENSE 逐字固化，裁决 SAM=无NC | ✅ 完成 2026-07-06，commit c2f782d，见 GHOST_LICENSE_T0.md |
+| 上线 legal review | SAM License §1.b.v 贸易管制 + §1.b.ii 出版致谢义务 | ⏳ 产品化前必须关闭 |
+| HF gated 申请 | facebook/sam-3d-body-dinov3 需申请 access | ⏳ Jason 提供 HF token 后 |
 
 #### GHOST 技术关卡
 
 | 关卡 | 目标 | 状态 |
 |------|------|------|
 | GHOST-001 T1 | MimicMotion 可行性验证（fo-ok-1 自我重建，72fr） | ✅ 完成 2026-07-06，commit a010f95 |
-| GHOST-002 T1 | SMPL 单帧贴合精度验证（HMR2.0 address 帧） | ⛔ 等待 Jason 目视验收 — **SMPL research-only**: 非商业研究许可，不进产品；产品化切 SAM 3D Body(MHR)/Anny(Apache 2.0) |
-| GHOST-002 T2 | SMPL 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1 验收 |
-| GHOST-003   | 修正动作驱动（飞轮基线正确姿态驱动用户 SMPL） | ⏳ 待 T2 验收 |
+| GHOST-002 T1 | SMPL/HMR2.0 单帧贴合方向探针（research-only） | ✅ 完成 2026-07-06，commit 54c6ac9，退役不进产品 |
+| GHOST-003 T1 | SAM 3D Body (MHR) 单帧精确贴合探针 | 🔄 进行中 — 等 HF checkpoint token |
+| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1 验收 |
+| GHOST-004   | 修正动作驱动（基线正确姿态驱动用户 MHR） | ⏳ 待 T2 验收 |
+
+**逐点契合铁律（GHOST 线 2026-07-06 立）**: address 帧红人须在头/颈/肩/肘/腕/髋/膝/踝逐点契合真人；address 不契合不得进入动作修正阶段。
 
 **GHOST-001 T1 实测**: 推理 11:56 + VAE CPU decode ~25min，总 ~37min；peak VRAM 10.07GB（CPU offload 生效）；72fr W576×H1024 竖版正确；帧序列 frames/ 落盘防重跑。MimicMotion 路线冻结于此。
 
