@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-07 — GHOST-003 T2.1 完成，⛔ 等 Jason 目视最差有效帧裁决
-**最新 commit**: `cae9ddc` — feat(GHOST-003-T2.1): 崩帧哨兵+2D joint opt
+**最后更新**: 2026-07-07 — GHOST-003 T2.2 完成，⛔ 等 Jason 裁决哨兵扩展 + 手臂 IoU
+**最新 commit**: TBD — feat(GHOST-003-T2.2): 哨兵 A4 + 手臂姿态优化层
 **分支**: master（已 push）
 
 ---
@@ -129,7 +129,8 @@
 | GHOST-003 T1.6 | 上半身精调层（纯红渲染+5带迭代cx纠偏） | ✅ 完成 2026-07-07，commit 48706ec，shoulder 1.2% hip 1.0% |
 || GHOST-003 T1.7 | IoU-based shape fitting（上半身 IoU 最大化） | ✅ 完成 2026-07-07，commit 9e5c6d8，upper IoU 0.9385 ≥ 放行线 0.92 ✓ |
 || GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ✅ 完成 2026-07-07，commit 3b61eb6，mean=0.897 min=0.372(fr087) P5=0.824 |
-|| GHOST-003 T2.1 | 崩帧哨兵 + 动态帧 2D 紧化 | ⛔ 等 Jason 目视最差有效帧裁决 — mean=0.901 min=0.742(fr103) P5=0.830 |
+|| GHOST-003 T2.1 | 崩帧哨兵 + 动态帧 2D 紧化 | ✅ 关闭 — fr087 隔离，有效帧 n=111，mean=0.901 P5=0.830 |
+|| GHOST-003 T2.2 | 哨兵 A4 + 手臂姿态修正 | ⛔ 等 Jason 裁决 — invalid=2(fr087/fr094) valid=110，mean=0.9027 min=0.7411(fr103) P5=0.8322 |
 | GHOST-004   | 修正动作驱动（基线正确姿态驱动用户 MHR） | ⏳ 待 T2 验收 |
 
 **逐点契合铁律（GHOST 线 2026-07-06 立）**: address 帧红人须在头/颈/肩/肘/腕/髋/膝/踝逐点契合真人；address 不契合不得进入动作修正阶段。
@@ -158,6 +159,29 @@
 - **Jason 裁决**: 上半身 IoU ≥ 0.92 为放行线；0.9385 ≥ 0.92 ✓ → T1.7 正式关闭，T2 放行
 
 **GHOST-003 T2.1 实测（2026-07-07）**:
+- 哨兵 A1(delta>=0.25)/A2(conf<0.65)/A3(cx>60px)
+- fr087 无效(A1 delta=0.537)
+- 有效帧 n=111: mean=0.9014 min=0.742(fr103) P5=0.8296
+- dy_upp≈0px 全程（Nelder-Mead 自主发现 y 方向无改善空间）
+
+**GHOST-003 T2.2 实测（2026-07-07）**:
+- 哨兵 A1(delta>=0.18 放宽)/A2/A3/A4(isolated_blob>1.5%+>150px)
+- 新增无效: fr094 (A4:blob_frac=0.0173, dist=311px) — rembg孤立绿斑
+- 无效帧: fr087 + fr094 共2帧
+- 有效帧 n=110: mean=0.9027 min=0.7411(fr103) P5=0.8322
+- 手臂姿态优化: ARM_OPT 触发条件 = arm_dist/body_h > 1.2; fr064/fr103未触发(arm_ratio<1.2)
+  - fr095/fr096 触发 ARM_OPT 但 Nelder-Mead 无改善 (arm_kp_err无明显减少)
+  - 手臂优化在 fo-ok-1 的 arm-extended 帧实际效果有限
+- 关键帧: address_fr000 IoU=0.9370 ✓ / top_fr097 IoU=0.865 ✗ / impact_fr088 IoU=0.9116 ✗
+- 最差3有效帧: fr103(0.7411) / fr064(0.7611) / fr062(0.7989)
+
+T2 → T2.1 → T2.2 演进:
+```
+        T2(112)   T2.1(111)   T2.2(110)
+mean    0.8966    0.9014      0.9027
+min     0.372     0.742       0.741(fr103)
+P5      0.8242    0.8296      0.8322
+```
 - 哨兵: A1(delta>=0.25) / A2(conf<0.65) / A3(cx偏移>60px)
 - 无效帧: 1帧 — fr087 (A1: delta=0.537, T2_IoU=0.372) → 插值填充
 - 2D joint opt: Nelder-Mead [sx,dy]; 结论: dy_upp≈0px全程 (y方向无需调整)
@@ -177,7 +201,8 @@
 - 最差3帧: fr087 IoU=0.372 / fr103 IoU=0.734 / fr064 IoU=0.763
 - 关键帧: address_fr000 / top_fr097 (IoU=0.861) / impact_fr088 (IoU=0.912)
 - Windows 交付: C:\Users\jason\Desktop\rtmpose_results\preview\ghost003_t2\
-- ⛔ 等 Jason 目视最差帧裁决 T2 是否通过
+- ⛔ 等 Jason 裁决 T2.2: 哨兵扩展是否合理 + 手臂帧 IoU 是否可接受 + P5=0.8322 放行
+- ⛔ 等 Jason 裁决 T2.2: 是否接受 invalid=2(fr087+fr094), 有效 mean=0.903 P5=0.832
 
 **最后更新**: 2026-07-07 — GHOST-003 T2 数据产出，⛔ 等 Jason 目视最差帧裁决
 
