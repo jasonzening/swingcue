@@ -124,7 +124,7 @@
 |------|------|------|
 | GHOST-001 T1 | MimicMotion 可行性验证（fo-ok-1 自我重建，72fr） | ✅ 完成 2026-07-06，commit a010f95 |
 | GHOST-002 T1 | SMPL/HMR2.0 单帧贴合方向探针（research-only） | ✅ 完成 2026-07-06，commit 54c6ac9，退役不进产品 |
-| GHOST-003 T1 | SAM 3D Body (MHR) 单帧精确贴合探针 | 🔄 进行中 — 等 HF checkpoint token |
+| GHOST-003 T1 | SAM 3D Body (MHR) 单帧精确贴合探针 | ⛔ 等 Jason 验收 — 出图 2026-07-06 commit 8f2b2ad |
 | GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1 验收 |
 | GHOST-004   | 修正动作驱动（基线正确姿态驱动用户 MHR） | ⏳ 待 T2 验收 |
 
