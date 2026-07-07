@@ -5,7 +5,7 @@
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
 **最后更新**: 2026-07-07 — GHOST-003 T1.7 ⛔ 等待 Jason 裁决放行线
-**最新 commit**: (待 T1.7 commit 后更新)
+**最新 commit**: `9e5c6d8` — feat(GHOST-003-T1.7): IoU-based shape fit, upper IoU 0.9385
 **分支**: master（已 push）
 
 ---
