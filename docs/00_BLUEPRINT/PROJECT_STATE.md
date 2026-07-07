@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-07 — GHOST-003 T2.3 完成，⛔ 等 Jason 裁决 ARM增益量/P5放行/T2.4脚部
-**最新 commit**: `7d2d6f0` — feat(GHOST-003-T2.3): ARM_OPT真执行(8帧)+脚部平移诊断(刚性平移无效)
+**最后更新**: 2026-07-07 — GHOST-003 T2.4 完成，⛔ 等 Jason 验收 playback_t24.mp4
+**最新 commit**: `33abb29` — feat(GHOST-003-T2.4): 闪动帧探针+fr084-095跨段插值平滑
 **分支**: master（已 push）
 
 ---
@@ -209,6 +209,13 @@ P5      0.8242    0.8296      0.8322
 - 脚部刚性平移诊断: 无效(foot_iou↓), 根因=方向偏差需旋转非平移; foot_iou_pre=0.5635
 - 分布: valid=110 mean=0.9031 min=0.7495(fr103) P5=0.8370
 - ⛔ 等 Jason 裁决 T2.3: ARM增益量级是否满足 / P5=0.8370放行 / T2.4开展脚踝旋转优化
+
+**T2.4 数据 (闪动帧清理 + 回放重合成, commit 33abb29)**:
+- 探针标记闪动段: fr084–095 (时序 cx/cy 跳变超阈值, ratio>3x)
+- 锚帧: fr083(段前稳定) + fr096(段后稳定); 跨段线性插值 verts+cam_t+focal
+- T2.2 invalid fr087/fr094 已在段内, 自动覆盖
+- 输出: playback_t24.mp4 (112帧@30fps); cx_comparison_t24.jpg
+- ⛔ 等 Jason 验收: playback_t24.mp4 downswing→impact 段还闪不闪
 
 **最后更新**: 2026-07-07 — GHOST-003 T2 数据产出，⛔ 等 Jason 目视最差帧裁决
 
