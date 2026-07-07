@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-07 — GHOST-003 T2 数据产出，⛔ 等 Jason 目视最差帧裁决
-**最新 commit**: `4d4e667` — feat(GHOST-003-T2): 整段序列脚本（更新中）
+**最后更新**: 2026-07-07 — GHOST-003 T2.1 完成，⛔ 等 Jason 目视最差有效帧裁决
+**最新 commit**: `cae9ddc` — feat(GHOST-003-T2.1): 崩帧哨兵+2D joint opt
 **分支**: master（已 push）
 
 ---
@@ -128,7 +128,8 @@
 | GHOST-003 T1.5 | 体型拟合优化层（rembg+3带宽度对齐） | ✅ 完成 2026-07-06，commit 351a81a，shoulder 6.2%, hip 2.8% |
 | GHOST-003 T1.6 | 上半身精调层（纯红渲染+5带迭代cx纠偏） | ✅ 完成 2026-07-07，commit 48706ec，shoulder 1.2% hip 1.0% |
 || GHOST-003 T1.7 | IoU-based shape fitting（上半身 IoU 最大化） | ✅ 完成 2026-07-07，commit 9e5c6d8，upper IoU 0.9385 ≥ 放行线 0.92 ✓ |
-|| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ⛔ 等 Jason 目视最差帧裁决 — mean=0.897, min=0.372(fr087), P5=0.824 |
+|| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ✅ 完成 2026-07-07，commit 3b61eb6，mean=0.897 min=0.372(fr087) P5=0.824 |
+|| GHOST-003 T2.1 | 崩帧哨兵 + 动态帧 2D 紧化 | ⛔ 等 Jason 目视最差有效帧裁决 — mean=0.901 min=0.742(fr103) P5=0.830 |
 | GHOST-004   | 修正动作驱动（基线正确姿态驱动用户 MHR） | ⏳ 待 T2 验收 |
 
 **逐点契合铁律（GHOST 线 2026-07-06 立）**: address 帧红人须在头/颈/肩/肘/腕/髋/膝/踝逐点契合真人；address 不契合不得进入动作修正阶段。
@@ -156,7 +157,15 @@
 - 总耗时 16.6s  VRAM 3610MB
 - **Jason 裁决**: 上半身 IoU ≥ 0.92 为放行线；0.9385 ≥ 0.92 ✓ → T1.7 正式关闭，T2 放行
 
-**GHOST-003 T2 实测（2026-07-07）**:
+**GHOST-003 T2.1 实测（2026-07-07）**:
+- 哨兵: A1(delta>=0.25) / A2(conf<0.65) / A3(cx偏移>60px)
+- 无效帧: 1帧 — fr087 (A1: delta=0.537, T2_IoU=0.372) → 插值填充
+- 2D joint opt: Nelder-Mead [sx,dy]; 结论: dy_upp≈0px全程 (y方向无需调整)
+- 有效帧 (n=111): mean=0.9014 / min=0.742(fr103) / P5=0.830
+- 对比 T2 (n=112含无效帧): mean Δ+0.005 / P5 Δ+0.005
+- 最差3有效帧: fr103(0.742) / fr064(0.761) / fr094(0.783)
+- 关键帧: address(0.938) / top(0.865) / impact(0.912)
+- Windows交付: ghost003_t21/
 - Clip: fo-ok-1  NF=112  有效帧=112  总耗时 163s  peak VRAM 3611MB
 - 放行线: IoU ≥ 0.92
 - mean IoU: 0.8966
