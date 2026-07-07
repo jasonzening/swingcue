@@ -4,8 +4,8 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-05 — CUE-005 关卡关闭（专家测试失败修正 + 专业级重拍卡）
-**最新 commit**: `2e7ade4` — feat(CUE-005): 专家测试失败修正+专业级重拍卡
+**最后更新**: 2026-07-07 — GHOST-003 T1.6 ⛔ 等待 Jason 目视验收
+**最新 commit**: (待 T1.6 commit push 后更新)
 **分支**: master（已 push）
 
 ---
@@ -124,13 +124,30 @@
 |------|------|------|
 | GHOST-001 T1 | MimicMotion 可行性验证（fo-ok-1 自我重建，72fr） | ✅ 完成 2026-07-06，commit a010f95 |
 | GHOST-002 T1 | SMPL/HMR2.0 单帧贴合方向探针（research-only） | ✅ 完成 2026-07-06，commit 54c6ac9，退役不进产品 |
-| GHOST-003 T1 | SAM 3D Body (MHR) 单帧精确贴合探针 | ⛔ 等 Jason 验收 — 出图 2026-07-06 commit 8f2b2ad |
-| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1 验收 |
+| GHOST-003 T1 | SAM 3D Body (MHR) 单帧精确贴合探针 | ✅ 完成 2026-07-06，commit 8f2b2ad |
+| GHOST-003 T1.5 | 体型拟合优化层（rembg+3带宽度对齐） | ✅ 完成 2026-07-06，commit 351a81a，shoulder 6.2%, hip 2.8% |
+| GHOST-003 T1.6 | 上半身精调层（纯红渲染+5带迭代cx纠偏） | ⛔ 等 Jason 目视验收 — 2026-07-07 |
+| GHOST-003 T2 | MHR 整段挥杆序列贴合（address→follow_through） | ⏳ 待 T1.6 验收通过放行 |
 | GHOST-004   | 修正动作驱动（基线正确姿态驱动用户 MHR） | ⏳ 待 T2 验收 |
 
 **逐点契合铁律（GHOST 线 2026-07-06 立）**: address 帧红人须在头/颈/肩/肘/腕/髋/膝/踝逐点契合真人；address 不契合不得进入动作修正阶段。
 
+**GHOST 线分级契合铁律（2026-07-07 Jason 裁决，永久有效）**:
+- **上半身（肩/躯干/髋）**: edge miss 目标 ≤3%。诊断发生区 + 动作归因区，不容妥协
+- **下肢（膝/踝/脚）**: 合理贴合即可，不追求完美（支撑点、非诊断区，达标即止）
+- 达此标准 = address 契合通过，放行 T2 整段序列
+
 **GHOST-001 T1 实测**: 推理 11:56 + VAE CPU decode ~25min，总 ~37min；peak VRAM 10.07GB（CPU offload 生效）；72fr W576×H1024 竖版正确；帧序列 frames/ 落盘防重跑。MimicMotion 路线冻结于此。
+
+**GHOST-003 T1.6 实测（2026-07-07）**:
+- 算法: scale_then_translate_iterative (v4)
+- Step1 scale: B_UPP sx=1.218 / B_HIP sx=1.085 / B_LOW sx=1.113 (达标即止)
+- Step2 translate: 量 actual sil cx → upper dx=-15px / hip dx=-6.2px / lower dx=-7px
+- Step4 residual check: shoulder cx residual -0.5px (无需再修正)
+- 最终 edge miss 上半身: shoulder 1.2% ✓ / torso 0.0% ✓ / hip 1.0% ✓ → upper_pass=True
+- 下肢达标即止: knee 19.5% / ankle 46.3%
+- 总耗时 13.5s  VRAM 3610MB  纯红颜色已切换
+- 输出: output/ghost003/mhr_overlay_t16.jpg + side_by_side_t16.jpg + silhouette_compare.jpg
 
 **相位命名规范 (铁律)**: 一律使用 B 层 8 相位体系：
 `address / takeaway / backswing / top / transition / downswing / impact / follow_through`
@@ -153,4 +170,4 @@
 
 ---
 
-*PROJECT_STATE.md — CUE-005 关卡关闭 2026-07-05 / 维护人: Hermes / 裁决人: Jason*
+*PROJECT_STATE.md — GHOST-003 T1.6 ⛔ 等待 Jason 验收 2026-07-07 / 维护人: Hermes / 裁决人: Jason*
