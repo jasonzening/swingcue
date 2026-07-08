@@ -62,9 +62,9 @@ COACH_FR_TOP  = 43   # coach top anchor (from phase_report_step1.json)
 USER_FR_ADDR  = 0
 
 # IK hyperparams
-IK_LR        = 0.008
-IK_ITERS     = 300
-IK_REG_ALPHA = 0.1   # L2 regularization toward user address pose
+IK_LR        = 0.01
+IK_ITERS     = 600
+IK_REG_ALPHA = 0.02  # L2 regularization: loose early, tighten later via scheduler
 GHOST_ALPHA  = 0.6
 GHOST_COLOR  = (0.85, 0.1, 0.1)
 
