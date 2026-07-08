@@ -4,9 +4,26 @@
 > 状态未更新 = 关卡未关闭（见 GT_IRON_RULES.md § CUE-D）。
 > 本文件是跨会话/跨人自动接手的唯一状态入口，任何会话开始前先读本文件。
 
-**最后更新**: 2026-07-07 — GHOST-003 T2.6 完成，⛔ 等 Jason 验收 playback_t26.mp4 + 025x
-**最新 commit**: `205506a` — feat(GHOST-003-T2.6): z锁定(消除尺度呼吸5.21%)+全轴SG平滑+慢放025x
+**最后更新**: 2026-07-07 — GHOST-004 Step 1 Jason 验收通过，Step 2 retarget 启动
+**最新 commit**: `45a647b` — feat(GHOST-004-step1): 教练母本RTMPose+MHR提取+8相位分段+overlay渲染+pose序列NPZ
 **分支**: master（已 push）
+
+---
+
+### GHOST-003 状态
+**⛔ T2.6 Jason 验收: 通过（2026-07-07）**
+- playback_t26.mp4 follow-through 大小恒定 ✓
+- 慢放质量满足产品可接受标准 ✓
+- GHOST-003 overlay 渲染管线锁定为产品基线（T2.6 版）
+- GHOST-003 正式关闭，进入 GHOST-004
+
+### GHOST-004 母本采集验收标准（永久适用铁律）
+> **母本提取步骤验收标准 = RTMPose 姿态质量 + 动作规范性，非 mesh IoU**
+>
+> GHOST-003 里 mesh IoU 是产品本身，死磕正确。GHOST-004 提取母本的产出物是 θ
+> 动作序列，mesh overlay 只是给人看的辅助。最终幽灵穿用户 β 体型，由 T2.6 稳定
+> 管线保证贴合，与教练 mesh IoU 无关。用错标准会让人白白陷进 mesh 打磨，磨的是
+> 下一步根本不用的东西。此条适用于 retarget 其他动作母本的所有未来步骤。
 
 ---
 
