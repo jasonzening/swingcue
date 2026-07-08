@@ -41,7 +41,7 @@ from sam_3d_body import load_sam_3d_body, SAM3DBodyEstimator
 from sam_3d_body.visualization.renderer import Renderer
 
 # ──────────────────────────────────────────────────────────────────────────────
-PROBE_ONLY = True   # True = 只渲出 address+top 两帧对比图; False = 全序列视频
+PROBE_ONLY = False  # True = 只渲出 address+top 两帧对比图; False = 全序列视频
 # ──────────────────────────────────────────────────────────────────────────────
 
 ROOT        = Path("/home/jason/projects/swingcue-postest")
@@ -93,6 +93,36 @@ def euler_to_R(euler_zyx_np):
 def R_to_euler(R_3x3_torch):
     """torch (3,3) → numpy (3,) euler ZYX"""
     return roma.rotmat_to_euler("ZYX", R_3x3_torch.unsqueeze(0)).squeeze(0).numpy()
+
+def quat_delta_retarget(R_ca_t, R_ua_t, R_fi_t):
+    """
+    Quaternion-based delta retarget — avoids ZYX euler gimbal lock / wrapping.
+
+    R_ca : coach address rotmat (3,3) torch
+    R_ua : user address rotmat  (3,3) torch
+    R_fi : coach frame-i rotmat (3,3) torch
+
+    Returns: euler_retarget (3,) numpy ZYX, safe for mhr_forward global_rot input.
+
+    Math:
+      q_delta    = q_ca.conj * q_fi          # coach's motion relative to its own address
+      q_retarget = q_ua * q_delta            # map that motion onto user's address orientation
+    Quaternion multiplication stays in SO(3) without euler ambiguity.
+    """
+    q_ca = roma.rotmat_to_unitquat(R_ca_t.unsqueeze(0))   # (1,4) wxyz
+    q_fi = roma.rotmat_to_unitquat(R_fi_t.unsqueeze(0))   # (1,4)
+    q_ua = roma.rotmat_to_unitquat(R_ua_t.unsqueeze(0))   # (1,4)
+
+    # Quaternion delta: rotation FROM coach-address TO coach-fi
+    q_delta = roma.quat_product(roma.quat_conjugation(q_ca), q_fi)  # (1,4)
+
+    # Apply delta on top of user's address orientation
+    q_ret   = roma.quat_product(q_ua, q_delta)             # (1,4)
+
+    # Convert back to rotation matrix → euler ZYX
+    R_ret   = roma.unitquat_to_rotmat(q_ret)               # (1,3,3)
+    euler   = roma.rotmat_to_euler("ZYX", R_ret).squeeze(0).numpy()   # (3,)
+    return euler
 
 def render_and_blend(verts, cam_t, focal, faces, bg, H, W, alpha=GHOST_ALPHA):
     black_bg = np.zeros((H,W,3), dtype=np.uint8)
@@ -206,29 +236,22 @@ R_coach_addr = euler_to_R(coach_global_rot_seq[COACH_ADDR])   # (3,3) torch
 # ── DELTA RETARGET FUNCTION ───────────────────────────────────────────────────
 def retarget_frame(fi_coach, label_text=""):
     """
-    Retarget coach frame fi_coach using delta root alignment.
-    Returns (verts_np, cam_t, focal) or None on failure.
+    Retarget coach frame fi_coach using quaternion delta alignment.
+    Returns (verts_np, cam_t, focal).
     """
-    ok_flag = bool(coach_npz["frame_ok"][fi_coach]) if fi_coach < COACH_NF else True
-
-    # Coach theta for this frame
     if fi_coach < COACH_NF:
-        c_body_pose = coach_npz["body_pose_params"][fi_coach]   # (133,) local Euler
+        c_body_pose = coach_npz["body_pose_params"][fi_coach]
     else:
         c_body_pose = coach_npz["body_pose_params"][COACH_NF-1]
 
-    c_grot_np = coach_global_rot_seq[fi_coach]           # (3,) global Euler ZYX (true)
-    R_coach_fi = euler_to_R(c_grot_np)                   # (3,3)
+    c_grot_np  = coach_global_rot_seq[fi_coach]          # (3,) true global Euler ZYX
+    R_coach_fi = euler_to_R(c_grot_np)                   # (3,3) torch
 
-    # Delta: rotation change from coach's address to fi (in coach's local frame)
-    R_delta = R_coach_addr.T @ R_coach_fi                # (3,3)  coach address.inv() × coach_fi
-    # Apply delta to user's address orientation
-    R_retarget = R_user_addr @ R_delta                   # (3,3)  user_addr × delta
-    euler_retarget = torch.from_numpy(R_to_euler(R_retarget).astype(np.float32))
+    # Quaternion delta → retarget euler (no gimbal wrapping)
+    euler_retarget = quat_delta_retarget(R_coach_addr, R_user_addr, R_coach_fi)
 
-    # Tensors
-    c_body_t   = torch.from_numpy(c_body_pose[:130].astype(np.float32)).unsqueeze(0).to(dev)
-    c_grot_t   = euler_retarget.unsqueeze(0).to(dev)
+    c_body_t  = torch.from_numpy(c_body_pose[:130].astype(np.float32)).unsqueeze(0).to(dev)
+    c_grot_t  = torch.from_numpy(euler_retarget.astype(np.float32)).unsqueeze(0).to(dev)
 
     with torch.no_grad():
         result = mhr_head.mhr_forward(
@@ -244,12 +267,10 @@ def retarget_frame(fi_coach, label_text=""):
         )
     verts = result[0] if isinstance(result, tuple) else result
     verts_np = verts.squeeze(0).cpu().numpy()
-    verts_np[..., [1,2]] *= -1   # SAM3D camera convention
+    verts_np[..., [1, 2]] *= -1   # SAM3D camera convention
 
-    raw_euler = R_to_euler(R_coach_fi)
-    delta_euler = R_to_euler(R_delta)
-    print(f"  fr{fi_coach:03d} {label_text}")
-    print(f"    coach_grot_raw={c_grot_np}  delta={delta_euler}  retarget={euler_retarget.numpy()}")
+    delta_check = quat_delta_retarget(R_coach_addr, R_coach_addr, R_coach_fi)  # for logging
+    print(f"  fr{fi_coach:03d} {label_text}  retarget_euler={np.round(euler_retarget,4)}")
     return verts_np, user_cam_t.copy(), user_focal
 
 # ── MODE: PROBE (address + top 单帧验证) ────────────────────────────────────────
