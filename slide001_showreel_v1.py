@@ -53,6 +53,8 @@ ra_A  = kpt(A,  'right_ankle')
 ls_A  = kpt(A,  'left_shoulder')
 rs_A  = kpt(A,  'right_shoulder')
 SW0   = float(np.linalg.norm(rs_A - ls_A))
+lh_a0 = kpt(A, 'left_hip'); rh_a0 = kpt(A, 'right_hip')
+HW0   = float(np.linalg.norm(lh_a0 - rh_a0))   # address hip width
 
 X_GREEN_LEAD  = float(la_A[0])   # 397: lead  脚绿线
 X_GREEN_TRAIL = float(ra_A[0])   # 262: trail 脚绿线
@@ -92,6 +94,31 @@ def lerp_color(c1, c2, t):
     return tuple(int(c1[i] + t*(c2[i]-c1[i])) for i in range(3))
 
 def ss(t): return t*t*(3-2*t)
+
+HIP_CONF_THR = 0.50    # RTMPose 置信度低于此 = 遮挡
+HIP_W_THR    = 0.25    # hip_w / HW0 低于此 = 几乎侧身/遮挡
+
+def hip_visible(fi):
+    """
+    True = 越界侧髋关节可见, 可以画线.
+    遮挡判定 (任一触发即停):
+      1. left_hip 或 right_hip RTMPose score < HIP_CONF_THR
+      2. hip_w / HW0 < HIP_W_THR (身体转到近侧面, 髋宽缩小)
+    """
+    fr = frames_data[fi]
+    if not fr['persons']: return False
+    kp = fr['persons'][0]['keypoints']
+    lh_sc = kp.get('left_hip',  {}).get('score', 0.0)
+    rh_sc = kp.get('right_hip', {}).get('score', 0.0)
+    if lh_sc < HIP_CONF_THR or rh_sc < HIP_CONF_THR:
+        return False
+    lh = kpt(fi,'left_hip'); rh = kpt(fi,'right_hip')
+    if lh is None or rh is None: return False
+    hw = float(np.linalg.norm(lh - rh))
+    if hw / HW0 < HIP_W_THR:
+        return False
+    return True
+
 
 def draw_vline(img, x, col, lw=LINE_W):
     cv2.line(img, (int(x), LT), (int(x), LB), col, lw, cv2.LINE_AA)
@@ -220,16 +247,21 @@ def draw_freeze(img, fi):
 def draw_normal(img, fi):
     """
     Normal play frames: draw hip outer edge line colored by inside/outside.
-    Show only from A to FR_FREEZE.
+    Stops if hip is occluded (low confidence or body rotated away).
     """
+    # 绿基准线始终显示
+    draw_vline(img, X_GREEN_LEAD,  GREEN)
+    draw_vline(img, X_GREEN_TRAIL, GREEN)
+
+    # 髋遮挡 → 不画髋线
+    if not hip_visible(fi):
+        return
+
     ox = outer_x(fi)
     if ox is None: return
     inside = ox < X_GREEN_LEAD
     col = YELLOW if inside else RED
     draw_vline(img, ox, col)
-    # always show green reference lines
-    draw_vline(img, X_GREEN_LEAD,  GREEN)
-    draw_vline(img, X_GREEN_TRAIL, GREEN)
 
 # ── build timeline ────────────────────────────────────────────────────────────
 # 复用鸡翅膀结构: 慢放0.25x → ease-in → 定格6s → ease-out → 慢放继续
